@@ -1,0 +1,174 @@
+/* Bootstrap 5 benzeri 12’li grid — yalnızca sayfa builder bölümleri için scoped */
+
+.pg-container {
+  width: 100%;
+  margin-left: auto;
+  margin-right: auto;
+  padding-left: 0.75rem;
+  padding-right: 0.75rem;
+}
+
+@media (min-width: 576px) {
+  .pg-container {
+    max-width: 540px;
+  }
+}
+@media (min-width: 768px) {
+  .pg-container {
+    max-width: 720px;
+  }
+}
+@media (min-width: 992px) {
+  .pg-container {
+    max-width: 960px;
+  }
+}
+@media (min-width: 1200px) {
+  .pg-container {
+    max-width: 1140px;
+  }
+}
+@media (min-width: 1400px) {
+  .pg-container {
+    max-width: 1320px;
+  }
+}
+
+.pg-row {
+  display: flex;
+  flex-wrap: wrap;
+  margin-left: calc(var(--pg-gutter-x, 1.5rem) * -0.5);
+  margin-right: calc(var(--pg-gutter-x, 1.5rem) * -0.5);
+  margin-top: calc(var(--pg-gutter-y, 0px) * -1);
+  align-items: stretch;
+}
+
+.pg-row > * {
+  flex-shrink: 0;
+  width: 100%;
+  max-width: 100%;
+  padding-left: calc(var(--pg-gutter-x, 1.5rem) * 0.5);
+  padding-right: calc(var(--pg-gutter-x, 1.5rem) * 0.5);
+  margin-top: var(--pg-gutter-y, 0px);
+}
+
+.pg-align-start {
+  align-items: flex-start;
+}
+.pg-align-center {
+  align-items: center;
+}
+
+.pg-g-0 {
+  --pg-gutter-x: 0;
+  --pg-gutter-y: 0;
+}
+.pg-g-1 {
+  --pg-gutter-x: 0.25rem;
+  --pg-gutter-y: 0.25rem;
+}
+.pg-g-2 {
+  --pg-gutter-x: 0.5rem;
+  --pg-gutter-y: 0.5rem;
+}
+.pg-g-3 {
+  --pg-gutter-x: 1rem;
+  --pg-gutter-y: 1rem;
+}
+.pg-g-4 {
+  --pg-gutter-x: 1.5rem;
+  --pg-gutter-y: 1.5rem;
+}
+.pg-g-5 {
+  --pg-gutter-x: 3rem;
+  --pg-gutter-y: 3rem;
+}
+
+/* col-* (xs) */
+.pg-col-1 { flex: 0 0 auto; width: 8.33333333%; }
+.pg-col-2 { flex: 0 0 auto; width: 16.66666667%; }
+.pg-col-3 { flex: 0 0 auto; width: 25%; }
+.pg-col-4 { flex: 0 0 auto; width: 33.33333333%; }
+.pg-col-5 { flex: 0 0 auto; width: 41.66666667%; }
+.pg-col-6 { flex: 0 0 auto; width: 50%; }
+.pg-col-7 { flex: 0 0 auto; width: 58.33333333%; }
+.pg-col-8 { flex: 0 0 auto; width: 66.66666667%; }
+.pg-col-9 { flex: 0 0 auto; width: 75%; }
+.pg-col-10 { flex: 0 0 auto; width: 83.33333333%; }
+.pg-col-11 { flex: 0 0 auto; width: 91.66666667%; }
+.pg-col-12 { flex: 0 0 auto; width: 100%; }
+
+@media (min-width: 576px) {
+  .pg-col-sm-1 { flex: 0 0 auto; width: 8.33333333%; }
+  .pg-col-sm-2 { flex: 0 0 auto; width: 16.66666667%; }
+  .pg-col-sm-3 { flex: 0 0 auto; width: 25%; }
+  .pg-col-sm-4 { flex: 0 0 auto; width: 33.33333333%; }
+  .pg-col-sm-5 { flex: 0 0 auto; width: 41.66666667%; }
+  .pg-col-sm-6 { flex: 0 0 auto; width: 50%; }
+  .pg-col-sm-7 { flex: 0 0 auto; width: 58.33333333%; }
+  .pg-col-sm-8 { flex: 0 0 auto; width: 66.66666667%; }
+  .pg-col-sm-9 { flex: 0 0 auto; width: 75%; }
+  .pg-col-sm-10 { flex: 0 0 auto; width: 83.33333333%; }
+  .pg-col-sm-11 { flex: 0 0 auto; width: 91.66666667%; }
+  .pg-col-sm-12 { flex: 0 0 auto; width: 100%; }
+}
+
+@media (min-width: 768px) {
+  .pg-col-md-1 { flex: 0 0 auto; width: 8.33333333%; }
+  .pg-col-md-2 { flex: 0 0 auto; width: 16.66666667%; }
+  .pg-col-md-3 { flex: 0 0 auto; width: 25%; }
+  .pg-col-md-4 { flex: 0 0 auto; width: 33.33333333%; }
+  .pg-col-md-5 { flex: 0 0 auto; width: 41.66666667%; }
+  .pg-col-md-6 { flex: 0 0 auto; width: 50%; }
+  .pg-col-md-7 { flex: 0 0 auto; width: 58.33333333%; }
+  .pg-col-md-8 { flex: 0 0 auto; width: 66.66666667%; }
+  .pg-col-md-9 { flex: 0 0 auto; width: 75%; }
+  .pg-col-md-10 { flex: 0 0 auto; width: 83.33333333%; }
+  .pg-col-md-11 { flex: 0 0 auto; width: 91.66666667%; }
+  .pg-col-md-12 { flex: 0 0 auto; width: 100%; }
+}
+
+@media (min-width: 992px) {
+  .pg-col-lg-1 { flex: 0 0 auto; width: 8.33333333%; }
+  .pg-col-lg-2 { flex: 0 0 auto; width: 16.66666667%; }
+  .pg-col-lg-3 { flex: 0 0 auto; width: 25%; }
+  .pg-col-lg-4 { flex: 0 0 auto; width: 33.33333333%; }
+  .pg-col-lg-5 { flex: 0 0 auto; width: 41.66666667%; }
+  .pg-col-lg-6 { flex: 0 0 auto; width: 50%; }
+  .pg-col-lg-7 { flex: 0 0 auto; width: 58.33333333%; }
+  .pg-col-lg-8 { flex: 0 0 auto; width: 66.66666667%; }
+  .pg-col-lg-9 { flex: 0 0 auto; width: 75%; }
+  .pg-col-lg-10 { flex: 0 0 auto; width: 83.33333333%; }
+  .pg-col-lg-11 { flex: 0 0 auto; width: 91.66666667%; }
+  .pg-col-lg-12 { flex: 0 0 auto; width: 100%; }
+}
+
+@media (min-width: 1200px) {
+  .pg-col-xl-1 { flex: 0 0 auto; width: 8.33333333%; }
+  .pg-col-xl-2 { flex: 0 0 auto; width: 16.66666667%; }
+  .pg-col-xl-3 { flex: 0 0 auto; width: 25%; }
+  .pg-col-xl-4 { flex: 0 0 auto; width: 33.33333333%; }
+  .pg-col-xl-5 { flex: 0 0 auto; width: 41.66666667%; }
+  .pg-col-xl-6 { flex: 0 0 auto; width: 50%; }
+  .pg-col-xl-7 { flex: 0 0 auto; width: 58.33333333%; }
+  .pg-col-xl-8 { flex: 0 0 auto; width: 66.66666667%; }
+  .pg-col-xl-9 { flex: 0 0 auto; width: 75%; }
+  .pg-col-xl-10 { flex: 0 0 auto; width: 83.33333333%; }
+  .pg-col-xl-11 { flex: 0 0 auto; width: 91.66666667%; }
+  .pg-col-xl-12 { flex: 0 0 auto; width: 100%; }
+}
+
+/* Grid içindeki bölümlerde fazla dikey boşluğu sıkıştır */
+.pg-nested :is(section, .pg-nested-root) {
+  padding-top: 0.5rem !important;
+  padding-bottom: 0.5rem !important;
+}
+
+.pg-nested .mx-auto.max-w-6xl,
+.pg-nested .mx-auto.max-w-7xl,
+.pg-nested .mx-auto.max-w-3xl,
+.pg-nested .mx-auto.max-w-2xl {
+  max-width: 100% !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}

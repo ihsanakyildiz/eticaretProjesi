@@ -1,0 +1,26 @@
+{
+  "admin": {
+    "login": {
+      "brand": "İhsan Akyıldız",
+      "welcomeTitle": "Welcome to the admin panel",
+      "welcomeText": "Manage projects, works, blog posts and pages from a single dashboard.",
+      "title": "Sign In",
+      "subtitle": "Sign in with your admin account to continue.",
+      "email": "Email",
+      "password": "Password",
+      "remember": "Remember me",
+      "submit": "Sign In",
+      "submitting": "Signing in...",
+      "errorRequired": "Email and password are required.",
+      "errorInvalid": "Invalid email or password.",
+      "errorGeneric": "Unable to sign in. Please try again."
+    },
+    "dashboard": {
+      "title": "Dashboard",
+      "logout": "Sign Out"
+    }
+  },
+  "common": {
+    "loading": "Loading..."
+  }
+}

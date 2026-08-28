@@ -1,0 +1,987 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  MEMBER
+}
+
+model User {
+  id               String                   @id @default(cuid())
+  name             String?
+  email            String                   @unique @db.VarChar(191)
+  emailVerified    DateTime?
+  password         String?
+  image            String?                  @db.VarChar(500)
+  phone            String?                  @db.VarChar(50)
+  role             Role                     @default(MEMBER)
+  isActive         Boolean                  @default(true)
+  stripeCustomerId String?                  @unique @db.VarChar(191)
+  createdAt        DateTime                 @default(now())
+  updatedAt        DateTime                 @updatedAt
+  accounts         Account[]
+  passwordResetTokens PasswordResetToken[]
+  subscriptions    MembershipSubscription[]
+
+  @@index([role, isActive])
+  @@map("users")
+}
+
+/// Auth.js OAuth hesap bağlantısı
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type              String  @db.VarChar(50)
+  provider          String  @db.VarChar(50)
+  providerAccountId String  @db.VarChar(191)
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String? @db.VarChar(50)
+  scope             String? @db.Text
+  id_token          String? @db.Text
+  session_state     String? @db.VarChar(191)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+  @@map("accounts")
+}
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  token     String   @unique @db.VarChar(191)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@map("password_reset_tokens")
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  INCOMPLETE
+  TRIALING
+}
+
+enum BillingInterval {
+  MONTHLY
+  YEARLY
+}
+
+model MembershipSubscription {
+  id                   String             @id @default(cuid())
+  userId               String
+  user                 User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  pricingPlanId        String
+  pricingPlan          PricingPlan        @relation(fields: [pricingPlanId], references: [id], onDelete: Restrict)
+  status               SubscriptionStatus @default(INCOMPLETE)
+  billingInterval      BillingInterval    @default(MONTHLY)
+  stripeSubscriptionId String?            @unique @db.VarChar(191)
+  stripePriceId        String?            @db.VarChar(191)
+  currentPeriodEnd     DateTime?
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  @@index([userId, status])
+  @@index([pricingPlanId])
+  @@map("membership_subscriptions")
+}
+
+model Language {
+  id           String        @id @default(cuid())
+  code         String        @unique @db.VarChar(10)
+  name         String        @db.VarChar(100)
+  isDefault    Boolean       @default(false)
+  isActive     Boolean       @default(true)
+  sortOrder    Int           @default(0)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  translations Translation[]
+
+  @@map("languages")
+}
+
+model Translation {
+  id         String   @id @default(cuid())
+  languageId String
+  language   Language @relation(fields: [languageId], references: [id], onDelete: Cascade)
+  namespace  String   @db.VarChar(100)
+  key        String   @db.VarChar(191)
+  value      String   @db.Text
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([languageId, namespace, key])
+  @@index([namespace, key])
+  @@map("translations")
+}
+
+model Setting {
+  id        String   @id @default(cuid())
+  group     String   @db.VarChar(50)
+  key       String   @unique @db.VarChar(100)
+  value     String   @db.Text
+  label     String   @db.VarChar(191)
+  type      String   @default("text") @db.VarChar(30)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([group])
+  @@map("settings")
+}
+
+/// Hizmet kategorileri (Web Tasarım, Web Programlama vb.) — sınırsız alt kategori
+model WorkCategory {
+  id             String         @id @default(cuid())
+  parentId       String?
+  parent         WorkCategory?  @relation("WorkCategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children       WorkCategory[] @relation("WorkCategoryTree")
+  name           String         @db.VarChar(191)
+  slug           String         @unique @db.VarChar(191)
+  description    String?        @db.Text
+  content        String?        @db.LongText
+  image          String?        @db.VarChar(500)
+  icon           String?        @db.VarChar(100)
+  isActive       Boolean        @default(true)
+  sortOrder      Int            @default(0)
+  seoTitle       String?        @db.VarChar(191)
+  seoDescription String?        @db.VarChar(500)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  works          Work[]
+  menuItems      MenuItem[]
+  pageSections   PageSection[]
+
+  @@index([parentId])
+  @@index([isActive, sortOrder])
+  @@map("work_categories")
+}
+
+/// Yapılan işler / hizmet içerikleri
+model Work {
+  id             String        @id @default(cuid())
+  categoryId     String?
+  category       WorkCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  title          String        @db.VarChar(191)
+  slug           String        @unique @db.VarChar(191)
+  summary        String?       @db.Text
+  content        String?       @db.LongText
+  image          String?       @db.VarChar(500)
+  /// Tam sayfa site ekran görüntüsü — ana sayfada hover ile kaydırma
+  previewImage   String?       @db.VarChar(500)
+  isActive       Boolean       @default(true)
+  sortOrder      Int           @default(0)
+  seoTitle       String?       @db.VarChar(191)
+  seoDescription String?       @db.VarChar(500)
+  /// Örn. kategori silinince: "Kategorisi olmadığı için pasif edildi"
+  statusNote     String?       @db.VarChar(255)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  projects       Project[]     @relation("WorkToProjects")
+  pages          Page[]        @relation("PageToWorks")
+  menuItems      MenuItem[]
+  sectionLinks   PageSectionWork[]
+
+  @@index([categoryId])
+  @@index([isActive, sortOrder])
+  @@map("works")
+}
+
+/// Proje kategorileri — sınırsız alt kategori
+model ProjectCategory {
+  id             String            @id @default(cuid())
+  parentId       String?
+  parent         ProjectCategory?  @relation("ProjectCategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children       ProjectCategory[] @relation("ProjectCategoryTree")
+  name           String            @db.VarChar(191)
+  slug           String            @unique @db.VarChar(191)
+  description    String?           @db.Text
+  content        String?           @db.LongText
+  image          String?           @db.VarChar(500)
+  icon           String?           @db.VarChar(100)
+  isActive       Boolean           @default(true)
+  sortOrder      Int               @default(0)
+  seoTitle       String?           @db.VarChar(191)
+  seoDescription String?           @db.VarChar(500)
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  projects       Project[]
+  menuItems      MenuItem[]
+  pageSections   PageSection[]
+
+  @@index([parentId])
+  @@index([isActive, sortOrder])
+  @@map("project_categories")
+}
+
+/// Portföy / proje içerikleri
+model Project {
+  id              String                @id @default(cuid())
+  categoryId      String?
+  category        ProjectCategory?      @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  clientId        String?
+  client          ProjectClient?        @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  title           String                @db.VarChar(191)
+  slug            String                @unique @db.VarChar(191)
+  summary         String?               @db.Text
+  content         String?               @db.LongText
+  image           String?               @db.VarChar(500)
+  /// Canlı proje / site URL
+  projectUrl      String?               @db.VarChar(500)
+  /// true ise URL vitrinde gizlenir (NDA vb.)
+  hideProjectUrl  Boolean               @default(false)
+  isFeatured      Boolean               @default(false)
+  projectYear     Int?
+  projectRole     String?               @db.VarChar(191)
+  projectDuration String?               @db.VarChar(100)
+  isActive        Boolean               @default(true)
+  sortOrder       Int                   @default(0)
+  seoTitle        String?               @db.VarChar(191)
+  seoDescription  String?               @db.VarChar(500)
+  statusNote      String?               @db.VarChar(255)
+  brochurePdf     String?               @db.VarChar(500)
+  brochureZip     String?               @db.VarChar(500)
+  highlights      String?               @db.Text
+  faqGroupId      String?
+  faqGroup        FaqGroup?             @relation(fields: [faqGroupId], references: [id], onDelete: SetNull)
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+  features        ProjectFeature[]      @relation("ProjectToFeatures")
+  gallery         ProjectGalleryImage[]
+  metrics         ProjectMetric[]
+  works           Work[]                @relation("WorkToProjects")
+  pages           Page[]                @relation("PageToProjects")
+  menuItems       MenuItem[]
+  sectionLinks    PageSectionProject[]
+
+  @@index([categoryId])
+  @@index([clientId])
+  @@index([faqGroupId])
+  @@index([isActive, sortOrder])
+  @@index([isFeatured, isActive])
+  @@map("projects")
+}
+
+/// Portföy müşterileri — bir müşterinin birden fazla projesi olabilir
+model ProjectClient {
+  id          String    @id @default(cuid())
+  name        String    @db.VarChar(191)
+  slug        String    @unique @db.VarChar(191)
+  sector      String?   @db.VarChar(191)
+  logo        String?   @db.VarChar(500)
+  website     String?   @db.VarChar(500)
+  description String?   @db.Text
+  isActive    Boolean   @default(true)
+  sortOrder   Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  projects    Project[]
+
+  @@index([isActive, sortOrder])
+  @@map("project_clients")
+}
+
+/// Proje galeri görselleri
+model ProjectGalleryImage {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  image     String   @db.VarChar(500)
+  alt       String?  @db.VarChar(191)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([projectId, sortOrder])
+  @@map("project_gallery_images")
+}
+
+/// Proje sonuç metrikleri (KPI)
+model ProjectMetric {
+  id        String  @id @default(cuid())
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  label     String  @db.VarChar(100)
+  value     String  @db.VarChar(100)
+  sortOrder Int     @default(0)
+
+  @@index([projectId, sortOrder])
+  @@map("project_metrics")
+}
+
+/// Projede seçilebilir özellikler / teknolojiler (PHP, React, MySQL vb.)
+model ProjectFeature {
+  id          String    @id @default(cuid())
+  name        String    @db.VarChar(191)
+  slug        String    @unique @db.VarChar(191)
+  description String?   @db.Text
+  icon        String?   @db.VarChar(100)
+  /// İkon rengi (hex, örn. #7c3aed)
+  iconColor   String?   @db.VarChar(20)
+  isActive    Boolean   @default(true)
+  /// Ana sayfa “Neden En İyisiyiz” accordion’ında göster
+  showOnHome  Boolean   @default(false)
+  sortOrder   Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  projects    Project[] @relation("ProjectToFeatures")
+
+  @@index([isActive, sortOrder])
+  @@index([showOnHome, isActive, sortOrder])
+  @@map("project_features")
+}
+
+/// Blog kategorileri — sınırsız alt kategori
+model BlogCategory {
+  id             String         @id @default(cuid())
+  parentId       String?
+  parent         BlogCategory?  @relation("BlogCategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children       BlogCategory[] @relation("BlogCategoryTree")
+  name           String         @db.VarChar(191)
+  slug           String         @unique @db.VarChar(191)
+  description    String?        @db.Text
+  content        String?        @db.LongText
+  image          String?        @db.VarChar(500)
+  icon           String?        @db.VarChar(100)
+  isActive       Boolean        @default(true)
+  sortOrder      Int            @default(0)
+  seoTitle       String?        @db.VarChar(191)
+  seoDescription String?        @db.VarChar(500)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  posts          BlogPost[]
+  menuItems      MenuItem[]
+  pageSections   PageSection[]
+
+  @@index([parentId])
+  @@index([isActive, sortOrder])
+  @@map("blog_categories")
+}
+
+/// Blog yazıları
+model BlogPost {
+  id             String        @id @default(cuid())
+  categoryId     String?
+  category       BlogCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  title          String        @db.VarChar(191)
+  slug           String        @unique @db.VarChar(191)
+  summary        String?       @db.Text
+  content        String?       @db.LongText
+  image          String?       @db.VarChar(500)
+  isActive       Boolean       @default(true)
+  sortOrder      Int           @default(0)
+  seoTitle       String?       @db.VarChar(191)
+  seoDescription String?       @db.VarChar(500)
+  statusNote     String?       @db.VarChar(255)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  pages          Page[]        @relation("PageToPosts")
+  menuItems      MenuItem[]
+  sectionLinks   PageSectionPost[]
+
+  @@index([categoryId])
+  @@index([isActive, sortOrder])
+  @@map("blog_posts")
+}
+
+enum PageType {
+  CLASSIC
+  ADVANCED
+}
+
+/// Gelişmiş sayfa bölüm tipleri (Elementor benzeri bloklar)
+enum PageSectionType {
+  HERO
+  TRUSTED_CLIENTS
+  CARDS
+  ADVANCED_CARD
+  PROJECTS
+  WORKS
+  BLOG
+  FAQ
+  RICH_TEXT
+  PRICING
+  CTA
+  CONTACT_FORM
+  CONTACT_INFO
+  GRID_ROW
+}
+
+/// CMS sayfaları — klasik içerik veya gelişmiş builder
+model Page {
+  id             String        @id @default(cuid())
+  type           PageType      @default(CLASSIC)
+  title          String        @db.VarChar(191)
+  slug           String        @unique @db.VarChar(191)
+  summary        String?       @db.Text
+  content        String?       @db.LongText
+  image          String?       @db.VarChar(500)
+  isActive       Boolean       @default(true)
+  /// Sayfa kenar çubuğu (PAGE_DETAIL) gösterilsin mi
+  sidebarEnabled Boolean       @default(true)
+  sortOrder      Int           @default(0)
+  seoTitle       String?       @db.VarChar(191)
+  seoDescription String?       @db.VarChar(500)
+  /// Eski alan — yeni yapı PageSection kullanır
+  builderData    String?       @db.LongText
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  works          Work[]        @relation("PageToWorks")
+  projects       Project[]     @relation("PageToProjects")
+  posts          BlogPost[]    @relation("PageToPosts")
+  menuItems      MenuItem[]
+  sections       PageSection[]
+
+  @@index([type, isActive, sortOrder])
+  @@map("pages")
+}
+
+/// Gelişmiş sayfa bölümü — sıralanabilir blok (GRID_ROW içinde iç içe olabilir)
+model PageSection {
+  id                  String            @id @default(cuid())
+  pageId              String
+  page                Page              @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  /// Grid satırı içindeki çocuk bölümler için üst satır
+  parentId            String?
+  parent              PageSection?      @relation("SectionTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children            PageSection[]     @relation("SectionTree")
+  type                PageSectionType
+  /// Admin listesinde görünen etiket
+  label               String?           @db.VarChar(191)
+  title               String?           @db.VarChar(255)
+  subtitle            String?           @db.Text
+  content             String?           @db.LongText
+  /// JSON: limit, ctaLabel, gridRow, gridCol vb.
+  settings            String?           @db.Text
+  sortOrder           Int               @default(0)
+  isActive            Boolean           @default(true)
+  heroId              String?
+  hero                Hero?             @relation(fields: [heroId], references: [id], onDelete: SetNull)
+  faqGroupId          String?
+  faqGroup            FaqGroup?         @relation(fields: [faqGroupId], references: [id], onDelete: SetNull)
+  projectCategoryId   String?
+  projectCategory     ProjectCategory?  @relation(fields: [projectCategoryId], references: [id], onDelete: SetNull)
+  workCategoryId      String?
+  workCategory        WorkCategory?     @relation(fields: [workCategoryId], references: [id], onDelete: SetNull)
+  blogCategoryId      String?
+  blogCategory        BlogCategory?     @relation(fields: [blogCategoryId], references: [id], onDelete: SetNull)
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+  cards               PageSectionCard[]
+  projects            PageSectionProject[]
+  posts               PageSectionPost[]
+  works               PageSectionWork[]
+
+  @@index([pageId, parentId, sortOrder])
+  @@index([pageId, isActive])
+  @@index([type])
+  @@map("page_sections")
+}
+
+model PageSectionCard {
+  sectionId String
+  cardId    String
+  sortOrder Int         @default(0)
+  section   PageSection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  card      Card        @relation(fields: [cardId], references: [id], onDelete: Cascade)
+
+  @@id([sectionId, cardId])
+  @@index([cardId])
+  @@map("page_section_cards")
+}
+
+model PageSectionProject {
+  sectionId String
+  projectId String
+  sortOrder Int         @default(0)
+  section   PageSection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  project   Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@id([sectionId, projectId])
+  @@index([projectId])
+  @@map("page_section_projects")
+}
+
+model PageSectionPost {
+  sectionId String
+  postId    String
+  sortOrder Int         @default(0)
+  section   PageSection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  post      BlogPost    @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@id([sectionId, postId])
+  @@index([postId])
+  @@map("page_section_posts")
+}
+
+model PageSectionWork {
+  sectionId String
+  workId    String
+  sortOrder Int         @default(0)
+  section   PageSection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  work      Work        @relation(fields: [workId], references: [id], onDelete: Cascade)
+
+  @@id([sectionId, workId])
+  @@index([workId])
+  @@map("page_section_works")
+}
+
+/// Hero alanları (örn. Anasayfa Hero) — birden fazla slayt
+model Hero {
+  id          String      @id @default(cuid())
+  name        String      @db.VarChar(191)
+  slug        String      @unique @db.VarChar(191)
+  description String?     @db.Text
+  isActive    Boolean     @default(true)
+  sortOrder   Int         @default(0)
+  autoplay    Boolean     @default(true)
+  intervalMs  Int         @default(6000)
+  showDots    Boolean     @default(true)
+  showArrows  Boolean     @default(true)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  slides       HeroSlide[]
+  pageSections PageSection[]
+
+  @@index([isActive, sortOrder])
+  @@map("heroes")
+}
+
+enum HeroLayout {
+  SPLIT_COLLAGE
+  FULL_BLEED
+  CENTERED
+}
+
+enum HeroMediaKind {
+  LOGO
+  COLLAGE
+  AVATAR
+}
+
+/// Hero slaytı — gelişmiş görünüm + metin + medya
+model HeroSlide {
+  id             String      @id @default(cuid())
+  heroId         String
+  hero           Hero        @relation(fields: [heroId], references: [id], onDelete: Cascade)
+  /// Admin etiket (Slayt 1 vb.)
+  label          String?     @db.VarChar(191)
+  isActive       Boolean     @default(true)
+  sortOrder      Int         @default(0)
+
+  badgeText      String?     @db.VarChar(120)
+  badgeIcon      String?     @db.VarChar(50)
+  /// Badge altındaki renkli üst satır (örn. İhsan Akyıldız)
+  kicker         String?     @db.VarChar(191)
+  headline       String      @db.VarChar(255)
+  headlineAccent String?     @db.VarChar(191)
+  subheadline    String?     @db.Text
+  ctaLabel       String?     @db.VarChar(100)
+  ctaUrl         String?     @db.VarChar(500)
+  ctaSecondaryLabel String?  @db.VarChar(100)
+  ctaSecondaryUrl   String?  @db.VarChar(500)
+  trustLabel     String?     @db.VarChar(120)
+
+  overlayPercent Int         @default(0)
+  titleColor     String      @default("#0f172a") @db.VarChar(30)
+  accentColor    String      @default("#7c3aed") @db.VarChar(30)
+  subtitleColor  String      @default("#64748b") @db.VarChar(30)
+  ctaBgColor     String      @default("#7c3aed") @db.VarChar(30)
+  ctaTextColor   String      @default("#ffffff") @db.VarChar(30)
+  titleFont      String?     @db.VarChar(191)
+  titleSizePx    Int?
+  subtitleSizePx Int?
+  imageWidthPx   Int?
+  imageHeightPx  Int?
+  layout         HeroLayout  @default(SPLIT_COLLAGE)
+  /// grid | plain | soft-gradient
+  backgroundStyle String     @default("grid") @db.VarChar(40)
+  /// Opsiyonel arka plan görseli
+  backgroundImage String?    @db.VarChar(500)
+  themeColor     String?     @db.VarChar(30)
+
+  showStars      Boolean     @default(true)
+  starCount      Int         @default(5)
+  showAvatars    Boolean     @default(true)
+
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  media          HeroSlideMedia[]
+
+  @@index([heroId, sortOrder])
+  @@index([heroId, isActive])
+  @@map("hero_slides")
+}
+
+model HeroSlideMedia {
+  id        String        @id @default(cuid())
+  slideId   String
+  slide     HeroSlide     @relation(fields: [slideId], references: [id], onDelete: Cascade)
+  kind      HeroMediaKind
+  image     String        @db.VarChar(500)
+  alt       String?       @db.VarChar(191)
+  label     String?       @db.VarChar(191)
+  href      String?       @db.VarChar(500)
+  sortOrder Int           @default(0)
+  createdAt DateTime      @default(now())
+
+  @@index([slideId, kind, sortOrder])
+  @@map("hero_slide_media")
+}
+
+enum CardMediaType {
+  IMAGE
+  ICON
+}
+
+enum CardType {
+  CLASSIC
+  ADVANCED
+}
+
+/// Görselin içeriğe göre konumu (gelişmiş kart)
+enum CardLayout {
+  MEDIA_LEFT
+  MEDIA_RIGHT
+  MEDIA_TOP
+  MEDIA_BOTTOM
+}
+
+/// Ön yüz kartları — klasik (ikon/görsel) veya gelişmiş (neden biz / split layout)
+model Card {
+  id        String        @id @default(cuid())
+  type      CardType      @default(CLASSIC)
+  title     String        @db.VarChar(191)
+  /// Gelişmiş kartta bölüm rozeti (örn. Neden Biz)
+  badgeText String?       @db.VarChar(120)
+  /// Gelişmiş kartta sağ/sol metin başlığı
+  subtitle  String?       @db.VarChar(255)
+  /// Zengin metin açıklama (HTML)
+  description String?     @db.LongText
+  /// JSON dizi: ["özellik 1", "özellik 2"]
+  features  String?       @db.Text
+  layout    CardLayout    @default(MEDIA_LEFT)
+  mediaType CardMediaType @default(ICON)
+  /// Kapak / yan görsel
+  image     String?       @db.VarChar(500)
+  /// Lucide ikon adı — klasik kart (mediaType = ICON)
+  icon      String?       @db.VarChar(100)
+  /// Çerçeve + sparkle (gelişmiş)
+  showFrame    Boolean    @default(true)
+  showSparkles Boolean    @default(true)
+  videoLabel   String?    @db.VarChar(100)
+  videoUrl     String?    @db.VarChar(500)
+  profileName  String?    @db.VarChar(120)
+  profileRole  String?    @db.VarChar(120)
+  profileImage String?    @db.VarChar(500)
+  statValue    String?    @db.VarChar(40)
+  statLabel    String?    @db.VarChar(100)
+  /// Kart / CTA linki
+  href         String            @default("#") @db.VarChar(500)
+  isActive     Boolean           @default(true)
+  sortOrder    Int               @default(0)
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  sectionLinks PageSectionCard[]
+
+  @@index([type, isActive, sortOrder])
+  @@index([isActive, sortOrder])
+  @@map("cards")
+}
+
+/// SSS grubu — farklı sayfalarda kullanılabilir
+model FaqGroup {
+  id          String    @id @default(cuid())
+  name        String    @db.VarChar(191)
+  slug        String    @unique @db.VarChar(191)
+  description String?   @db.Text
+  isActive    Boolean   @default(true)
+  sortOrder   Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  items        FaqItem[]
+  projects     Project[]
+  pageSections PageSection[]
+
+  @@index([isActive, sortOrder])
+  @@map("faq_groups")
+}
+
+/// SSS grubuna ait soru-cevap
+model FaqItem {
+  id        String   @id @default(cuid())
+  groupId   String
+  group     FaqGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  question  String   @db.VarChar(500)
+  answer    String   @db.LongText
+  isActive  Boolean  @default(true)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([groupId, sortOrder])
+  @@index([groupId, isActive])
+  @@map("faq_items")
+}
+
+/// Fiyatlandırma paketleri — anasayfa / gelişmiş sayfa PRICING bölümü
+enum PricingPriceType {
+  FIXED
+  RANGE
+  QUOTE
+}
+
+/// Fiyatlandırma paketleri — anasayfa / gelişmiş sayfa PRICING bölümü
+model PricingPlan {
+  id                    String                   @id @default(cuid())
+  name                  String                   @db.VarChar(191)
+  slug                  String                   @unique @db.VarChar(191)
+  blurb                 String?                  @db.VarChar(255)
+  /// Detay sayfası zengin metin (HTML)
+  detailContent         String?                  @db.LongText
+  /// Detay sayfası kapak görseli
+  coverImage            String?                  @db.VarChar(500)
+  /// Sabit fiyat gösterimi
+  priceType             PricingPriceType         @default(FIXED)
+  /// RANGE: alt sınır · QUOTE: kullanılmaz
+  priceRangeMin         String?                  @db.VarChar(80)
+  /// RANGE: üst sınır
+  priceRangeMax         String?                  @db.VarChar(80)
+  priceMonthly          String                   @db.VarChar(80)
+  priceYearly           String                   @db.VarChar(80)
+  /// Doluysa sitede liste fiyatı üstü çizili, bu değer asıl fiyat olur
+  priceMonthlyDiscount  String?                  @db.VarChar(80)
+  priceYearlyDiscount   String?                  @db.VarChar(80)
+  /// false ise fiyat yanında /ay /yıl gösterilmez (örn. Ücretsiz)
+  showPeriod            Boolean                  @default(true)
+  featured              Boolean                  @default(false)
+  /// JSON: [{ "label": string, "included": boolean }]
+  features              String?                  @db.Text
+  ctaLabel              String                   @default("Başlayın") @db.VarChar(100)
+  ctaHref               String                   @default("/iletisim") @db.VarChar(500)
+  purchasable           Boolean                  @default(false)
+  stripePriceIdMonthly  String?                  @db.VarChar(191)
+  stripePriceIdYearly   String?                  @db.VarChar(191)
+  isActive              Boolean                  @default(true)
+  sortOrder             Int                      @default(0)
+  createdAt             DateTime                 @default(now())
+  updatedAt             DateTime                 @updatedAt
+  subscriptions         MembershipSubscription[]
+
+  @@index([isActive, sortOrder])
+  @@map("pricing_plans")
+}
+
+enum MenuLinkType {
+  CUSTOM
+  PAGE
+  WORK_CATEGORY
+  WORK
+  PROJECT_CATEGORY
+  PROJECT
+  BLOG_CATEGORY
+  BLOG_POST
+}
+
+/// Menü grubu — örn. Header Menü, Footer Menü
+model MenuGroup {
+  id          String     @id @default(cuid())
+  name        String     @db.VarChar(191)
+  slug        String     @unique @db.VarChar(191)
+  description String?    @db.Text
+  isActive    Boolean    @default(true)
+  sortOrder   Int        @default(0)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  items       MenuItem[]
+
+  @@index([isActive, sortOrder])
+  @@map("menu_groups")
+}
+
+/// Menü öğesi — CMS içeriği veya özel (mega) link; alt menü için parentId
+model MenuItem {
+  id       String    @id @default(cuid())
+  groupId  String
+  group    MenuGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  parentId String?
+  parent   MenuItem? @relation("MenuItemTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children MenuItem[] @relation("MenuItemTree")
+
+  label       String       @db.VarChar(191)
+  linkType    MenuLinkType @default(CUSTOM)
+  /// CUSTOM için URL; diğer tiplerde opsiyonel override
+  href        String?      @db.VarChar(500)
+  description String?      @db.VarChar(255)
+  openInNewTab Boolean     @default(false)
+
+  pageId            String?
+  page              Page?            @relation(fields: [pageId], references: [id], onDelete: SetNull)
+  workCategoryId    String?
+  workCategory      WorkCategory?    @relation(fields: [workCategoryId], references: [id], onDelete: SetNull)
+  workId            String?
+  work              Work?            @relation(fields: [workId], references: [id], onDelete: SetNull)
+  projectCategoryId String?
+  projectCategory   ProjectCategory? @relation(fields: [projectCategoryId], references: [id], onDelete: SetNull)
+  projectId         String?
+  project           Project?         @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  blogCategoryId    String?
+  blogCategory      BlogCategory?    @relation(fields: [blogCategoryId], references: [id], onDelete: SetNull)
+  blogPostId        String?
+  blogPost          BlogPost?        @relation(fields: [blogPostId], references: [id], onDelete: SetNull)
+
+  isActive  Boolean  @default(true)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([groupId, parentId, sortOrder])
+  @@index([groupId, isActive])
+  @@map("menu_items")
+}
+
+enum MailFolder {
+  INBOX
+  SENT
+  DRAFT
+  SPAM
+  TRASH
+}
+
+enum MailSource {
+  CONTACT_FORM
+  IMAP
+  COMPOSED
+  SYSTEM
+}
+
+/// Admin paneli e-posta / iletişim mesajları
+model MailMessage {
+  id              String     @id @default(cuid())
+  folder          MailFolder @default(INBOX)
+  source          MailSource @default(CONTACT_FORM)
+  fromName        String     @db.VarChar(191)
+  fromEmail       String     @db.VarChar(191)
+  toEmail         String     @db.VarChar(191)
+  replyToEmail    String?    @db.VarChar(191)
+  subject         String     @db.VarChar(500)
+  preview         String     @db.VarChar(500)
+  bodyText        String     @db.Text
+  bodyHtml        String?    @db.LongText
+  isRead          Boolean    @default(false)
+  isStarred       Boolean    @default(false)
+  hasAttachment   Boolean    @default(false)
+  /// Yanıt zinciri (cevaplanan mesaj)
+  parentId        String?
+  parent          MailMessage?  @relation("MailThread", fields: [parentId], references: [id], onDelete: SetNull)
+  replies         MailMessage[] @relation("MailThread")
+  attachments     MailAttachment[]
+  /// Etiket: updates | important | personal | private | contact
+  label           String?    @db.VarChar(50)
+  externalId      String?    @unique @db.VarChar(191)
+  receivedAt      DateTime   @default(now())
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  @@index([folder, receivedAt])
+  @@index([isStarred, receivedAt])
+  @@index([isRead, folder])
+  @@index([label])
+  @@map("mail_messages")
+}
+
+model MailAttachment {
+  id          String      @id @default(cuid())
+  messageId   String
+  message     MailMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  filename    String      @db.VarChar(255)
+  mimeType    String      @db.VarChar(127)
+  size        Int         @default(0)
+  contentId   String?     @db.VarChar(191)
+  isInline    Boolean     @default(false)
+  storagePath String      @db.VarChar(500)
+  createdAt   DateTime    @default(now())
+
+  @@index([messageId])
+  @@map("mail_attachments")
+}
+
+/// Tema sidebar konumları (WordPress widget area benzeri)
+enum SidebarLocation {
+  BLOG_LIST
+  BLOG_DETAIL
+  WORKS_LIST
+  WORKS_DETAIL
+  PROJECTS_LIST
+  PROJECTS_DETAIL
+  PAGE_DETAIL
+}
+
+enum SidebarPlacement {
+  LEFT
+  RIGHT
+}
+
+enum SidebarWidgetType {
+  BLOG_CATEGORIES
+  WORK_CATEGORIES
+  PROJECT_CATEGORIES
+  CONTACT_INFO
+  RICH_TEXT
+  IMAGE
+}
+
+/// Yönetilebilir site sidebar’ı
+model SiteSidebar {
+  id          String           @id @default(cuid())
+  name        String           @db.VarChar(191)
+  slug        String           @unique @db.VarChar(191)
+  description String?          @db.Text
+  /// Boşsa yalnızca taslak / kullanılabilir; doluysa ilgili alanda gösterilir
+  location    SidebarLocation?
+  /// İçeriğin solunda veya sağında gösterim
+  placement   SidebarPlacement @default(LEFT)
+  isActive    Boolean          @default(true)
+  sortOrder   Int              @default(0)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  widgets     SiteSidebarWidget[]
+
+  @@index([isActive, sortOrder])
+  @@index([location, isActive])
+  @@map("site_sidebars")
+}
+
+/// Sidebar içindeki widget / blok
+model SiteSidebarWidget {
+  id        String            @id @default(cuid())
+  sidebarId String
+  sidebar   SiteSidebar       @relation(fields: [sidebarId], references: [id], onDelete: Cascade)
+  type      SidebarWidgetType
+  title     String?           @db.VarChar(191)
+  /// RICH_TEXT HTML içeriği
+  content   String?           @db.LongText
+  imagePath String?           @db.VarChar(500)
+  imageAlt  String?           @db.VarChar(191)
+  /// JSON ayarlar (iletişim alanları, sayaç, link vb.)
+  settings  String?           @db.Text
+  isActive  Boolean           @default(true)
+  sortOrder Int               @default(0)
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+
+  @@index([sidebarId, sortOrder])
+  @@index([sidebarId, isActive])
+  @@map("site_sidebar_widgets")
+}

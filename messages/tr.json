@@ -1,0 +1,45 @@
+{
+  "admin": {
+    "login": {
+      "brand": "İhsan Akyıldız",
+      "welcomeTitle": "Yönetim paneline hoş geldiniz",
+      "welcomeText": "Projeler, çalışmalar, blog içerikleri ve sayfalarınızı tek panelden yönetin.",
+      "title": "Giriş Yap",
+      "subtitle": "Devam etmek için yönetici hesabınızla oturum açın.",
+      "email": "E-posta",
+      "password": "Şifre",
+      "remember": "Beni hatırla",
+      "submit": "Giriş Yap",
+      "submitting": "Giriş yapılıyor...",
+      "errorRequired": "E-posta ve şifre zorunludur.",
+      "errorInvalid": "E-posta veya şifre hatalı.",
+      "errorGeneric": "Giriş yapılamadı. Lütfen tekrar deneyin."
+    },
+    "dashboard": {
+      "title": "Dashboard",
+      "welcome": "Portal içeriklerinizin genel durumunu buradan takip edebilirsiniz.",
+      "logout": "Çıkış Yap",
+      "quickAccess": "Hızlı Erişim"
+    },
+    "nav": {
+      "menu": "Menü",
+      "content": "İçerik",
+      "system": "Sistem",
+      "dashboard": "Dashboard",
+      "pages": "Sayfalar",
+      "works": "Yapılan İşler",
+      "projects": "Projeler",
+      "blog": "Blog",
+      "settings": "Ayarlar",
+      "generalSettings": "Genel Ayarlar",
+      "performance": "Performans",
+      "languages": "Diller",
+      "translations": "Çeviriler",
+      "categories": "Kategoriler",
+      "posts": "Yazılar"
+    }
+  },
+  "common": {
+    "loading": "Yükleniyor..."
+  }
+}

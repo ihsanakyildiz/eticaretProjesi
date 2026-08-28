@@ -1,0 +1,47 @@
+{
+  "name": "İhsan Akyıldız",
+  "short_name": "İhsan Akyıldız",
+  "description": "Web tasarım, yazılım geliştirme ve dijital çözümler sunan profesyonel stüdyo.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#405189",
+  "icons": [
+    {
+      "src": "/favicon-32x32.png",
+      "sizes": "32x32",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/favicon-32x32.webp",
+      "sizes": "32x32",
+      "type": "image/webp",
+      "purpose": "any"
+    },
+    {
+      "src": "/favicon-16x16.png",
+      "sizes": "16x16",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/favicon-16x16.webp",
+      "sizes": "16x16",
+      "type": "image/webp",
+      "purpose": "any"
+    },
+    {
+      "src": "/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/apple-touch-icon.webp",
+      "sizes": "180x180",
+      "type": "image/webp",
+      "purpose": "any"
+    }
+  ]
+}
