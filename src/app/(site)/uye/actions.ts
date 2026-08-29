@@ -4,7 +4,14 @@ import { hash, compare } from "bcryptjs";
 import { revalidatePath } from "next/cache";
 import { Role } from "@prisma/client";
 import { auth, signOut } from "@/auth";
-import { requireMember, getMembershipFlags } from "@/lib/membership";
+import {
+  appendCustomerAddress,
+  customerAddressToDraft,
+  prepareAddressDrafts,
+  replaceCustomerAddresses,
+} from "@/lib/customer-addresses";
+import { emptyAddressDraft, normalizeAddressDefaults } from "@/lib/customers";
+import { requireMember } from "@/lib/membership";
 import { prisma } from "@/lib/prisma";
 import {
   deletePublicAsset,
@@ -22,9 +29,6 @@ export async function updateMemberProfileAction(
   _prev: ProfileFormState,
   formData: FormData,
 ): Promise<ProfileFormState> {
-  const flags = await getMembershipFlags();
-  if (!flags.enabled) return { error: "Üyelik sistemi kapalı." };
-
   let session;
   try {
     session = await requireMember();
@@ -60,9 +64,6 @@ export async function updateMemberPasswordAction(
   _prev: ProfileFormState,
   formData: FormData,
 ): Promise<ProfileFormState> {
-  const flags = await getMembershipFlags();
-  if (!flags.enabled) return { error: "Üyelik sistemi kapalı." };
-
   let session;
   try {
     session = await requireMember();
@@ -98,9 +99,6 @@ export async function updateMemberAvatarAction(
   _prev: ProfileFormState,
   formData: FormData,
 ): Promise<ProfileFormState> {
-  const flags = await getMembershipFlags();
-  if (!flags.enabled) return { error: "Üyelik sistemi kapalı." };
-
   let session;
   try {
     session = await requireMember();
@@ -170,10 +168,6 @@ export async function memberSignOutAction() {
 }
 
 export async function ensureMemberPortalAccess() {
-  const flags = await getMembershipFlags();
-  if (!flags.enabled) {
-    return { ok: false as const, reason: "disabled" as const };
-  }
   const session = await auth();
   if (!session?.user?.id) {
     return { ok: false as const, reason: "auth" as const };
@@ -182,4 +176,66 @@ export async function ensureMemberPortalAccess() {
     return { ok: false as const, reason: "auth" as const };
   }
   return { ok: true as const, session };
+}
+
+export async function saveMemberAddressAction(
+  _prev: ProfileFormState,
+  formData: FormData,
+): Promise<ProfileFormState> {
+  const access = await ensureMemberPortalAccess();
+  if (!access.ok) return { error: "Oturum bulunamadı." };
+
+  const prepared = prepareAddressDrafts(
+    JSON.stringify([
+      emptyAddressDraft({
+        alias: String(formData.get("alias") ?? "").trim().slice(0, 100) || "Teslimat",
+        firstName: String(formData.get("firstName") ?? "").trim().slice(0, 100),
+        lastName: String(formData.get("lastName") ?? "").trim().slice(0, 100),
+        phone: String(formData.get("phone") ?? "").trim().slice(0, 50),
+        line1: String(formData.get("line1") ?? "").trim(),
+        line2: String(formData.get("line2") ?? "").trim(),
+        country: String(formData.get("country") ?? "").trim().slice(0, 100) || "Türkiye",
+        city: String(formData.get("city") ?? "").trim().slice(0, 100),
+        district: String(formData.get("district") ?? "").trim().slice(0, 100),
+        neighborhood: String(formData.get("neighborhood") ?? "").trim().slice(0, 150),
+        postalCode: String(formData.get("postalCode") ?? "").trim().slice(0, 20),
+        company: String(formData.get("company") ?? "").trim().slice(0, 191),
+        taxOffice: String(formData.get("taxOffice") ?? "").trim().slice(0, 100),
+        taxNumber: String(formData.get("taxNumber") ?? "").trim().slice(0, 50),
+        isDelivery: formData.get("isDelivery") !== "false",
+        isInvoice: formData.get("isInvoice") !== "false",
+        isCorporateInvoice: formData.get("isCorporateInvoice") === "on",
+        isDefaultDelivery: true,
+        isDefaultInvoice: true,
+      }),
+    ]),
+  );
+  if (prepared.error) return { error: prepared.error };
+  const draft = prepared.addresses[0];
+  if (!draft) return { error: "Adres bilgilerini doldurun." };
+
+  await prisma.$transaction((tx) => appendCustomerAddress(tx, access.session.user.id, draft));
+  revalidatePath("/uye/adresler");
+  revalidatePath("/odeme");
+  return { success: true, message: "Adres kaydedildi." };
+}
+
+export async function deleteMemberAddressAction(formData: FormData) {
+  const access = await ensureMemberPortalAccess();
+  if (!access.ok) return;
+  const id = String(formData.get("addressId") ?? "").trim();
+  if (!id) return;
+
+  const existing = await prisma.customerAddress.findMany({
+    where: { userId: access.session.user.id },
+    orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+  });
+  const drafts = normalizeAddressDefaults(
+    existing.filter((row) => row.id !== id).map(customerAddressToDraft),
+  );
+  await prisma.$transaction((tx) =>
+    replaceCustomerAddresses(tx, access.session.user.id, drafts),
+  );
+  revalidatePath("/uye/adresler");
+  revalidatePath("/odeme");
 }

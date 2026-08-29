@@ -2,10 +2,18 @@ import type { Prisma } from "@prisma/client";
 import { unstable_cache } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import {
+  getProductCategoriesBySource,
+  getProductsBySource,
+  type CatalogCategoryCard,
+  type CatalogProductCard,
+} from "@/lib/catalog-products";
+import {
   defaultLimitForType,
   parseSectionSettings,
+  productScopeIdsFromSettings,
   type PageSectionSettings,
   type PageSectionTypeValue,
+  type ProductSectionSource,
 } from "@/lib/page-sections";
 import {
   getActivePricingPlans,
@@ -65,6 +73,14 @@ const sectionInclude = {
       },
     },
   },
+  products: {
+    orderBy: { sortOrder: "asc" as const },
+    select: { productId: true },
+  },
+  listedCategories: {
+    orderBy: { sortOrder: "asc" as const },
+    select: { categoryId: true },
+  },
   hero: {
     include: {
       slides: {
@@ -89,6 +105,9 @@ const sectionInclude = {
   projectCategory: { select: { id: true, name: true, slug: true } },
   workCategory: { select: { id: true, name: true, slug: true } },
   blogCategory: { select: { id: true, name: true, slug: true } },
+  productCategory: { select: { id: true, name: true, slug: true } },
+  productBrand: { select: { id: true, name: true, slug: true } },
+  productFilterValue: { select: { id: true, name: true, slug: true } },
 } satisfies Prisma.PageSectionInclude;
 
 export type AdvancedPageWithSections = Prisma.PageGetPayload<{
@@ -233,7 +252,58 @@ export type ResolvedPageSection = {
     sector: string | null;
   }[];
   pricingPlans: PricingPlanView[];
+  products: CatalogProductCard[];
+  productSource: ProductSectionSource;
+  catalogCategories: CatalogCategoryCard[];
 };
+
+async function resolveProductsSection(
+  section: DbPageSection,
+  limit: number,
+  source: ProductSectionSource,
+) {
+  const settings = parseSectionSettings(section.settings);
+  const scope = productScopeIdsFromSettings(settings, {
+    categoryId: section.productCategoryId,
+    brandId: section.productBrandId,
+    filterValueId: section.productFilterValueId,
+  });
+  const pickedIds = section.products.map((row) => row.productId);
+
+  if (source === "MANUAL") {
+    return getProductsBySource({
+      source: "MANUAL",
+      limit,
+      productIds: pickedIds,
+    });
+  }
+
+  return getProductsBySource({
+    source,
+    rank: settings.productRank,
+    limit,
+    categoryIds: source === "CATEGORY" ? scope.categoryIds : [],
+    brandIds: source === "BRAND" ? scope.brandIds : [],
+    filterValueIds: source === "FILTER" ? scope.filterValueIds : [],
+  });
+}
+
+async function resolveProductCategoriesSection(
+  section: DbPageSection,
+  limit: number,
+) {
+  const settings = parseSectionSettings(section.settings);
+  const source = settings.productCategorySource ?? "ROOTS";
+  return getProductCategoriesBySource({
+    source,
+    limit,
+    parentId: source === "CHILDREN" ? section.productCategoryId : null,
+    categoryIds:
+      source === "MANUAL"
+        ? section.listedCategories.map((row) => row.categoryId)
+        : [],
+  });
+}
 
 async function resolveProjectsSection(section: DbPageSection, limit: number) {
   const picked = section.projects
@@ -427,6 +497,9 @@ export async function resolvePageSections(
       posts: [],
       clients: [],
       pricingPlans: [],
+      products: [],
+      productSource: settings.productSource ?? "NEW",
+      catalogCategories: [],
     };
 
     switch (type) {
@@ -510,6 +583,19 @@ export async function resolvePageSections(
       }
       case "BLOG": {
         base.posts = await resolveBlogSection(section, limit);
+        break;
+      }
+      case "PRODUCTS": {
+        const source = settings.productSource ?? "NEW";
+        base.productSource = source;
+        base.products = await resolveProductsSection(section, limit, source);
+        break;
+      }
+      case "PRODUCT_CATEGORIES": {
+        base.catalogCategories = await resolveProductCategoriesSection(
+          section,
+          limit,
+        );
         break;
       }
       default: {

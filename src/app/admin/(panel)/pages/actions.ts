@@ -1,7 +1,8 @@
 "use server";
 
+import { requirePermission, requirePermissionOrThrow } from "@/lib/staff-permissions";
+
 import { revalidatePath, revalidateTag } from "next/cache";
-import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import {
   getDefaultContactFormConfig,
@@ -18,7 +19,13 @@ import {
   getPageSectionTypeMeta,
   isNestablePageSectionType,
   isPageSectionType,
+  isProductSectionRank,
+  isProductSectionSource,
+  isProductCategorySectionSource,
   parseSectionSettings,
+  productSourceScope,
+  productCategorySourceScope,
+  uniqueTrimmedIds,
   sectionSupportsEyebrow,
   stringifySectionSettings,
   type PageSectionTypeValue,
@@ -48,14 +55,6 @@ export type DeletePageResult = {
   error?: string;
   message?: string;
 };
-
-async function requireAdmin() {
-  const session = await auth();
-  if (!session?.user) {
-    throw new Error("UNAUTHORIZED");
-  }
-  return session;
-}
 
 async function uniquePageSlug(base: string, excludeId?: string) {
   const slug = slugify(base) || "sayfa";
@@ -178,11 +177,8 @@ export async function createClassicPageAction(
   _prev: PageFormState,
   formData: FormData,
 ): Promise<PageFormState> {
-  try {
-    await requireAdmin();
-  } catch {
-    return { error: "Oturum bulunamadı." };
-  }
+  const gate = await requirePermission("pages", "create");
+  if (!gate.ok) return { error: gate.error };
 
   const data = parsePagePayload(formData);
   if (!data.title) {
@@ -271,11 +267,8 @@ export async function updateClassicPageAction(
   _prev: PageFormState,
   formData: FormData,
 ): Promise<PageFormState> {
-  try {
-    await requireAdmin();
-  } catch {
-    return { error: "Oturum bulunamadı." };
-  }
+  const gate = await requirePermission("pages", "update");
+  if (!gate.ok) return { error: gate.error };
 
   const id = String(formData.get("id") ?? "").trim();
   if (!id) return { error: "Sayfa bulunamadı." };
@@ -375,11 +368,8 @@ export async function updateClassicPageAction(
 }
 
 export async function deletePageAction(formData: FormData): Promise<DeletePageResult> {
-  try {
-    await requireAdmin();
-  } catch {
-    return { error: "Oturum bulunamadı." };
-  }
+  const gate = await requirePermission("pages", "delete");
+  if (!gate.ok) return { error: gate.error };
 
   const id = String(formData.get("id") ?? "").trim();
   if (!id) return { error: "Sayfa bulunamadı." };
@@ -411,7 +401,7 @@ export async function deletePageAction(formData: FormData): Promise<DeletePageRe
 
 export async function togglePageActiveAction(formData: FormData) {
   try {
-    await requireAdmin();
+    await requirePermissionOrThrow("pages", "update");
   } catch {
     return;
   }
@@ -466,11 +456,8 @@ export async function createAdvancedPageAction(
   _prev: PageFormState,
   formData: FormData,
 ): Promise<PageFormState & { pageId?: string }> {
-  try {
-    await requireAdmin();
-  } catch {
-    return { error: "Oturum bulunamadı." };
-  }
+  const gate = await requirePermission("pages", "create");
+  if (!gate.ok) return { error: gate.error };
 
   const data = parseMetaPayload(formData);
   if (!data.title) {
@@ -538,11 +525,8 @@ export async function updateAdvancedPageMetaAction(
   _prev: PageFormState,
   formData: FormData,
 ): Promise<PageFormState> {
-  try {
-    await requireAdmin();
-  } catch {
-    return { error: "Oturum bulunamadı." };
-  }
+  const gate = await requirePermission("pages", "update");
+  if (!gate.ok) return { error: gate.error };
 
   const id = String(formData.get("id") ?? "").trim();
   if (!id) return { error: "Sayfa bulunamadı." };
@@ -611,7 +595,7 @@ export async function addPageSectionAction(
   options?: { parentId?: string; columnId?: string },
 ): Promise<SectionFormState> {
   try {
-    await requireAdmin();
+    await requirePermissionOrThrow("pages", "create");
     const page = await requireAdvancedPage(pageId);
     if (!isPageSectionType(typeRaw)) {
       return { error: "Geçersiz bölüm tipi." };
@@ -648,7 +632,11 @@ export async function addPageSectionAction(
         sortOrder: (last?.sortOrder ?? -1) + 1,
         settings: stringifySectionSettings({
           limit: defaultLimitForType(type),
-          showFeatures: type === "PROJECTS",
+          showFeatures: type === "PROJECTS" ? true : undefined,
+          productSource: type === "PRODUCTS" ? "NEW" : undefined,
+          productCategorySource: type === "PRODUCT_CATEGORIES" ? "ROOTS" : undefined,
+          showProductCount: type === "PRODUCT_CATEGORIES" ? true : undefined,
+          cardsPerRow: type === "PRODUCT_CATEGORIES" ? 4 : undefined,
           ...(type === "CONTACT_FORM"
             ? { contactForm: getDefaultContactFormConfig() }
             : {}),
@@ -679,7 +667,7 @@ export async function deletePageSectionAction(
   sectionId: string,
 ): Promise<SectionFormState> {
   try {
-    await requireAdmin();
+    await requirePermissionOrThrow("pages", "delete");
     const section = await prisma.pageSection.findUnique({
       where: { id: sectionId },
       include: {
@@ -711,6 +699,10 @@ export async function deletePageSectionAction(
       });
       await tx.pageSectionPost.deleteMany({ where: { sectionId: { in: allIds } } });
       await tx.pageSectionWork.deleteMany({ where: { sectionId: { in: allIds } } });
+      await tx.pageSectionProduct.deleteMany({ where: { sectionId: { in: allIds } } });
+      await tx.pageSectionProductCategory.deleteMany({
+        where: { sectionId: { in: allIds } },
+      });
 
       // Önce en derin çocuklar, sonra üst — orphan kalmasın
       if (descendantIds.length > 0) {
@@ -789,6 +781,8 @@ async function cleanupOrphanPageSections(pageId: string) {
     prisma.pageSectionProject.deleteMany({ where: { sectionId: { in: ids } } }),
     prisma.pageSectionPost.deleteMany({ where: { sectionId: { in: ids } } }),
     prisma.pageSectionWork.deleteMany({ where: { sectionId: { in: ids } } }),
+    prisma.pageSectionProduct.deleteMany({ where: { sectionId: { in: ids } } }),
+    prisma.pageSectionProductCategory.deleteMany({ where: { sectionId: { in: ids } } }),
     prisma.pageSection.deleteMany({ where: { id: { in: ids }, pageId } }),
   ]);
 
@@ -799,11 +793,8 @@ export async function updatePageSectionHeaderAction(
   _prev: SectionFormState,
   formData: FormData,
 ): Promise<SectionFormState> {
-  try {
-    await requireAdmin();
-  } catch {
-    return { error: "Oturum bulunamadı." };
-  }
+  const gate = await requirePermission("pages", "update");
+  if (!gate.ok) return { error: gate.error };
 
   const sectionId = String(formData.get("sectionId") ?? "").trim();
   if (!sectionId) return { error: "Bölüm bulunamadı." };
@@ -863,7 +854,7 @@ export async function movePageSectionAction(
   direction: "up" | "down",
 ): Promise<SectionFormState> {
   try {
-    await requireAdmin();
+    await requirePermissionOrThrow("pages", "update");
     const section = await prisma.pageSection.findUnique({
       where: { id: sectionId },
       include: { page: { select: { id: true, slug: true, type: true } } },
@@ -927,7 +918,7 @@ export async function reorderPageSectionsAction(
   parentId: string | null = null,
 ): Promise<SectionFormState> {
   try {
-    await requireAdmin();
+    await requirePermissionOrThrow("pages", "update");
     const page = await requireAdvancedPage(pageId);
 
     const uniqueIds = [...new Set(orderedIds.map((id) => id.trim()).filter(Boolean))];
@@ -977,7 +968,7 @@ export async function reorderGridChildrenAction(
   placements: { id: string; columnId: string }[],
 ): Promise<SectionFormState> {
   try {
-    await requireAdmin();
+    await requirePermissionOrThrow("pages", "update");
     const page = await requireAdvancedPage(pageId);
 
     const grid = await prisma.pageSection.findFirst({
@@ -1058,7 +1049,7 @@ export async function updateGridRowLayoutAction(
   },
 ): Promise<SectionFormState> {
   try {
-    await requireAdmin();
+    await requirePermissionOrThrow("pages", "update");
     const section = await prisma.pageSection.findUnique({
       where: { id: sectionId },
       include: { page: { select: { id: true, slug: true, type: true } } },
@@ -1120,7 +1111,7 @@ export async function togglePageSectionActiveAction(
   sectionId: string,
 ): Promise<SectionFormState> {
   try {
-    await requireAdmin();
+    await requirePermissionOrThrow("pages", "update");
     const section = await prisma.pageSection.findUnique({
       where: { id: sectionId },
       include: { page: { select: { id: true, slug: true, type: true } } },
@@ -1147,11 +1138,8 @@ export async function updatePageSectionAction(
   _prev: SectionFormState,
   formData: FormData,
 ): Promise<SectionFormState> {
-  try {
-    await requireAdmin();
-  } catch {
-    return { error: "Oturum bulunamadı." };
-  }
+  const gate = await requirePermission("pages", "update");
+  if (!gate.ok) return { error: gate.error };
 
   const sectionId = String(formData.get("sectionId") ?? "").trim();
   if (!sectionId) return { error: "Bölüm bulunamadı." };
@@ -1178,10 +1166,67 @@ export async function updatePageSectionAction(
       String(formData.get("workCategoryId") ?? "").trim() || null;
     const blogCategoryId =
       String(formData.get("blogCategoryId") ?? "").trim() || null;
+    const productSourceRaw = String(formData.get("productSource") ?? "NEW").trim();
+    const productSource =
+      type === "PRODUCTS" && isProductSectionSource(productSourceRaw)
+        ? productSourceRaw
+        : undefined;
+    const scope = productSource ? productSourceScope(productSource) : "none";
+    const productRankRaw = String(formData.get("productRank") ?? "NEW").trim();
+    const scopedCategoryIds =
+      scope === "category"
+        ? uniqueTrimmedIds(
+            formData.getAll("productCategoryIds").map((value) => String(value)),
+          )
+        : [];
+    const scopedBrandIds =
+      scope === "brand"
+        ? uniqueTrimmedIds(
+            formData.getAll("productBrandIds").map((value) => String(value)),
+          )
+        : [];
+    const scopedFilterValueIds =
+      scope === "filter"
+        ? uniqueTrimmedIds(
+            formData.getAll("productFilterValueIds").map((value) => String(value)),
+          )
+        : [];
+    const productCategorySourceRaw = String(
+      formData.get("productCategorySource") ?? "ROOTS",
+    ).trim();
+    const productCategorySource =
+      type === "PRODUCT_CATEGORIES" &&
+      isProductCategorySectionSource(productCategorySourceRaw)
+        ? productCategorySourceRaw
+        : undefined;
+    const categoryScope = productCategorySource
+      ? productCategorySourceScope(productCategorySource)
+      : "none";
+    const listedCategoryIds =
+      categoryScope === "manual"
+        ? uniqueTrimmedIds(
+            formData.getAll("listedCategoryIds").map((value) => String(value)),
+          )
+        : [];
+    const childrenParentId =
+      categoryScope === "parent"
+        ? String(formData.get("productCategoryId") ?? "").trim() || null
+        : null;
+    const productCategoryId =
+      type === "PRODUCTS"
+        ? (scopedCategoryIds[0] ?? null)
+        : type === "PRODUCT_CATEGORIES"
+          ? childrenParentId
+          : null;
+    const productBrandId = scopedBrandIds[0] ?? null;
+    const productFilterValueId = scopedFilterValueIds[0] ?? null;
     const limitRaw = Number.parseInt(String(formData.get("limit") ?? ""), 10);
     const showFeatures =
       formData.get("showFeatures") === "on" ||
       formData.get("showFeatures") === "true";
+    const showProductCount =
+      formData.get("showProductCount") === "on" ||
+      formData.get("showProductCount") === "true";
     const anchorId = String(formData.get("anchorId") ?? "").trim();
     const eyebrow = String(formData.get("eyebrow") ?? "").trim();
     const statValue = String(formData.get("statValue") ?? "").trim();
@@ -1281,9 +1326,27 @@ export async function updatePageSectionAction(
       .getAll("workIds")
       .map((value) => String(value).trim())
       .filter(Boolean);
+    const productIds = formData
+      .getAll("productIds")
+      .map((value) => String(value).trim())
+      .filter(Boolean);
 
     const settings = stringifySectionSettings({
       limit: Number.isFinite(limitRaw) ? limitRaw : defaultLimitForType(type),
+      productSource,
+      productRank:
+        type === "PRODUCTS" &&
+        (scope === "category" || scope === "brand" || scope === "filter") &&
+        isProductSectionRank(productRankRaw)
+          ? productRankRaw
+          : undefined,
+      productCategoryIds: scopedCategoryIds.length > 0 ? scopedCategoryIds : undefined,
+      productBrandIds: scopedBrandIds.length > 0 ? scopedBrandIds : undefined,
+      productFilterValueIds:
+        scopedFilterValueIds.length > 0 ? scopedFilterValueIds : undefined,
+      productCategorySource,
+      showProductCount:
+        type === "PRODUCT_CATEGORIES" ? showProductCount : undefined,
       showFeatures: type === "PROJECTS" ? showFeatures : undefined,
       anchorId: anchorId || undefined,
       eyebrow: sectionSupportsEyebrow(type) ? eyebrow || undefined : undefined,
@@ -1327,6 +1390,7 @@ export async function updatePageSectionAction(
             cardsPerRow,
           }
         : {}),
+      ...(type === "PRODUCT_CATEGORIES" ? { cardsPerRow } : {}),
       ...(type === "CONTACT_FORM"
         ? {
             contactForm: {
@@ -1369,6 +1433,12 @@ export async function updatePageSectionAction(
           projectCategoryId: type === "PROJECTS" ? projectCategoryId : null,
           workCategoryId: type === "WORKS" ? workCategoryId : null,
           blogCategoryId: type === "BLOG" ? blogCategoryId : null,
+          productCategoryId:
+            type === "PRODUCTS" || type === "PRODUCT_CATEGORIES"
+              ? productCategoryId
+              : null,
+          productBrandId: type === "PRODUCTS" ? productBrandId : null,
+          productFilterValueId: type === "PRODUCTS" ? productFilterValueId : null,
         },
       });
 
@@ -1418,6 +1488,32 @@ export async function updatePageSectionAction(
             data: workIds.map((workId, index) => ({
               sectionId,
               workId,
+              sortOrder: index,
+            })),
+          });
+        }
+      }
+
+      if (type === "PRODUCTS") {
+        await tx.pageSectionProduct.deleteMany({ where: { sectionId } });
+        if (scope === "manual" && productIds.length > 0) {
+          await tx.pageSectionProduct.createMany({
+            data: productIds.map((productId, index) => ({
+              sectionId,
+              productId,
+              sortOrder: index,
+            })),
+          });
+        }
+      }
+
+      if (type === "PRODUCT_CATEGORIES") {
+        await tx.pageSectionProductCategory.deleteMany({ where: { sectionId } });
+        if (categoryScope === "manual" && listedCategoryIds.length > 0) {
+          await tx.pageSectionProductCategory.createMany({
+            data: listedCategoryIds.map((categoryId, index) => ({
+              sectionId,
+              categoryId,
               sortOrder: index,
             })),
           });

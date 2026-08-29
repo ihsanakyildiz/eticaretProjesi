@@ -19,6 +19,8 @@ import {
   adminNavSections,
   type AdminNavItem,
 } from "@/config/admin-nav";
+import { filterNavByView } from "@/config/admin-permissions";
+import { usePermissions } from "./admin-permissions";
 import { useSidebar } from "./sidebar-context";
 
 /** Daha spesifik bir nav link eşleşiyorsa kısa prefix (ör. /admin/works) aktif sayılmaz. */
@@ -352,6 +354,13 @@ function NavLink({
 }
 
 export function AdminSidebar() {
+  const { role, map } = usePermissions();
+  const visibleSections = adminNavSections
+    .map((section) => ({
+      ...section,
+      items: filterNavByView(section.items, role, map),
+    }))
+    .filter((section) => section.items.length > 0);
   const { isOpen, close, isCollapsed, isDesktop, allowTransition, toggleCollapsed } =
     useSidebar();
   // Mobilde her zaman tam menü; ikon modu yalnızca masaüstünde
@@ -400,7 +409,7 @@ export function AdminSidebar() {
             iconMode ? "admin-sidebar-icons px-2" : "admin-scrollbar px-3"
           }`}
         >
-          {adminNavSections.map((section) => (
+          {visibleSections.map((section) => (
             <div key={section.title} className="mb-5">
               {!iconMode ? (
                 <p className="mb-2 px-3 text-[11px] font-semibold tracking-wider text-white/40 uppercase">

@@ -22,7 +22,7 @@ export async function loginAction(
   }
 
   const user = await prisma.user.findUnique({ where: { email } });
-  if (!user || user.role !== Role.ADMIN) {
+  if (!user || !user.isActive || (user.role !== Role.ADMIN && user.role !== Role.STAFF)) {
     return { error: "E-posta veya şifre hatalı." };
   }
 

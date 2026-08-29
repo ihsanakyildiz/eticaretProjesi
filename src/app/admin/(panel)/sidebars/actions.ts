@@ -1,12 +1,13 @@
 "use server";
 
+import { requirePermission, requirePermissionOrThrow } from "@/lib/staff-permissions";
+
 import { revalidatePath } from "next/cache";
 import type {
   SidebarLocation,
   SidebarPlacement,
   SidebarWidgetType,
 } from "@prisma/client";
-import { auth } from "@/auth";
 import {
   SIDEBAR_LOCATIONS,
   SIDEBAR_PLACEMENTS,
@@ -24,12 +25,6 @@ export type SidebarFormState = {
   message?: string;
   fieldErrors?: Record<string, string>;
 };
-
-async function requireAdmin() {
-  const session = await auth();
-  if (!session?.user) throw new Error("UNAUTHORIZED");
-  return session;
-}
 
 function revalidateSidebars() {
   revalidatePath("/admin/sidebars");
@@ -82,11 +77,8 @@ export async function createSidebarAction(
   _prev: SidebarFormState,
   formData: FormData,
 ): Promise<SidebarFormState> {
-  try {
-    await requireAdmin();
-  } catch {
-    return { error: "Oturum bulunamadı." };
-  }
+  const gate = await requirePermission("sidebars", "create");
+  if (!gate.ok) return { error: gate.error };
 
   const name = String(formData.get("name") ?? "").trim();
   const slugInput = String(formData.get("slug") ?? "").trim();
@@ -151,11 +143,8 @@ export async function updateSidebarAction(
   _prev: SidebarFormState,
   formData: FormData,
 ): Promise<SidebarFormState> {
-  try {
-    await requireAdmin();
-  } catch {
-    return { error: "Oturum bulunamadı." };
-  }
+  const gate = await requirePermission("sidebars", "update");
+  if (!gate.ok) return { error: gate.error };
 
   const id = String(formData.get("id") ?? "").trim();
   const name = String(formData.get("name") ?? "").trim();
@@ -208,7 +197,7 @@ export async function updateSidebarAction(
 
 export async function deleteSidebarAction(id: string): Promise<SidebarFormState> {
   try {
-    await requireAdmin();
+    await requirePermissionOrThrow("sidebars", "delete");
     const widgets = await prisma.siteSidebarWidget.findMany({
       where: { sidebarId: id, imagePath: { not: null } },
       select: { imagePath: true },
@@ -226,7 +215,7 @@ export async function deleteSidebarAction(id: string): Promise<SidebarFormState>
 }
 
 export async function toggleSidebarActiveAction(id: string) {
-  await requireAdmin();
+  await requirePermissionOrThrow("sidebars", "update");
   const current = await prisma.siteSidebar.findUnique({
     where: { id },
     select: { isActive: true, location: true, name: true },
@@ -281,11 +270,8 @@ export async function createSidebarWidgetAction(
   _prev: SidebarFormState,
   formData: FormData,
 ): Promise<SidebarFormState> {
-  try {
-    await requireAdmin();
-  } catch {
-    return { error: "Oturum bulunamadı." };
-  }
+  const gate = await requirePermission("sidebars", "create");
+  if (!gate.ok) return { error: gate.error };
 
   const sidebarId = String(formData.get("sidebarId") ?? "").trim();
   const type = parseWidgetType(String(formData.get("type") ?? ""));
@@ -359,11 +345,8 @@ export async function updateSidebarWidgetAction(
   _prev: SidebarFormState,
   formData: FormData,
 ): Promise<SidebarFormState> {
-  try {
-    await requireAdmin();
-  } catch {
-    return { error: "Oturum bulunamadı." };
-  }
+  const gate = await requirePermission("sidebars", "update");
+  if (!gate.ok) return { error: gate.error };
 
   const id = String(formData.get("id") ?? "").trim();
   const title = String(formData.get("title") ?? "").trim();
@@ -431,7 +414,7 @@ export async function deleteSidebarWidgetAction(
   id: string,
 ): Promise<SidebarFormState> {
   try {
-    await requireAdmin();
+    await requirePermissionOrThrow("sidebars", "delete");
     const widget = await prisma.siteSidebarWidget.findUnique({
       where: { id },
       select: { imagePath: true },
@@ -450,7 +433,7 @@ export async function reorderSidebarWidgetsAction(
   sidebarId: string,
   orderedIds: string[],
 ) {
-  await requireAdmin();
+  await requirePermissionOrThrow("sidebars", "update");
   await prisma.$transaction(
     orderedIds.map((id, index) =>
       prisma.siteSidebarWidget.updateMany({

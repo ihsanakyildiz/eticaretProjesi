@@ -2,6 +2,7 @@
 
 import { useActionState, useCallback, useEffect, useMemo, useState } from "react";
 import { Loader2, Palette, RotateCcw, Save, Sun, Moon, Monitor } from "lucide-react";
+import { Can } from "@/components/admin/admin-permissions";
 import { ThemeColorField } from "@/components/admin/theme-color-field";
 import {
   THEME_COLOR_FIELDS,
@@ -455,23 +456,25 @@ export function ThemeDesignForm({ values }: ThemeDesignFormProps) {
           <RotateCcw className="h-4 w-4" />
           Varsayılana Sıfırla
         </button>
-        <button
-          type="submit"
-          disabled={isPending}
-          className="inline-flex items-center gap-2 rounded-md bg-[#0ab39c] px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-[#0ab39c]/25 transition hover:bg-[#099885] disabled:cursor-not-allowed disabled:opacity-70"
-        >
-          {isPending ? (
-            <>
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Kaydediliyor...
-            </>
-          ) : (
-            <>
-              <Save className="h-4 w-4" />
-              Tema Ayarlarını Kaydet
-            </>
-          )}
-        </button>
+        <Can resource="settings_theme" action="update">
+          <button
+            type="submit"
+            disabled={isPending}
+            className="inline-flex items-center gap-2 rounded-md bg-[#0ab39c] px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-[#0ab39c]/25 transition hover:bg-[#099885] disabled:cursor-not-allowed disabled:opacity-70"
+          >
+            {isPending ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Kaydediliyor...
+              </>
+            ) : (
+              <>
+                <Save className="h-4 w-4" />
+                Tema Ayarlarını Kaydet
+              </>
+            )}
+          </button>
+        </Can>
       </div>
     </form>
   );

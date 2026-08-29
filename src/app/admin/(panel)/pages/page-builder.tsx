@@ -53,11 +53,22 @@ import {
   getContactInfoBlockSettings,
   getPageSectionTypeMeta,
   PAGE_SECTION_TYPE_META,
+  PRODUCT_SECTION_RANK_META,
+  PRODUCT_SECTION_SOURCE_META,
+  PRODUCT_CATEGORY_SECTION_SOURCE_META,
   CARD_SLIDER_EFFECTS,
   CARD_COLUMNS_OPTIONS,
+  isProductSectionSource,
+  isProductCategorySectionSource,
   parseSectionSettings,
+  productRankFieldLabel,
+  productScopeIdsFromSettings,
+  productSourceScope,
+  productCategorySourceScope,
   sectionSupportsEyebrow,
   type PageSectionTypeValue,
+  type ProductCategorySectionSource,
+  type ProductSectionSource,
 } from "@/lib/page-sections";
 import {
   addPageSectionAction,
@@ -88,10 +99,15 @@ export type BuilderSection = {
   projectCategoryId: string | null;
   workCategoryId: string | null;
   blogCategoryId: string | null;
+  productCategoryId: string | null;
+  productBrandId: string | null;
+  productFilterValueId: string | null;
   cardIds: string[];
   projectIds: string[];
   postIds: string[];
   workIds: string[];
+  productIds: string[];
+  listedCategoryIds: string[];
 };
 
 export type SelectOption = { id: string; label: string };
@@ -104,16 +120,312 @@ type PageBuilderProps = {
   projectOptions: RelatedContentOption[];
   postOptions: RelatedContentOption[];
   workOptions: RelatedContentOption[];
+  productOptions: RelatedContentOption[];
   heroOptions: SelectOption[];
   faqOptions: SelectOption[];
   projectCategoryOptions: SelectOption[];
   workCategoryOptions: SelectOption[];
   blogCategoryOptions: SelectOption[];
+  productCategoryOptions: SelectOption[];
+  productBrandOptions: SelectOption[];
+  productFilterValueOptions: SelectOption[];
 };
 
 type BuilderOptions = Omit<PageBuilderProps, "pageId" | "sections">;
 
 const sectionInitial: SectionFormState = {};
+
+function toPickerOptions(options: SelectOption[]): RelatedContentOption[] {
+  return options.map((option) => ({
+    id: option.id,
+    label: option.label,
+    isActive: true,
+  }));
+}
+
+function ProductsSectionFields({
+  section,
+  productOptions,
+  productCategoryOptions,
+  productBrandOptions,
+  productFilterValueOptions,
+  selectedProductIds,
+  onProductIdsChange,
+}: {
+  section: BuilderSection;
+  productOptions: RelatedContentOption[];
+  productCategoryOptions: SelectOption[];
+  productBrandOptions: SelectOption[];
+  productFilterValueOptions: SelectOption[];
+  selectedProductIds: string[];
+  onProductIdsChange: (ids: string[]) => void;
+}) {
+  const settings = parseSectionSettings(section.settings);
+  const initialSource = settings.productSource ?? "NEW";
+  const [source, setSource] = useState<ProductSectionSource>(initialSource);
+  const scopeIds = productScopeIdsFromSettings(settings, {
+    categoryId: section.productCategoryId,
+    brandId: section.productBrandId,
+    filterValueId: section.productFilterValueId,
+  });
+  const [selectedCategoryIds, setSelectedCategoryIds] = useState(scopeIds.categoryIds);
+  const [selectedBrandIds, setSelectedBrandIds] = useState(scopeIds.brandIds);
+  const [selectedFilterValueIds, setSelectedFilterValueIds] = useState(
+    scopeIds.filterValueIds,
+  );
+  const scope = productSourceScope(source);
+  const showRank =
+    scope === "category" || scope === "brand" || scope === "filter";
+
+  return (
+    <>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-600">Kaynak</label>
+          <select
+            name="productSource"
+            value={source}
+            onChange={(event) => {
+              const next = event.target.value;
+              if (isProductSectionSource(next)) setSource(next);
+            }}
+            className="w-full rounded-md border border-[#e9ebec] px-3 py-2 text-sm outline-none focus:border-[#405189]"
+          >
+            {PRODUCT_SECTION_SOURCE_META.map((item) => (
+              <option key={item.value} value={item.value}>
+                {item.label}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1 text-[11px] text-slate-500">
+            Marka, kategori veya filtre seçince altta çoklu seçim ve o kapsamdaki sıralama açılır.
+          </p>
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-600">Limit</label>
+          <input
+            type="number"
+            name="limit"
+            min={1}
+            max={48}
+            defaultValue={settings.limit ?? defaultLimitForType("PRODUCTS")}
+            className="w-full rounded-md border border-[#e9ebec] px-3 py-2 text-sm outline-none focus:border-[#405189]"
+          />
+        </div>
+      </div>
+
+      {scope === "category" ? (
+        <RelatedContentPicker
+          title="Kategoriler"
+          fieldName="productCategoryIds"
+          options={toPickerOptions(productCategoryOptions)}
+          selectedIds={selectedCategoryIds}
+          onChange={setSelectedCategoryIds}
+          emptyHref="/admin/products/categories"
+          emptyLabel="Henüz kategori yok."
+          manageHref="/admin/products/categories"
+          manageLabel="Kategorileri yönet"
+          searchPlaceholder="Kategori ara…"
+          hint="Boş bırakırsanız tüm kategoriler dahildir. Üst kategori seçilirse alt kategoriler de dahil edilir."
+        />
+      ) : null}
+
+      {scope === "brand" ? (
+        <RelatedContentPicker
+          title="Markalar"
+          fieldName="productBrandIds"
+          options={toPickerOptions(productBrandOptions)}
+          selectedIds={selectedBrandIds}
+          onChange={setSelectedBrandIds}
+          emptyHref="/admin/products/brands"
+          emptyLabel="Henüz marka yok."
+          manageHref="/admin/products/brands"
+          manageLabel="Markaları yönet"
+          searchPlaceholder="Marka ara…"
+          hint="Birden fazla marka seçebilirsiniz. Boş bırakırsanız tüm markalar dahildir."
+        />
+      ) : null}
+
+      {scope === "filter" ? (
+        <RelatedContentPicker
+          title="Filtre değerleri"
+          fieldName="productFilterValueIds"
+          options={toPickerOptions(productFilterValueOptions)}
+          selectedIds={selectedFilterValueIds}
+          onChange={setSelectedFilterValueIds}
+          emptyHref="/admin/products/filters"
+          emptyLabel="Henüz filtre değeri yok."
+          manageHref="/admin/products/filters"
+          manageLabel="Filtreleri yönet"
+          searchPlaceholder="Filtre ara…"
+          hint="Seçilen değerlerden herhangi birine sahip ürünler listelenir."
+        />
+      ) : null}
+
+      {showRank ? (
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-600">
+            {productRankFieldLabel(source)}
+          </label>
+          <select
+            name="productRank"
+            defaultValue={settings.productRank ?? "NEW"}
+            className="w-full rounded-md border border-[#e9ebec] px-3 py-2 text-sm outline-none focus:border-[#405189]"
+          >
+            {PRODUCT_SECTION_RANK_META.map((item) => (
+              <option key={item.value} value={item.value}>
+                {item.label}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1 text-[11px] text-slate-500">
+            Seçilen kapsamın en yenileri, çok satanları veya indirimli ürünleri.
+          </p>
+        </div>
+      ) : null}
+
+      {scope === "manual" ? (
+        <RelatedContentPicker
+          title="Elle seçilen ürünler"
+          fieldName="productIds"
+          options={productOptions}
+          selectedIds={selectedProductIds}
+          onChange={onProductIdsChange}
+          emptyHref="/admin/products/new"
+          emptyLabel="Henüz ürün yok."
+          manageHref="/admin/products"
+          manageLabel="Ürünleri yönet"
+          searchPlaceholder="Ürün ara…"
+          hint="Sıra, seçim sırasına göredir."
+        />
+      ) : null}
+    </>
+  );
+}
+
+function ProductCategoriesSectionFields({
+  section,
+  productCategoryOptions,
+  selectedListedCategoryIds,
+  onListedCategoryIdsChange,
+}: {
+  section: BuilderSection;
+  productCategoryOptions: SelectOption[];
+  selectedListedCategoryIds: string[];
+  onListedCategoryIdsChange: (ids: string[]) => void;
+}) {
+  const settings = parseSectionSettings(section.settings);
+  const initialSource = settings.productCategorySource ?? "ROOTS";
+  const [source, setSource] = useState<ProductCategorySectionSource>(initialSource);
+  const scope = productCategorySourceScope(source);
+
+  return (
+    <>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-600">Kaynak</label>
+          <select
+            name="productCategorySource"
+            value={source}
+            onChange={(event) => {
+              const next = event.target.value;
+              if (isProductCategorySectionSource(next)) setSource(next);
+            }}
+            className="w-full rounded-md border border-[#e9ebec] px-3 py-2 text-sm outline-none focus:border-[#405189]"
+          >
+            {PRODUCT_CATEGORY_SECTION_SOURCE_META.map((item) => (
+              <option key={item.value} value={item.value}>
+                {item.label}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1 text-[11px] text-slate-500">
+            {source === "ROOTS"
+              ? "Üst kategorisi olmayan ana kategoriler listelenir."
+              : source === "ALL"
+                ? "Tüm aktif kategoriler sıralama düzeninde listelenir."
+                : source === "CHILDREN"
+                  ? "Seçilen kategorinin doğrudan alt kategorileri gösterilir."
+                  : "Aşağıdan seçtiğiniz kategoriler, seçim sırasıyla listelenir."}
+          </p>
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-600">Limit</label>
+          <input
+            type="number"
+            name="limit"
+            min={1}
+            max={48}
+            defaultValue={settings.limit ?? defaultLimitForType("PRODUCT_CATEGORIES")}
+            className="w-full rounded-md border border-[#e9ebec] px-3 py-2 text-sm outline-none focus:border-[#405189]"
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-600">
+            Yan yana kart sayısı
+          </label>
+          <select
+            name="cardsPerRow"
+            defaultValue={String(settings.cardsPerRow ?? 4)}
+            className="w-full rounded-md border border-[#e9ebec] px-3 py-2 text-sm outline-none focus:border-[#405189]"
+          >
+            {CARD_COLUMNS_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="flex items-end">
+          <AdminSwitch
+            name="showProductCount"
+            label="Ürün sayısını göster"
+            defaultChecked={settings.showProductCount !== false}
+          />
+        </div>
+      </div>
+
+      {scope === "parent" ? (
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-600">
+            Üst kategori
+          </label>
+          <select
+            name="productCategoryId"
+            defaultValue={section.productCategoryId ?? ""}
+            className="w-full rounded-md border border-[#e9ebec] px-3 py-2 text-sm outline-none focus:border-[#405189]"
+          >
+            <option value="">Kategori seçin</option>
+            {productCategoryOptions.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1 text-[11px] text-slate-500">
+            Bu kategorinin bir alt seviyesindeki kategoriler listelenir.
+          </p>
+        </div>
+      ) : null}
+
+      {scope === "manual" ? (
+        <RelatedContentPicker
+          title="Elle seçilen kategoriler"
+          fieldName="listedCategoryIds"
+          options={toPickerOptions(productCategoryOptions)}
+          selectedIds={selectedListedCategoryIds}
+          onChange={onListedCategoryIdsChange}
+          emptyHref="/admin/products/categories"
+          emptyLabel="Henüz kategori yok."
+          manageHref="/admin/products/categories"
+          manageLabel="Kategorileri yönet"
+          searchPlaceholder="Kategori ara…"
+          hint="Sıra, seçim sırasına göredir."
+        />
+      ) : null}
+    </>
+  );
+}
 
 function SectionEditor({
   section,
@@ -123,11 +435,15 @@ function SectionEditor({
   projectOptions,
   postOptions,
   workOptions,
+  productOptions,
   heroOptions,
   faqOptions,
   projectCategoryOptions,
   workCategoryOptions,
   blogCategoryOptions,
+  productCategoryOptions,
+  productBrandOptions,
+  productFilterValueOptions,
 }: {
   section: BuilderSection;
   hideHeaderFields?: boolean;
@@ -146,6 +462,10 @@ function SectionEditor({
   const [selectedProjectIds, setSelectedProjectIds] = useState(section.projectIds);
   const [selectedPostIds, setSelectedPostIds] = useState(section.postIds);
   const [selectedWorkIds, setSelectedWorkIds] = useState(section.workIds);
+  const [selectedProductIds, setSelectedProductIds] = useState(section.productIds);
+  const [selectedListedCategoryIds, setSelectedListedCategoryIds] = useState(
+    section.listedCategoryIds,
+  );
   const meta = getPageSectionTypeMeta(section.type);
 
   useEffect(() => {
@@ -206,7 +526,9 @@ function SectionEditor({
                         ? "Neden En İyisiyiz"
                         : section.type === "WORKS"
                           ? "••• Yapılan İşler"
-                          : "Neden biz?"
+                          : section.type === "PRODUCT_CATEGORIES"
+                            ? "Kategoriler"
+                            : "Neden biz?"
                   }
                   className="w-full rounded-md border border-[#e9ebec] px-3 py-2 text-sm outline-none focus:border-[#405189]"
                 />
@@ -547,6 +869,27 @@ function SectionEditor({
             hint="Seçim varsa kategori yerine bu liste kullanılır."
           />
         </>
+      ) : null}
+
+      {section.type === "PRODUCTS" ? (
+        <ProductsSectionFields
+          section={section}
+          productOptions={productOptions}
+          productCategoryOptions={productCategoryOptions}
+          productBrandOptions={productBrandOptions}
+          productFilterValueOptions={productFilterValueOptions}
+          selectedProductIds={selectedProductIds}
+          onProductIdsChange={setSelectedProductIds}
+        />
+      ) : null}
+
+      {section.type === "PRODUCT_CATEGORIES" ? (
+        <ProductCategoriesSectionFields
+          section={section}
+          productCategoryOptions={productCategoryOptions}
+          selectedListedCategoryIds={selectedListedCategoryIds}
+          onListedCategoryIdsChange={setSelectedListedCategoryIds}
+        />
       ) : null}
 
       {section.type === "BLOG" ? (

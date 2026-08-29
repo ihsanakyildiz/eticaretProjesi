@@ -10,6 +10,8 @@ import type { Provider } from "next-auth/providers";
 import { z } from "zod";
 import { authConfig } from "@/auth.config";
 import { prisma } from "@/lib/prisma";
+import { nextCustomerNo } from "@/lib/customer-addresses";
+import { joinFullName, splitFullName } from "@/lib/customers";
 import { getMembershipFlags } from "@/lib/membership";
 
 const credentialsSchema = z.object({
@@ -103,6 +105,11 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           if (!flags.enabled) return null;
         }
 
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { lastLoginAt: new Date() },
+        });
+
         return {
           id: user.id,
           email: user.email,
@@ -176,32 +183,43 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
 
         user.id = existing.id;
         user.role = existing.role;
+        await prisma.user.update({
+          where: { id: existing.id },
+          data: { lastLoginAt: new Date() },
+        });
         return true;
       }
 
-      const created = await prisma.user.create({
-        data: {
-          email,
-          name: user.name ?? null,
-          image: user.image ?? null,
-          role: Role.MEMBER,
-          emailVerified: new Date(),
-          accounts: {
-            create: {
-              type: account.type,
-              provider: account.provider,
-              providerAccountId: account.providerAccountId,
-              access_token: account.access_token,
-              refresh_token: account.refresh_token,
-              expires_at: account.expires_at,
-              token_type: account.token_type,
-              scope: account.scope,
-              id_token: account.id_token,
-              session_state:
-                typeof account.session_state === "string" ? account.session_state : null,
+      const names = splitFullName(user.name);
+      const created = await prisma.$transaction(async (tx) => {
+        return tx.user.create({
+          data: {
+            customerNo: await nextCustomerNo(tx),
+            email,
+            name: joinFullName(names.firstName, names.lastName) ?? user.name ?? null,
+            firstName: names.firstName || null,
+            lastName: names.lastName || null,
+            image: user.image ?? null,
+            role: Role.MEMBER,
+            emailVerified: new Date(),
+            lastLoginAt: new Date(),
+            accounts: {
+              create: {
+                type: account.type,
+                provider: account.provider,
+                providerAccountId: account.providerAccountId,
+                access_token: account.access_token,
+                refresh_token: account.refresh_token,
+                expires_at: account.expires_at,
+                token_type: account.token_type,
+                scope: account.scope,
+                id_token: account.id_token,
+                session_state:
+                  typeof account.session_state === "string" ? account.session_state : null,
+              },
             },
           },
-        },
+        });
       });
 
       user.id = created.id;
@@ -257,7 +275,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     async session({ session, token }) {
       if (session.user) {
         session.user.id = token.id ? String(token.id) : String(token.sub ?? "");
-        if (token.role === Role.ADMIN || token.role === Role.MEMBER) {
+        if (token.role === Role.ADMIN || token.role === Role.STAFF || token.role === Role.MEMBER) {
           session.user.role = token.role;
         } else {
           session.user.role = Role.MEMBER;

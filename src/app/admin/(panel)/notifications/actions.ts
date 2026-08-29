@@ -1,7 +1,8 @@
 "use server";
 
+import { requirePermission, requirePermissionOrThrow } from "@/lib/staff-permissions";
+
 import { revalidatePath } from "next/cache";
-import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import {
   collectThreadMessageIds,
@@ -18,16 +19,9 @@ export type MailNotificationsState = {
   unreadCount: number;
 };
 
-async function requireAdmin() {
-  const session = await auth();
-  if (!session?.user) {
-    throw new Error("Oturum bulunamadı.");
-  }
-  return session;
-}
-
 export async function fetchMailNotificationsAction(): Promise<MailNotificationsState> {
-  await requireAdmin();
+  const gate = await requirePermission("email", "view");
+  if (!gate.ok) return { items: [], unreadCount: 0 };
 
   const [items, unreadCount] = await Promise.all([
     getMailNotifications(8),
@@ -38,12 +32,13 @@ export async function fetchMailNotificationsAction(): Promise<MailNotificationsS
 }
 
 export async function fetchUnreadNotificationCountAction(): Promise<number> {
-  await requireAdmin();
+  const gate = await requirePermission("email", "view");
+  if (!gate.ok) return 0;
   return getUnreadMailNotificationCount();
 }
 
 export async function markMailNotificationReadAction(id: string) {
-  await requireAdmin();
+  await requirePermissionOrThrow("email", "update");
   const rootId = await findThreadRootId(id);
   const threadIds = await collectThreadMessageIds(rootId);
 
@@ -56,7 +51,7 @@ export async function markMailNotificationReadAction(id: string) {
 }
 
 export async function markAllMailNotificationsReadAction() {
-  await requireAdmin();
+  await requirePermissionOrThrow("email", "update");
   await prisma.mailMessage.updateMany({
     where: { folder: "INBOX", isRead: false },
     data: { isRead: true },

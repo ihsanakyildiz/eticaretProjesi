@@ -13,6 +13,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import { Can } from "@/components/admin/admin-permissions";
 import { deleteSidebarAction, toggleSidebarActiveAction } from "./actions";
 
 export type SidebarRow = {
@@ -138,37 +139,43 @@ export function SidebarsTable({ sidebars }: { sidebars: SidebarRow[] }) {
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-1">
-                      <Link
-                        href={`/admin/sidebars/${item.id}/edit`}
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100 hover:text-[#405189]"
-                        title="Düzenle"
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </Link>
-                      <button
-                        type="button"
-                        disabled={pending && togglingId === item.id}
-                        onClick={() => toggleActive(item.id)}
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100"
-                        title="Aktif/pasif"
-                      >
-                        {pending && togglingId === item.id ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <Power className="h-4 w-4" />
-                        )}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setDeleteError(null);
-                          setDeleteTarget(item);
-                        }}
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-500 hover:bg-rose-50 hover:text-rose-600"
-                        title="Sil"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
+                      <Can resource="sidebars" action="update">
+                        <Link
+                          href={`/admin/sidebars/${item.id}/edit`}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100 hover:text-[#405189]"
+                          title="Düzenle"
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Link>
+                      </Can>
+                      <Can resource="sidebars" action="update">
+                        <button
+                          type="button"
+                          disabled={pending && togglingId === item.id}
+                          onClick={() => toggleActive(item.id)}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100"
+                          title="Aktif/pasif"
+                        >
+                          {pending && togglingId === item.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Power className="h-4 w-4" />
+                          )}
+                        </button>
+                      </Can>
+                      <Can resource="sidebars" action="delete">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDeleteError(null);
+                            setDeleteTarget(item);
+                          }}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-500 hover:bg-rose-50 hover:text-rose-600"
+                          title="Sil"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </Can>
                     </div>
                   </td>
                 </tr>

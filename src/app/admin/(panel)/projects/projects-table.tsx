@@ -15,6 +15,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import { Can } from "@/components/admin/admin-permissions";
 import { SearchableSelect } from "@/components/admin/searchable-select";
 import { AdminPublicLink, AdminPublicTextLink } from "@/components/admin/admin-public-link";
 import { stripHtml } from "@/lib/html";
@@ -291,12 +292,14 @@ export function ProjectsTable({
     return (
       <div className="rounded-lg border border-[#e9ebec] bg-white px-5 py-12 text-center shadow-sm">
         <p className="text-sm text-slate-500">Henüz yayınlanmış bir proje yok.</p>
-        <Link
-          href="/admin/projects/new"
-          className="mt-4 inline-flex rounded-md bg-[#0ab39c] px-4 py-2 text-sm font-semibold text-white hover:bg-[#099885]"
-        >
-          İlk Projeyi Ekle
-        </Link>
+        <Can resource="projects" action="create">
+          <Link
+            href="/admin/projects/new"
+            className="mt-4 inline-flex rounded-md bg-[#0ab39c] px-4 py-2 text-sm font-semibold text-white hover:bg-[#099885]"
+          >
+            İlk Projeyi Ekle
+          </Link>
+        </Can>
       </div>
     );
   }
@@ -540,48 +543,56 @@ export function ProjectsTable({
 
                   <div className="flex items-center justify-end gap-1.5">
                     <AdminPublicLink href={publicProjectHref(project.slug)} />
-                    <form action={toggleProjectFeaturedAction}>
-                      <input type="hidden" name="id" value={project.id} />
-                      <button
-                        type="submit"
-                        title={project.isFeatured ? "Vitrinden çıkar" : "Vitrine ekle"}
-                        className={`inline-flex h-8 w-8 items-center justify-center rounded-md border transition ${
-                          project.isFeatured
-                            ? "border-amber-200 bg-amber-50 text-amber-500"
-                            : "border-[#e9ebec] text-slate-500 hover:bg-slate-50 hover:text-amber-500"
-                        }`}
+                    <Can resource="projects" action="update">
+                      <form action={toggleProjectFeaturedAction}>
+                        <input type="hidden" name="id" value={project.id} />
+                        <button
+                          type="submit"
+                          title={project.isFeatured ? "Vitrinden çıkar" : "Vitrine ekle"}
+                          className={`inline-flex h-8 w-8 items-center justify-center rounded-md border transition ${
+                            project.isFeatured
+                              ? "border-amber-200 bg-amber-50 text-amber-500"
+                              : "border-[#e9ebec] text-slate-500 hover:bg-slate-50 hover:text-amber-500"
+                          }`}
+                        >
+                          <Star className={`h-4 w-4 ${project.isFeatured ? "fill-current" : ""}`} />
+                        </button>
+                      </form>
+                    </Can>
+                    <Can resource="projects" action="update">
+                      <form action={toggleProjectActiveAction}>
+                        <input type="hidden" name="id" value={project.id} />
+                        <button
+                          type="submit"
+                          title={project.isActive ? "Pasife al" : "Aktif et"}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[#e9ebec] text-slate-500 transition hover:bg-slate-50 hover:text-[#0ab39c]"
+                        >
+                          <Power className="h-4 w-4" />
+                        </button>
+                      </form>
+                    </Can>
+                    <Can resource="projects" action="update">
+                      <Link
+                        href={`/admin/projects/${project.id}/edit`}
+                        title="Düzenle"
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[#e9ebec] text-slate-500 transition hover:bg-slate-50 hover:text-[#405189]"
                       >
-                        <Star className={`h-4 w-4 ${project.isFeatured ? "fill-current" : ""}`} />
-                      </button>
-                    </form>
-                    <form action={toggleProjectActiveAction}>
-                      <input type="hidden" name="id" value={project.id} />
+                        <Pencil className="h-4 w-4" />
+                      </Link>
+                    </Can>
+                    <Can resource="projects" action="delete">
                       <button
-                        type="submit"
-                        title={project.isActive ? "Pasife al" : "Aktif et"}
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[#e9ebec] text-slate-500 transition hover:bg-slate-50 hover:text-[#0ab39c]"
+                        type="button"
+                        title="Sil"
+                        onClick={() => {
+                          setDeleteError(null);
+                          setDeleteTarget(project);
+                        }}
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-rose-200 text-rose-500 transition hover:bg-rose-50"
                       >
-                        <Power className="h-4 w-4" />
+                        <Trash2 className="h-4 w-4" />
                       </button>
-                    </form>
-                    <Link
-                      href={`/admin/projects/${project.id}/edit`}
-                      title="Düzenle"
-                      className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[#e9ebec] text-slate-500 transition hover:bg-slate-50 hover:text-[#405189]"
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </Link>
-                    <button
-                      type="button"
-                      title="Sil"
-                      onClick={() => {
-                        setDeleteError(null);
-                        setDeleteTarget(project);
-                      }}
-                      className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-rose-200 text-rose-500 transition hover:bg-rose-50"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
+                    </Can>
                   </div>
                 </div>
               ))}

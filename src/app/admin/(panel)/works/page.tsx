@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Layers, Plus } from "lucide-react";
+import { Can } from "@/components/admin/admin-permissions";
 import {
   buildCategoryTree,
   flattenCategoryTree,
@@ -82,17 +83,19 @@ export default async function WorksPage({ searchParams }: WorksPageProps) {
               yayınlayın. Aktif olanlar sitede listelenmeye hazırdır.
             </p>
           </div>
-          <Link
-            href={
-              initialCategoryId
-                ? `/admin/works/new?categoryId=${initialCategoryId}`
-                : "/admin/works/new"
-            }
-            className="inline-flex items-center justify-center gap-2 rounded-md bg-[#0ab39c] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#099885]"
-          >
-            <Plus className="h-4 w-4" />
-            Yeni Çalışma
-          </Link>
+          <Can resource="works" action="create">
+            <Link
+              href={
+                initialCategoryId
+                  ? `/admin/works/new?categoryId=${initialCategoryId}`
+                  : "/admin/works/new"
+              }
+              className="inline-flex items-center justify-center gap-2 rounded-md bg-[#0ab39c] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#099885]"
+            >
+              <Plus className="h-4 w-4" />
+              Yeni Çalışma
+            </Link>
+          </Can>
         </div>
       </div>
 

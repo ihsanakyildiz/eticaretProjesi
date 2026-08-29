@@ -14,6 +14,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import { Can } from "@/components/admin/admin-permissions";
 import { AdminPublicLink, AdminPublicTextLink } from "@/components/admin/admin-public-link";
 import { stripHtml } from "@/lib/html";
 import { publicPageHref } from "@/lib/public-urls";
@@ -207,12 +208,14 @@ export function PagesTable({ pages }: { pages: PageRow[] }) {
     return (
       <div className="rounded-lg border border-[#e9ebec] bg-white px-5 py-12 text-center shadow-sm">
         <p className="text-sm text-slate-500">Henüz oluşturulmuş bir sayfa yok.</p>
-        <Link
-          href="/admin/pages/new"
-          className="mt-4 inline-flex rounded-md bg-[#0ab39c] px-4 py-2 text-sm font-semibold text-white hover:bg-[#099885]"
-        >
-          İlk Sayfayı Ekle
-        </Link>
+        <Can resource="pages" action="create">
+          <Link
+            href="/admin/pages/new"
+            className="mt-4 inline-flex rounded-md bg-[#0ab39c] px-4 py-2 text-sm font-semibold text-white hover:bg-[#099885]"
+          >
+            İlk Sayfayı Ekle
+          </Link>
+        </Can>
       </div>
     );
   }
@@ -383,34 +386,40 @@ export function PagesTable({ pages }: { pages: PageRow[] }) {
 
                     <div className="flex items-center justify-end gap-1.5">
                       <AdminPublicLink href={publicPageHref(page.slug)} />
-                      <form action={togglePageActiveAction}>
-                        <input type="hidden" name="id" value={page.id} />
-                        <button
-                          type="submit"
-                          title={page.isActive ? "Pasife al" : "Aktif et"}
-                          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[#e9ebec] text-slate-500 transition hover:bg-slate-50 hover:text-[#0ab39c]"
+                      <Can resource="pages" action="update">
+                        <form action={togglePageActiveAction}>
+                          <input type="hidden" name="id" value={page.id} />
+                          <button
+                            type="submit"
+                            title={page.isActive ? "Pasife al" : "Aktif et"}
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[#e9ebec] text-slate-500 transition hover:bg-slate-50 hover:text-[#0ab39c]"
+                          >
+                            <Power className="h-4 w-4" />
+                          </button>
+                        </form>
+                      </Can>
+                      <Can resource="pages" action="update">
+                        <Link
+                          href={`/admin/pages/${page.id}/edit`}
+                          title="Düzenle"
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[#e9ebec] text-slate-500 transition hover:bg-slate-50 hover:text-[#405189]"
                         >
-                          <Power className="h-4 w-4" />
+                          <Pencil className="h-4 w-4" />
+                        </Link>
+                      </Can>
+                      <Can resource="pages" action="delete">
+                        <button
+                          type="button"
+                          title="Sil"
+                          onClick={() => {
+                            setDeleteError(null);
+                            setDeleteTarget(page);
+                          }}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-rose-200 text-rose-500 transition hover:bg-rose-50"
+                        >
+                          <Trash2 className="h-4 w-4" />
                         </button>
-                      </form>
-                      <Link
-                        href={`/admin/pages/${page.id}/edit`}
-                        title="Düzenle"
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[#e9ebec] text-slate-500 transition hover:bg-slate-50 hover:text-[#405189]"
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </Link>
-                      <button
-                        type="button"
-                        title="Sil"
-                        onClick={() => {
-                          setDeleteError(null);
-                          setDeleteTarget(page);
-                        }}
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-rose-200 text-rose-500 transition hover:bg-rose-50"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
+                      </Can>
                     </div>
                   </div>
                 );

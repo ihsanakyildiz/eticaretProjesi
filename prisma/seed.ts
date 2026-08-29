@@ -16,10 +16,23 @@ async function main() {
   const passwordHash = await hash(password, 10);
   console.log("upsert user...");
 
+  const maxNo = await prisma.user.aggregate({ _max: { customerNo: true } });
+  const nameParts = name.trim().split(/\s+/);
+  const firstName = nameParts[0] || name;
+  const lastName = nameParts.slice(1).join(" ") || null;
+
   await prisma.user.upsert({
     where: { email },
-    update: { name, password: passwordHash, role: "ADMIN" },
-    create: { email, name, password: passwordHash, role: "ADMIN" },
+    update: { name, firstName, lastName, password: passwordHash, role: "ADMIN" },
+    create: {
+      email,
+      name,
+      firstName,
+      lastName,
+      password: passwordHash,
+      role: "ADMIN",
+      customerNo: (maxNo._max.customerNo ?? 0) + 1,
+    },
   });
 
   const tr = await prisma.language.upsert({
@@ -499,6 +512,7 @@ async function main() {
       name: "Header Menü",
       slug: "header-menu",
       description: "Üst navigasyon menüsü",
+      placement: "TOP" as const,
       sortOrder: 0,
       items: [
         {
@@ -538,7 +552,8 @@ async function main() {
     {
       name: "Footer Menü",
       slug: "footer-menu",
-      description: "Alt bilgi menüsü",
+      description: "Sayfa en altındaki bar",
+      placement: "FOOTER" as const,
       sortOrder: 1,
       items: [
         {
@@ -569,6 +584,7 @@ async function main() {
       update: {
         name: group.name,
         description: group.description,
+        placement: group.placement,
         sortOrder: group.sortOrder,
         isActive: true,
       },
@@ -576,6 +592,7 @@ async function main() {
         name: group.name,
         slug: group.slug,
         description: group.description,
+        placement: group.placement,
         sortOrder: group.sortOrder,
         isActive: true,
       },

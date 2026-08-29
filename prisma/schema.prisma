@@ -9,17 +9,40 @@ datasource db {
 
 enum Role {
   ADMIN
+  STAFF
   MEMBER
+}
+
+enum CustomerTitle {
+  MR
+  MRS
+}
+
+enum CustomerGroup {
+  CUSTOMER
+  GUEST
+  WHOLESALE
 }
 
 model User {
   id               String                   @id @default(cuid())
+  customerNo       Int                      @unique
   name             String?
+  firstName        String?                  @db.VarChar(100)
+  lastName         String?                  @db.VarChar(100)
+  title            CustomerTitle            @default(MR)
+  customerGroup    CustomerGroup            @default(CUSTOMER)
   email            String                   @unique @db.VarChar(191)
   emailVerified    DateTime?
   password         String?
   image            String?                  @db.VarChar(500)
   phone            String?                  @db.VarChar(50)
+  companyName      String?                  @db.VarChar(191)
+  taxNumber        String?                  @db.VarChar(50)
+  notes            String?                  @db.Text
+  newsletter       Boolean                  @default(false)
+  partnerOffers    Boolean                  @default(false)
+  lastLoginAt      DateTime?
   role             Role                     @default(MEMBER)
   isActive         Boolean                  @default(true)
   stripeCustomerId String?                  @unique @db.VarChar(191)
@@ -28,9 +51,216 @@ model User {
   accounts         Account[]
   passwordResetTokens PasswordResetToken[]
   subscriptions    MembershipSubscription[]
+  addresses        CustomerAddress[]
+  orders           Order[]
+  staffPermissions StaffPermission[]
 
   @@index([role, isActive])
+  @@index([customerGroup])
   @@map("users")
+}
+
+model StaffPermission {
+  id         String  @id @default(cuid())
+  userId     String
+  user       User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  resource   String  @db.VarChar(64)
+  canView    Boolean @default(false)
+  canCreate  Boolean @default(false)
+  canUpdate  Boolean @default(false)
+  canDelete  Boolean @default(false)
+
+  @@unique([userId, resource])
+  @@index([userId])
+  @@map("staff_permissions")
+}
+
+model CustomerAddress {
+  id                String   @id @default(cuid())
+  userId            String
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  alias             String   @db.VarChar(100)
+  firstName         String   @db.VarChar(100)
+  lastName          String   @db.VarChar(100)
+  company           String?  @db.VarChar(191)
+  taxOffice         String?  @db.VarChar(100)
+  taxNumber         String?  @db.VarChar(50)
+  phone             String?  @db.VarChar(50)
+  line1             String   @db.VarChar(255)
+  line2             String?  @db.VarChar(255)
+  district          String?  @db.VarChar(100)
+  city              String   @db.VarChar(100)
+  neighborhood      String?  @db.VarChar(150)
+  postalCode        String?  @db.VarChar(20)
+  country             String   @default("Türkiye") @db.VarChar(100)
+  isDelivery          Boolean  @default(true)
+  isInvoice           Boolean  @default(true)
+  isDefaultDelivery   Boolean  @default(false)
+  isDefaultInvoice    Boolean  @default(false)
+  isCorporateInvoice  Boolean  @default(false)
+  sortOrder           Int      @default(0)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([userId, sortOrder])
+  @@map("customer_addresses")
+}
+
+enum OrderStatus {
+  AWAITING_PAYMENT
+  PAYMENT_ACCEPTED
+  PROCESSING
+  SHIPPED
+  DELIVERED
+  CANCELED
+  PAYMENT_ERROR
+  REFUNDED
+}
+
+enum OrderPaymentMethod {
+  BANK_WIRE
+  CREDIT_CARD
+  CASH_ON_DELIVERY
+  OTHER
+}
+
+enum OrderAddressKind {
+  SHIPPING
+  BILLING
+}
+
+enum OrderDocumentKind {
+  INVOICE
+  DELIVERY_SLIP
+}
+
+model Order {
+  id              String             @id @default(cuid())
+  orderNo         Int                @unique
+  reference       String             @unique @db.VarChar(16)
+  userId          String
+  user            User               @relation(fields: [userId], references: [id], onDelete: Restrict)
+  status          OrderStatus        @default(AWAITING_PAYMENT)
+  paymentMethod   OrderPaymentMethod @default(BANK_WIRE)
+  currency        String             @default("TRY") @db.VarChar(3)
+  productsMinor   Int                @default(0)
+  shippingMinor   Int                @default(0)
+  taxMinor        Int                @default(0)
+  totalMinor      Int                @default(0)
+  carrierName     String?            @db.VarChar(191)
+  trackingNumber  String?            @db.VarChar(100)
+  weightKg        Decimal?           @db.Decimal(8, 3)
+  privateNote     String?            @db.Text
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  items           OrderItem[]
+  addresses       OrderAddress[]
+  statusHistory   OrderStatusEvent[]
+  payments        OrderPayment[]
+  messages        OrderMessage[]
+  documents       OrderDocument[]
+
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+  @@map("orders")
+}
+
+model OrderItem {
+  id              String          @id @default(cuid())
+  orderId         String
+  order           Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId       String?
+  product         Product?        @relation(fields: [productId], references: [id], onDelete: SetNull)
+  variantId       String?
+  variant         ProductVariant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
+  title           String          @db.VarChar(191)
+  variantTitle    String?         @db.VarChar(191)
+  sku             String?         @db.VarChar(191)
+  quantity        Int
+  unitPriceMinor  Int
+  taxRatePercent  Int             @default(20)
+  totalMinor      Int
+  image           String?         @db.VarChar(500)
+  createdAt       DateTime        @default(now())
+
+  @@index([orderId])
+  @@map("order_items")
+}
+
+model OrderAddress {
+  id                 String           @id @default(cuid())
+  orderId            String
+  order              Order            @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  kind               OrderAddressKind
+  firstName          String           @db.VarChar(100)
+  lastName           String           @db.VarChar(100)
+  company            String?          @db.VarChar(191)
+  taxOffice          String?          @db.VarChar(100)
+  taxNumber          String?          @db.VarChar(50)
+  phone              String?          @db.VarChar(50)
+  line1              String           @db.VarChar(255)
+  line2              String?          @db.VarChar(255)
+  district           String?          @db.VarChar(100)
+  city               String           @db.VarChar(100)
+  neighborhood       String?          @db.VarChar(150)
+  postalCode         String?          @db.VarChar(20)
+  country            String           @db.VarChar(100)
+  isCorporateInvoice Boolean          @default(false)
+
+  @@unique([orderId, kind])
+  @@map("order_addresses")
+}
+
+model OrderStatusEvent {
+  id        String      @id @default(cuid())
+  orderId   String
+  order     Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  status    OrderStatus
+  note      String?     @db.VarChar(500)
+  createdAt DateTime    @default(now())
+
+  @@index([orderId, createdAt])
+  @@map("order_status_events")
+}
+
+model OrderPayment {
+  id            String             @id @default(cuid())
+  orderId       String
+  order         Order              @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  method        OrderPaymentMethod
+  amountMinor   Int
+  transactionId String?            @db.VarChar(191)
+  paidAt        DateTime           @default(now())
+  createdAt     DateTime           @default(now())
+
+  @@index([orderId, paidAt])
+  @@map("order_payments")
+}
+
+model OrderMessage {
+  id                String   @id @default(cuid())
+  orderId           String
+  order             Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  body              String   @db.Text
+  visibleToCustomer Boolean  @default(true)
+  createdAt         DateTime @default(now())
+
+  @@index([orderId, createdAt])
+  @@map("order_messages")
+}
+
+model OrderDocument {
+  id          String            @id @default(cuid())
+  orderId     String
+  order       Order             @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  kind        OrderDocumentKind
+  number      Int
+  amountMinor Int
+  createdAt   DateTime          @default(now())
+
+  @@unique([kind, number])
+  @@index([orderId, createdAt])
+  @@map("order_documents")
 }
 
 /// Auth.js OAuth hesap bağlantısı
@@ -416,6 +646,8 @@ enum PageSectionType {
   CONTACT_FORM
   CONTACT_INFO
   GRID_ROW
+  PRODUCTS
+  PRODUCT_CATEGORIES
 }
 
 /// CMS sayfaları — klasik içerik veya gelişmiş builder
@@ -476,12 +708,20 @@ model PageSection {
   workCategory        WorkCategory?     @relation(fields: [workCategoryId], references: [id], onDelete: SetNull)
   blogCategoryId      String?
   blogCategory        BlogCategory?     @relation(fields: [blogCategoryId], references: [id], onDelete: SetNull)
+  productCategoryId   String?
+  productCategory     ProductCategory?  @relation(fields: [productCategoryId], references: [id], onDelete: SetNull)
+  productBrandId      String?
+  productBrand        Brand?            @relation(fields: [productBrandId], references: [id], onDelete: SetNull)
+  productFilterValueId String?
+  productFilterValue  ProductFilterValue? @relation(fields: [productFilterValueId], references: [id], onDelete: SetNull)
   createdAt           DateTime          @default(now())
   updatedAt           DateTime          @updatedAt
   cards               PageSectionCard[]
   projects            PageSectionProject[]
   posts               PageSectionPost[]
   works               PageSectionWork[]
+  products            PageSectionProduct[]
+  listedCategories    PageSectionProductCategory[]
 
   @@index([pageId, parentId, sortOrder])
   @@index([pageId, isActive])
@@ -535,6 +775,30 @@ model PageSectionWork {
   @@id([sectionId, workId])
   @@index([workId])
   @@map("page_section_works")
+}
+
+model PageSectionProduct {
+  sectionId String
+  productId String
+  sortOrder Int         @default(0)
+  section   PageSection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  product   Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@id([sectionId, productId])
+  @@index([productId])
+  @@map("page_section_products")
+}
+
+model PageSectionProductCategory {
+  sectionId  String
+  categoryId String
+  sortOrder  Int             @default(0)
+  section    PageSection     @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  category   ProductCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@id([sectionId, categoryId])
+  @@index([categoryId])
+  @@map("page_section_product_categories")
 }
 
 /// Hero alanları (örn. Anasayfa Hero) — birden fazla slayt
@@ -783,9 +1047,465 @@ model PricingPlan {
   @@map("pricing_plans")
 }
 
+/// Ürün kategorileri — sınırsız alt kategori
+model ProductCategory {
+  id             String            @id @default(cuid())
+  parentId       String?
+  parent         ProductCategory?  @relation("ProductCategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children       ProductCategory[] @relation("ProductCategoryTree")
+  name           String            @db.VarChar(191)
+  slug           String            @unique @db.VarChar(191)
+  urlId          Int               @unique @default(autoincrement())
+  description    String?           @db.Text
+  image          String?           @db.VarChar(500)
+  isActive       Boolean           @default(true)
+  sortOrder      Int               @default(0)
+  seoTitle       String?           @db.VarChar(191)
+  seoDescription String?           @db.VarChar(500)
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  products       Product[]
+  filterLinks    ProductFilterCategory[]
+  pageSections   PageSection[]
+  listedInSections PageSectionProductCategory[]
+  menuItems      MenuItem[]
+
+  @@index([parentId])
+  @@index([isActive, sortOrder])
+  @@map("product_categories")
+}
+
+/// Tedarikçi firma — ürünler bu kayda bağlanır
+model Supplier {
+  id          String    @id @default(cuid())
+  name        String    @db.VarChar(191)
+  slug        String    @unique @db.VarChar(191)
+  /// Resmi unvan
+  legalName   String?   @db.VarChar(191)
+  taxNumber   String?   @db.VarChar(50)
+  taxOffice   String?   @db.VarChar(191)
+  contactName String?   @db.VarChar(191)
+  email       String?   @db.VarChar(191)
+  phone       String?   @db.VarChar(50)
+  phone2      String?   @db.VarChar(50)
+  whatsapp    String?   @db.VarChar(50)
+  website     String?   @db.VarChar(500)
+  address     String?   @db.Text
+  city        String?   @db.VarChar(100)
+  district    String?   @db.VarChar(100)
+  country     String?   @db.VarChar(100)
+  postalCode  String?   @db.VarChar(20)
+  logo        String?   @db.VarChar(500)
+  /// Firma tanıtımı (HTML)
+  description String?   @db.LongText
+  /// Tedarik ettiği ürün / kategori bilgisi (HTML)
+  productInfo String?   @db.LongText
+  /// Yalnızca admin notu
+  notes       String?   @db.Text
+  isActive    Boolean   @default(true)
+  sortOrder   Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  products    Product[]
+
+  @@index([isActive, sortOrder])
+  @@index([name])
+  @@map("suppliers")
+}
+
+/// Vitrin markası — ürünler bu kayda bağlanır
+model Brand {
+  id             String    @id @default(cuid())
+  name           String    @db.VarChar(191)
+  slug           String    @unique @db.VarChar(191)
+  urlId          Int       @unique @default(autoincrement())
+  tagline        String?   @db.VarChar(191)
+  website        String?   @db.VarChar(500)
+  /// Menşei ülke
+  country        String?   @db.VarChar(100)
+  logo           String?   @db.VarChar(500)
+  banner         String?   @db.VarChar(500)
+  description    String?   @db.LongText
+  seoTitle       String?   @db.VarChar(191)
+  seoDescription String?   @db.VarChar(500)
+  /// Yalnızca admin notu
+  notes          String?   @db.Text
+  isActive       Boolean   @default(true)
+  sortOrder      Int       @default(0)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  products       Product[]
+  pageSections   PageSection[]
+
+  @@index([isActive, sortOrder])
+  @@index([name])
+  @@map("brands")
+}
+
+/// Varyant ekseni vitrin tipi — TEXT: 41/42 · COLOR: renk noktası · IMAGE: desen
+enum ProductAttributeDisplayType {
+  TEXT
+  COLOR
+  IMAGE
+}
+
+/// Global varyant özelliği (Beden, Renk). Ürüne bağlanan SKU bu değerlerden oluşur.
+model ProductAttribute {
+  id          String                       @id @default(cuid())
+  name        String                       @db.VarChar(191)
+  slug        String                       @unique @db.VarChar(191)
+  description String?                      @db.Text
+  displayType ProductAttributeDisplayType  @default(TEXT)
+  isActive    Boolean                      @default(true)
+  sortOrder   Int                          @default(0)
+  createdAt   DateTime                     @default(now())
+  updatedAt   DateTime                     @updatedAt
+  values      ProductAttributeValue[]
+  selections  ProductVariantSelection[]
+  filter      ProductFilter?
+
+  @@index([isActive, sortOrder])
+  @@map("product_attributes")
+}
+
+/// Özellik değeri (42, Siyah). Stok bu değerde değil; SKU kombinasyonundadır.
+model ProductAttributeValue {
+  id          String         @id @default(cuid())
+  attributeId String
+  attribute   ProductAttribute @relation(fields: [attributeId], references: [id], onDelete: Cascade)
+  name        String         @db.VarChar(191)
+  slug        String         @db.VarChar(191)
+  /// COLOR tipi için #RRGGBB
+  colorHex    String?        @db.VarChar(20)
+  /// IMAGE tipi için swatch
+  image       String?        @db.VarChar(500)
+  isActive    Boolean        @default(true)
+  sortOrder   Int            @default(0)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  selections  ProductVariantSelection[]
+
+  @@unique([attributeId, slug])
+  @@index([attributeId, sortOrder])
+  @@index([attributeId, isActive])
+  @@map("product_attribute_values")
+}
+
+/// Filtre kaynağı. CUSTOM: ürün spec · VARIANT: SKU seçenekleri · SYSTEM: marka/fiyat/stok
+enum ProductFilterKind {
+  CUSTOM
+  VARIANT
+  SYSTEM
+}
+
+/// Yerleşik vitrin filtreleri — değerleri başka tablolardan gelir
+enum ProductFilterSystemKey {
+  BRAND
+  PRICE
+  AVAILABILITY
+}
+
+/// Vitrin kontrolü. Magento/Amazon: gruplar arası AND, grup içi OR.
+enum ProductFilterInputType {
+  MULTI_SELECT
+  SWATCH
+  BOOLEAN
+  RANGE
+}
+
+/// Vitrin faset tanımı. Varyant değerleri tekrarlanmaz; VARIANT kaynağı ProductAttribute’a bağlanır.
+model ProductFilter {
+  id                 String                 @id @default(cuid())
+  name               String                 @db.VarChar(191)
+  slug               String                 @unique @db.VarChar(191)
+  description        String?                @db.Text
+  kind               ProductFilterKind
+  systemKey          ProductFilterSystemKey?
+  variantAttributeId String?                @unique
+  variantAttribute   ProductAttribute?      @relation(fields: [variantAttributeId], references: [id], onDelete: Restrict)
+  inputType          ProductFilterInputType
+  /// RANGE için birim (cm, GB, inç)
+  unit               String?                @db.VarChar(20)
+  /// Magento: Filterable (with results)
+  hideEmptyValues    Boolean                @default(true)
+  showProductCount   Boolean                @default(true)
+  /// true: tüm kategorilerde görünür
+  appliesGlobally    Boolean                @default(false)
+  /// Atanan kategorinin alt kategorilerine de uygula
+  inheritToChildren  Boolean                @default(true)
+  isActive           Boolean                @default(true)
+  sortOrder          Int                    @default(0)
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
+  values             ProductFilterValue[]
+  categories         ProductFilterCategory[]
+  assignments        ProductFilterAssignment[]
+
+  @@unique([systemKey])
+  @@index([isActive, sortOrder])
+  @@index([kind, isActive])
+  @@map("product_filters")
+}
+
+model ProductFilterValue {
+  id          String                    @id @default(cuid())
+  filterId    String
+  filter      ProductFilter             @relation(fields: [filterId], references: [id], onDelete: Cascade)
+  name        String                    @db.VarChar(191)
+  slug        String                    @db.VarChar(191)
+  colorHex    String?                   @db.VarChar(20)
+  image       String?                   @db.VarChar(500)
+  numberValue Decimal?                  @db.Decimal(12, 2)
+  isActive    Boolean                   @default(true)
+  sortOrder   Int                       @default(0)
+  createdAt   DateTime                  @default(now())
+  updatedAt   DateTime                  @updatedAt
+  assignments ProductFilterAssignment[]
+  pageSections PageSection[]
+
+  @@unique([filterId, slug])
+  @@index([filterId, sortOrder])
+  @@index([filterId, isActive])
+  @@map("product_filter_values")
+}
+
+model ProductFilterCategory {
+  filterId   String
+  filter     ProductFilter    @relation(fields: [filterId], references: [id], onDelete: Cascade)
+  categoryId String
+  category   ProductCategory  @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@id([filterId, categoryId])
+  @@index([categoryId])
+  @@map("product_filter_categories")
+}
+
+/// Ürün düzeyi CUSTOM değerleri. VARIANT/SYSTEM kaynakları ürün satırına yazılmaz.
+model ProductFilterAssignment {
+  id           String              @id @default(cuid())
+  productId    String
+  product      Product             @relation(fields: [productId], references: [id], onDelete: Cascade)
+  filterId     String
+  filter       ProductFilter       @relation(fields: [filterId], references: [id], onDelete: Cascade)
+  valueId      String?
+  value        ProductFilterValue? @relation(fields: [valueId], references: [id], onDelete: Cascade)
+  numberValue  Decimal?            @db.Decimal(12, 2)
+  booleanValue Boolean?
+
+  @@index([productId, filterId])
+  @@index([filterId, valueId])
+  @@index([filterId, booleanValue])
+  @@map("product_filter_assignments")
+}
+
+enum ProductVisibility {
+  EVERYWHERE
+  CATALOG
+  SEARCH
+  NONE
+}
+
+enum ProductOutOfStockBehavior {
+  DENY
+  ALLOW
+  DEFAULT
+}
+
+enum ProductEstimatedDelivery {
+  SAME_DAY
+  DAYS_1_3
+  DAYS_3_5
+  DAYS_5_10
+}
+
+/// Ürün fiyatlandırmasında seçilen KDV oranı.
+model TaxRate {
+  id        String   @id @default(cuid())
+  name      String   @db.VarChar(191)
+  percent   Int
+  isDefault Boolean  @default(false)
+  isActive  Boolean  @default(true)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([percent])
+  @@index([isActive, sortOrder])
+  @@map("tax_rates")
+}
+
+/// Satış birimi — sipariş miktarı bu birime göre yorumlanır
+enum ProductSaleUnit {
+  PIECE
+  KG
+  METER
+  LITER
+  PACK
+}
+
+/// Vitrin kaydı. Satın alınabilir birim ve stok ProductVariant üzerindedir (Shopify kuralı).
+model Product {
+  id                  String                     @id @default(cuid())
+  categoryId          String?
+  category            ProductCategory?           @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  supplierId          String?
+  supplier            Supplier?                  @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  brandId             String?
+  brand               Brand?                     @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  title               String                     @db.VarChar(191)
+  slug                String                     @unique @db.VarChar(191)
+  urlId               Int                        @unique @default(autoincrement())
+  summary             String?                    @db.Text
+  content             String?                    @db.LongText
+  image               String?                    @db.VarChar(500)
+  /// Katalog referansı (varsayılan SKU ile senkron)
+  sku                 String?                    @unique @db.VarChar(191)
+  mpn                 String?                    @db.VarChar(64)
+  upc                 String?                    @db.VarChar(64)
+  gtin                String?                    @db.VarChar(64)
+  isbn                String?                    @db.VarChar(32)
+  /// KDV hariç taban satış (kuruş) — yeni kombinasyonlar bundan türer
+  basePriceMinor      Int                        @default(0)
+  compareAtMinor      Int?
+  costMinor           Int?
+  taxRatePercent      Int                        @default(20)
+  widthCm             Decimal?                   @db.Decimal(8, 2)
+  heightCm            Decimal?                   @db.Decimal(8, 2)
+  depthCm             Decimal?                   @db.Decimal(8, 2)
+  weightKg            Decimal?                   @db.Decimal(8, 3)
+  extraShippingMinor  Int                        @default(0)
+  estimatedDelivery   ProductEstimatedDelivery?
+  visibility          ProductVisibility          @default(EVERYWHERE)
+  availableForOrder   Boolean                    @default(true)
+  showPrice           Boolean                    @default(true)
+  onlineOnly          Boolean                    @default(false)
+  onSale              Boolean                    @default(false)
+  outOfStockBehavior  ProductOutOfStockBehavior  @default(DEFAULT)
+  inStockLabel        String?                    @db.VarChar(191)
+  outOfStockLabel     String?                    @db.VarChar(191)
+  saleUnit            ProductSaleUnit            @default(PIECE)
+  minOrderQty         Int                        @default(1)
+  quantityStep        Int                        @default(1)
+  isActive            Boolean                    @default(true)
+  sortOrder           Int                        @default(0)
+  viewCount           Int                        @default(0)
+  clickCount          Int                        @default(0)
+  seoTitle            String?                    @db.VarChar(191)
+  seoDescription      String?                    @db.VarChar(500)
+  createdAt           DateTime                   @default(now())
+  updatedAt           DateTime                   @updatedAt
+  variants            ProductVariant[]
+  filterAssignments   ProductFilterAssignment[]
+  images              ProductImage[]
+  attachments         ProductAttachment[]
+  relatedFrom         ProductRelated[]           @relation("ProductRelatedFrom")
+  relatedTo           ProductRelated[]           @relation("ProductRelatedTo")
+  orderItems          OrderItem[]
+  sectionLinks        PageSectionProduct[]
+
+  @@index([categoryId])
+  @@index([supplierId])
+  @@index([brandId])
+  @@index([isActive, sortOrder])
+  @@index([viewCount])
+  @@index([clickCount])
+  @@map("products")
+}
+
+model ProductImage {
+  id        String   @id @default(cuid())
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  url       String   @db.VarChar(500)
+  alt       String?  @db.VarChar(191)
+  isCover   Boolean  @default(false)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([productId, sortOrder])
+  @@map("product_images")
+}
+
+/// Ürün ek dosyası (kılavuz, teknik şartname)
+model ProductAttachment {
+  id        String   @id @default(cuid())
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  url       String   @db.VarChar(500)
+  name      String   @db.VarChar(191)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([productId, sortOrder])
+  @@map("product_attachments")
+}
+
+/// Vitrinde “ilgili ürünler”
+model ProductRelated {
+  productId String
+  relatedId String
+  product   Product @relation("ProductRelatedFrom", fields: [productId], references: [id], onDelete: Cascade)
+  related   Product @relation("ProductRelatedTo", fields: [relatedId], references: [id], onDelete: Cascade)
+  sortOrder Int     @default(0)
+
+  @@id([productId, relatedId])
+  @@index([relatedId])
+  @@map("product_related")
+}
+
+/// Satılabilir SKU. Fiyat, barkod ve stok burada; ürün-stok eşlemesi bu satırdır.
+model ProductVariant {
+  id             String                    @id @default(cuid())
+  productId      String
+  product        Product                   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  sku            String                    @unique @db.VarChar(191)
+  barcode        String?                   @db.VarChar(64)
+  /// Örn. Siyah / 42 — seçimlerden üretilir
+  title          String                    @db.VarChar(191)
+  /// Satış fiyatı kuruş
+  priceMinor     Int
+  compareAtMinor Int?
+  stockQuantity  Int                       @default(0)
+  trackInventory Boolean                   @default(true)
+  allowBackorder Boolean                   @default(false)
+  isActive       Boolean                   @default(true)
+  /// Varyantsız ürünün tek SKU’su
+  isDefault      Boolean                   @default(false)
+  image          String?                   @db.VarChar(500)
+  /// Sıralı attributeId:valueId|... — aynı kombinasyon üründe tek olabilir
+  combinationKey String                    @db.VarChar(500)
+  sortOrder      Int                       @default(0)
+  createdAt      DateTime                  @default(now())
+  updatedAt      DateTime                  @updatedAt
+  selections     ProductVariantSelection[]
+  orderItems     OrderItem[]
+
+  @@unique([productId, combinationKey])
+  @@index([productId, isActive])
+  @@index([productId, isDefault])
+  @@map("product_variants")
+}
+
+/// Bir SKU’nun özellik seçimleri. Silme, kullanımda Restrict.
+model ProductVariantSelection {
+  variantId   String
+  variant     ProductVariant        @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  attributeId String
+  attribute   ProductAttribute      @relation(fields: [attributeId], references: [id], onDelete: Restrict)
+  valueId     String
+  value       ProductAttributeValue @relation(fields: [valueId], references: [id], onDelete: Restrict)
+
+  @@id([variantId, attributeId])
+  @@unique([variantId, valueId])
+  @@index([attributeId])
+  @@index([valueId])
+  @@map("product_variant_selections")
+}
+
 enum MenuLinkType {
   CUSTOM
   PAGE
+  PRODUCT_CATEGORY
   WORK_CATEGORY
   WORK
   PROJECT_CATEGORY
@@ -794,19 +1514,29 @@ enum MenuLinkType {
   BLOG_POST
 }
 
+/// Menü grubunun vitrinde görüneceği yer
+enum MenuPlacement {
+  NONE
+  TOP
+  HEADER
+  FOOTER
+}
+
 /// Menü grubu — örn. Header Menü, Footer Menü
 model MenuGroup {
-  id          String     @id @default(cuid())
-  name        String     @db.VarChar(191)
-  slug        String     @unique @db.VarChar(191)
-  description String?    @db.Text
-  isActive    Boolean    @default(true)
-  sortOrder   Int        @default(0)
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+  id          String        @id @default(cuid())
+  name        String        @db.VarChar(191)
+  slug        String        @unique @db.VarChar(191)
+  description String?       @db.Text
+  placement   MenuPlacement @default(NONE)
+  isActive    Boolean       @default(true)
+  sortOrder   Int           @default(0)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
   items       MenuItem[]
 
   @@index([isActive, sortOrder])
+  @@index([placement, isActive])
   @@map("menu_groups")
 }
 
@@ -825,9 +1555,13 @@ model MenuItem {
   href        String?      @db.VarChar(500)
   description String?      @db.VarChar(255)
   openInNewTab Boolean     @default(false)
+  /// PRODUCT_CATEGORY: alt kategorileri mega menüde otomatik listele
+  includeProductSubcategories Boolean @default(false)
 
   pageId            String?
   page              Page?            @relation(fields: [pageId], references: [id], onDelete: SetNull)
+  productCategoryId String?
+  productCategory   ProductCategory? @relation(fields: [productCategoryId], references: [id], onDelete: SetNull)
   workCategoryId    String?
   workCategory      WorkCategory?    @relation(fields: [workCategoryId], references: [id], onDelete: SetNull)
   workId            String?
@@ -984,4 +1718,46 @@ model SiteSidebarWidget {
   @@index([sidebarId, sortOrder])
   @@index([sidebarId, isActive])
   @@map("site_sidebar_widgets")
+}
+
+/// Bilinen kargo API entegrasyonları; CUSTOM = elle tanımlı firma
+enum ShippingCarrierProvider {
+  CUSTOM
+  YURTICI
+  ARAS
+  MNG
+  PTT
+  SURAT
+  UPS
+  DHL
+  FEDEX
+  HOROZ
+  HEPSIJET
+  TRENDYOL_EXPRESS
+  KOLAY_GELSIN
+  SENDEO
+}
+
+/// Mağazada seçilebilecek kargo firması (API alanları sonraki entegrasyon için)
+model ShippingCarrier {
+  id                  String                   @id @default(cuid())
+  name                String                   @db.VarChar(191)
+  slug                String                   @unique @db.VarChar(191)
+  provider            ShippingCarrierProvider  @default(CUSTOM)
+  trackingUrlTemplate String?                  @db.VarChar(500)
+  website             String?                  @db.VarChar(500)
+  phone               String?                  @db.VarChar(50)
+  email               String?                  @db.VarChar(191)
+  logo                String?                  @db.VarChar(500)
+  notes               String?                  @db.Text
+  /// İleride API kimlik bilgileri / entegrasyon ayarları (JSON)
+  apiSettings         String?                  @db.Text
+  isActive            Boolean                  @default(true)
+  sortOrder           Int                      @default(0)
+  createdAt           DateTime                 @default(now())
+  updatedAt           DateTime                 @updatedAt
+
+  @@index([isActive, sortOrder])
+  @@index([provider])
+  @@map("shipping_carriers")
 }

@@ -1,8 +1,9 @@
 "use server";
 
+import { requirePermission, requirePermissionOrThrow } from "@/lib/staff-permissions";
+
 import { revalidatePath } from "next/cache";
 import type { CardLayout, CardMediaType, CardType } from "@prisma/client";
-import { auth } from "@/auth";
 import {
   isCardLayout,
   isCardType,
@@ -27,12 +28,6 @@ export type DeleteCardResult = {
   error?: string;
   message?: string;
 };
-
-async function requireAdmin() {
-  const session = await auth();
-  if (!session?.user) throw new Error("UNAUTHORIZED");
-  return session;
-}
 
 function parseMediaType(raw: string): CardMediaType {
   return raw === "IMAGE" ? "IMAGE" : "ICON";
@@ -140,11 +135,8 @@ export async function createCardAction(
   _prev: CardFormState,
   formData: FormData,
 ): Promise<CardFormState> {
-  try {
-    await requireAdmin();
-  } catch {
-    return { error: "Oturum bulunamadı." };
-  }
+  const gate = await requirePermission("cards", "create");
+  if (!gate.ok) return { error: gate.error };
 
   const data = parseCardPayload(formData);
   const fieldErrors: Record<string, string> = {};
@@ -258,11 +250,8 @@ export async function updateCardAction(
   _prev: CardFormState,
   formData: FormData,
 ): Promise<CardFormState> {
-  try {
-    await requireAdmin();
-  } catch {
-    return { error: "Oturum bulunamadı." };
-  }
+  const gate = await requirePermission("cards", "update");
+  if (!gate.ok) return { error: gate.error };
 
   const id = String(formData.get("id") ?? "").trim();
   if (!id) return { error: "Kart bulunamadı." };
@@ -392,11 +381,8 @@ export async function updateCardAction(
 export async function deleteCardAction(
   formData: FormData,
 ): Promise<DeleteCardResult> {
-  try {
-    await requireAdmin();
-  } catch {
-    return { error: "Oturum bulunamadı." };
-  }
+  const gate = await requirePermission("cards", "delete");
+  if (!gate.ok) return { error: gate.error };
 
   const id = String(formData.get("id") ?? "").trim();
   if (!id) return { error: "Kart bulunamadı." };
@@ -415,7 +401,7 @@ export async function deleteCardAction(
 
 export async function toggleCardActiveAction(formData: FormData) {
   try {
-    await requireAdmin();
+    await requirePermissionOrThrow("cards", "update");
   } catch {
     return;
   }

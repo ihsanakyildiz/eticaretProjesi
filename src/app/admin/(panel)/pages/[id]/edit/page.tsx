@@ -102,6 +102,10 @@ async function loadBuilderOptions() {
     projectCategories,
     workCategories,
     blogCategories,
+    productCategories,
+    productBrands,
+    catalogProducts,
+    filterValues,
   ] = await Promise.all([
     prisma.card.findMany({
       where: { type: "CLASSIC" },
@@ -160,6 +164,32 @@ async function loadBuilderOptions() {
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
       select: { id: true, name: true, isActive: true },
     }),
+    prisma.productCategory.findMany({
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+      select: { id: true, name: true, isActive: true },
+    }),
+    prisma.brand.findMany({
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+      select: { id: true, name: true, isActive: true },
+    }),
+    prisma.product.findMany({
+      orderBy: [{ sortOrder: "asc" }, { title: "asc" }],
+      select: {
+        id: true,
+        title: true,
+        isActive: true,
+        category: { select: { name: true } },
+      },
+    }),
+    prisma.productFilterValue.findMany({
+      where: { isActive: true, filter: { isActive: true, kind: "CUSTOM" } },
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+      select: {
+        id: true,
+        name: true,
+        filter: { select: { name: true } },
+      },
+    }),
   ]);
 
   return {
@@ -212,6 +242,22 @@ async function loadBuilderOptions() {
     blogCategoryOptions: blogCategories
       .filter((category) => category.isActive)
       .map((category) => ({ id: category.id, label: category.name })),
+    productOptions: catalogProducts.map((product) => ({
+      id: product.id,
+      label: product.title,
+      isActive: product.isActive,
+      meta: product.category?.name ?? null,
+    })),
+    productCategoryOptions: productCategories
+      .filter((category) => category.isActive)
+      .map((category) => ({ id: category.id, label: category.name })),
+    productBrandOptions: productBrands
+      .filter((brand) => brand.isActive)
+      .map((brand) => ({ id: brand.id, label: brand.name })),
+    productFilterValueOptions: filterValues.map((value) => ({
+      id: value.id,
+      label: `${value.filter.name}: ${value.name}`,
+    })),
   };
 }
 
@@ -233,6 +279,11 @@ export default async function EditPagePage({ params }: EditPageProps) {
           },
           posts: { orderBy: { sortOrder: "asc" }, select: { postId: true } },
           works: { orderBy: { sortOrder: "asc" }, select: { workId: true } },
+          products: { orderBy: { sortOrder: "asc" }, select: { productId: true } },
+          listedCategories: {
+            orderBy: { sortOrder: "asc" },
+            select: { categoryId: true },
+          },
         },
       },
     },
@@ -257,10 +308,15 @@ export default async function EditPagePage({ params }: EditPageProps) {
       projectCategoryId: section.projectCategoryId,
       workCategoryId: section.workCategoryId,
       blogCategoryId: section.blogCategoryId,
+      productCategoryId: section.productCategoryId,
+      productBrandId: section.productBrandId,
+      productFilterValueId: section.productFilterValueId,
       cardIds: section.cards.map((row) => row.cardId),
       projectIds: section.projects.map((row) => row.projectId),
       postIds: section.posts.map((row) => row.postId),
       workIds: section.works.map((row) => row.workId),
+      productIds: section.products.map((row) => row.productId),
+      listedCategoryIds: section.listedCategories.map((row) => row.categoryId),
     }));
 
     const publicHref = publicPageHref(page.slug);

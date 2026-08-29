@@ -1,8 +1,8 @@
 "use server";
 
-import { auth } from "@/auth";
 import { getSettingsMapUncached } from "@/lib/settings";
 import { getSmtpConfigFromSettings, sendSmtpTestEmail } from "@/lib/smtp";
+import { requirePermission } from "@/lib/staff-permissions";
 
 export type MailTestState = {
   success?: boolean;
@@ -14,10 +14,8 @@ export async function sendSmtpTestEmailAction(
   _prev: MailTestState,
   formData: FormData,
 ): Promise<MailTestState> {
-  const session = await auth();
-  if (!session?.user) {
-    return { error: "Oturum bulunamadı." };
-  }
+  const gate = await requirePermission("settings", "update");
+  if (!gate.ok) return { error: gate.error };
 
   try {
     const settings = await getSettingsMapUncached();

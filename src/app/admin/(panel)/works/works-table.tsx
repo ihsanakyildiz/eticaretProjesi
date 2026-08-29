@@ -14,6 +14,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import { Can } from "@/components/admin/admin-permissions";
 import { SearchableSelect } from "@/components/admin/searchable-select";
 import { AdminPublicLink, AdminPublicTextLink } from "@/components/admin/admin-public-link";
 import { stripHtml } from "@/lib/html";
@@ -255,12 +256,14 @@ export function WorksTable({
     return (
       <div className="rounded-lg border border-[#e9ebec] bg-white px-5 py-12 text-center shadow-sm">
         <p className="text-sm text-slate-500">Henüz yayınlanmış bir çalışma yok.</p>
-        <Link
-          href="/admin/works/new"
-          className="mt-4 inline-flex rounded-md bg-[#0ab39c] px-4 py-2 text-sm font-semibold text-white hover:bg-[#099885]"
-        >
-          İlk Çalışmayı Ekle
-        </Link>
+        <Can resource="works" action="create">
+          <Link
+            href="/admin/works/new"
+            className="mt-4 inline-flex rounded-md bg-[#0ab39c] px-4 py-2 text-sm font-semibold text-white hover:bg-[#099885]"
+          >
+            İlk Çalışmayı Ekle
+          </Link>
+        </Can>
       </div>
     );
   }
@@ -454,34 +457,40 @@ export function WorksTable({
 
                   <div className="flex items-center justify-end gap-1.5">
                     <AdminPublicLink href={publicWorkHref(work.slug)} />
-                    <form action={toggleWorkActiveAction}>
-                      <input type="hidden" name="id" value={work.id} />
-                      <button
-                        type="submit"
-                        title={work.isActive ? "Pasife al" : "Aktif et"}
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[#e9ebec] text-slate-500 transition hover:bg-slate-50 hover:text-[#0ab39c]"
+                    <Can resource="works" action="update">
+                      <form action={toggleWorkActiveAction}>
+                        <input type="hidden" name="id" value={work.id} />
+                        <button
+                          type="submit"
+                          title={work.isActive ? "Pasife al" : "Aktif et"}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[#e9ebec] text-slate-500 transition hover:bg-slate-50 hover:text-[#0ab39c]"
+                        >
+                          <Power className="h-4 w-4" />
+                        </button>
+                      </form>
+                    </Can>
+                    <Can resource="works" action="update">
+                      <Link
+                        href={`/admin/works/${work.id}/edit`}
+                        title="Düzenle"
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[#e9ebec] text-slate-500 transition hover:bg-slate-50 hover:text-[#405189]"
                       >
-                        <Power className="h-4 w-4" />
+                        <Pencil className="h-4 w-4" />
+                      </Link>
+                    </Can>
+                    <Can resource="works" action="delete">
+                      <button
+                        type="button"
+                        title="Sil"
+                        onClick={() => {
+                          setDeleteError(null);
+                          setDeleteTarget(work);
+                        }}
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-rose-200 text-rose-500 transition hover:bg-rose-50"
+                      >
+                        <Trash2 className="h-4 w-4" />
                       </button>
-                    </form>
-                    <Link
-                      href={`/admin/works/${work.id}/edit`}
-                      title="Düzenle"
-                      className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[#e9ebec] text-slate-500 transition hover:bg-slate-50 hover:text-[#405189]"
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </Link>
-                    <button
-                      type="button"
-                      title="Sil"
-                      onClick={() => {
-                        setDeleteError(null);
-                        setDeleteTarget(work);
-                      }}
-                      className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-rose-200 text-rose-500 transition hover:bg-rose-50"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
+                    </Can>
                   </div>
                 </div>
               ))}

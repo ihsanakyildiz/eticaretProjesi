@@ -13,6 +13,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import { Can } from "@/components/admin/admin-permissions";
 import {
   deleteProjectClientAction,
   toggleProjectClientActiveAction,
@@ -214,12 +215,14 @@ export function ProjectClientsTable({ clients }: { clients: ProjectClientRow[] }
               {clients.length === 0 ? "Henüz müşteri eklenmemiş." : "Aramanızla eşleşen müşteri yok."}
             </p>
             {clients.length === 0 ? (
-              <Link
-                href="/admin/projects/clients/new"
-                className="mt-4 inline-flex text-sm font-medium text-[#405189] hover:underline"
-              >
-                İlk müşteriyi ekle →
-              </Link>
+              <Can resource="project_clients" action="create">
+                <Link
+                  href="/admin/projects/clients/new"
+                  className="mt-4 inline-flex text-sm font-medium text-[#405189] hover:underline"
+                >
+                  İlk müşteriyi ekle →
+                </Link>
+              </Can>
             ) : null}
           </div>
         ) : (
@@ -271,34 +274,40 @@ export function ProjectClientsTable({ clients }: { clients: ProjectClientRow[] }
                     )}
                   </span>
                   <div className="flex items-center justify-end gap-1">
-                    <Link
-                      href={`/admin/projects/clients/${client.id}/edit`}
-                      className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[#e9ebec] text-slate-500 hover:bg-slate-50 hover:text-[#405189]"
-                      title="Düzenle"
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                    </Link>
-                    <button
-                      type="button"
-                      onClick={() => toggleActive(client)}
-                      disabled={isPending}
-                      className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[#e9ebec] text-slate-500 hover:bg-slate-50 hover:text-[#0ab39c] disabled:opacity-60"
-                      title={client.isActive ? "Pasife al" : "Aktif et"}
-                    >
-                      <Power className="h-3.5 w-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setActionError(null);
-                        setDeleteTarget(client);
-                      }}
-                      disabled={isPending}
-                      className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[#e9ebec] text-slate-500 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-60"
-                      title="Sil"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
+                    <Can resource="project_clients" action="update">
+                      <Link
+                        href={`/admin/projects/clients/${client.id}/edit`}
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[#e9ebec] text-slate-500 hover:bg-slate-50 hover:text-[#405189]"
+                        title="Düzenle"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Link>
+                    </Can>
+                    <Can resource="project_clients" action="update">
+                      <button
+                        type="button"
+                        onClick={() => toggleActive(client)}
+                        disabled={isPending}
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[#e9ebec] text-slate-500 hover:bg-slate-50 hover:text-[#0ab39c] disabled:opacity-60"
+                        title={client.isActive ? "Pasife al" : "Aktif et"}
+                      >
+                        <Power className="h-3.5 w-3.5" />
+                      </button>
+                    </Can>
+                    <Can resource="project_clients" action="delete">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActionError(null);
+                          setDeleteTarget(client);
+                        }}
+                        disabled={isPending}
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[#e9ebec] text-slate-500 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-60"
+                        title="Sil"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </Can>
                   </div>
                 </div>
               ))}

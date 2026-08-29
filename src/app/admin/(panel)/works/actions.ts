@@ -1,8 +1,9 @@
 "use server";
 
+import { requirePermission, requirePermissionOrThrow } from "@/lib/staff-permissions";
+
 import { revalidatePath } from "next/cache";
 import { bustWorkCache } from "@/lib/works";
-import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { resolveWorkSeo, SEO_DESCRIPTION_MAX, SEO_TITLE_MAX } from "@/lib/seo";
 import { slugify } from "@/lib/slug";
@@ -24,14 +25,6 @@ export type DeleteWorkResult = {
   error?: string;
   message?: string;
 };
-
-async function requireAdmin() {
-  const session = await auth();
-  if (!session?.user) {
-    throw new Error("UNAUTHORIZED");
-  }
-  return session;
-}
 
 async function uniqueWorkSlug(base: string, excludeId?: string) {
   const slug = slugify(base) || "calisma";
@@ -134,11 +127,8 @@ export async function createWorkAction(
   _prev: WorkFormState,
   formData: FormData,
 ): Promise<WorkFormState> {
-  try {
-    await requireAdmin();
-  } catch {
-    return { error: "Oturum bulunamadı." };
-  }
+  const gate = await requirePermission("works", "create");
+  if (!gate.ok) return { error: gate.error };
 
   const data = parseWorkPayload(formData);
   if (!data.title) {
@@ -243,11 +233,8 @@ export async function updateWorkAction(
   _prev: WorkFormState,
   formData: FormData,
 ): Promise<WorkFormState> {
-  try {
-    await requireAdmin();
-  } catch {
-    return { error: "Oturum bulunamadı." };
-  }
+  const gate = await requirePermission("works", "update");
+  if (!gate.ok) return { error: gate.error };
 
   const id = String(formData.get("id") ?? "").trim();
   if (!id) return { error: "Çalışma bulunamadı." };
@@ -355,11 +342,8 @@ export async function updateWorkAction(
 }
 
 export async function deleteWorkAction(formData: FormData): Promise<DeleteWorkResult> {
-  try {
-    await requireAdmin();
-  } catch {
-    return { error: "Oturum bulunamadı." };
-  }
+  const gate = await requirePermission("works", "delete");
+  if (!gate.ok) return { error: gate.error };
 
   const id = String(formData.get("id") ?? "").trim();
   if (!id) return { error: "Çalışma bulunamadı." };
@@ -383,7 +367,7 @@ export async function deleteWorkAction(formData: FormData): Promise<DeleteWorkRe
 
 export async function toggleWorkActiveAction(formData: FormData) {
   try {
-    await requireAdmin();
+    await requirePermissionOrThrow("works", "update");
   } catch {
     return;
   }

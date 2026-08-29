@@ -118,6 +118,60 @@ export const settingGroups: SettingGroupDef[] = [
     ],
   },
   {
+    id: "urls",
+    title: "Gelişmiş link yapısı",
+    description:
+      "Önekleri serbest yazın. İsterseniz kalıcı sayısal ID ekleyin; ürün veya kategori adı değişse bile link doğru kayda gider.",
+    fields: [
+      {
+        key: "url_catalog_path",
+        label: "Katalog / arama adresi",
+        type: "text",
+        defaultValue: "katalog",
+        hint: "Liste ve arama kutusu bu yolu kullanır. Örn. katalog, arama, magaza",
+      },
+      {
+        key: "url_product_path",
+        label: "Ürün detay öneki",
+        type: "text",
+        defaultValue: "",
+        hint: "Boş bırakılırsa ürün kök dizinde açılır: /urun-slug",
+      },
+      {
+        key: "url_product_include_id",
+        label: "Ürün URL’sine ID ekle",
+        type: "boolean",
+        defaultValue: "false",
+        hint: "Örn. /test-urunu-ekliyorum/1 — slug değişse bile ID sabit kalır.",
+      },
+      {
+        key: "url_category_path",
+        label: "Kategori öneki",
+        type: "text",
+        defaultValue: "kategori",
+      },
+      {
+        key: "url_category_include_id",
+        label: "Kategori URL’sine ID ekle",
+        type: "boolean",
+        defaultValue: "false",
+        hint: "Örn. /kategori/giyim/1",
+      },
+      {
+        key: "url_brand_path",
+        label: "Marka öneki",
+        type: "text",
+        defaultValue: "marka",
+      },
+      {
+        key: "url_brand_include_id",
+        label: "Marka URL’sine ID ekle",
+        type: "boolean",
+        defaultValue: "false",
+      },
+    ],
+  },
+  {
     id: "branding",
     title: "Logo & Favicon",
     description:
@@ -771,6 +825,39 @@ export type SettingsScope =
   | "membership"
   | "pricing"
   | "all";
+
+export const GENERAL_SETTING_TAB_IDS = [
+  "general",
+  "appearance",
+  "contact",
+  "seo",
+  "mail",
+  "advanced",
+] as const;
+
+export type GeneralSettingTabId = (typeof GENERAL_SETTING_TAB_IDS)[number];
+
+export const GENERAL_SETTING_TABS: {
+  id: GeneralSettingTabId;
+  label: string;
+  groupIds: string[];
+}[] = [
+  { id: "general", label: "Genel", groupIds: ["general"] },
+  { id: "appearance", label: "Görünüm", groupIds: ["branding"] },
+  { id: "contact", label: "İletişim", groupIds: ["contact", "social"] },
+  { id: "seo", label: "SEO & Linkler", groupIds: ["seo", "urls"] },
+  { id: "mail", label: "E-posta", groupIds: ["mail"] },
+  { id: "advanced", label: "Gelişmiş", groupIds: ["custom_code"] },
+];
+
+export function isGeneralSettingTabId(value: string): value is GeneralSettingTabId {
+  return (GENERAL_SETTING_TAB_IDS as readonly string[]).includes(value);
+}
+
+export function generalTabForGroupId(groupId: string): GeneralSettingTabId | null {
+  const tab = GENERAL_SETTING_TABS.find((item) => item.groupIds.includes(groupId));
+  return tab?.id ?? null;
+}
 
 export function getSettingGroupsByScope(scope: SettingsScope): SettingGroupDef[] {
   switch (scope) {

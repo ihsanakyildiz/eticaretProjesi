@@ -18,7 +18,7 @@ type Props = {
 export default async function AboneliklerPage({ searchParams }: Props) {
   const access = await ensureMemberPortalAccess();
   if (!access.ok) {
-    redirect(access.reason === "disabled" ? "/" : "/giris?callbackUrl=/uye/abonelikler");
+    redirect("/giris?callbackUrl=/uye/abonelikler");
   }
 
   const params = await searchParams;

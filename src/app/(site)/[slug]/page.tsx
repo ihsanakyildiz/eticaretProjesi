@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, permanentRedirect } from "next/navigation";
 import { JsonLd } from "@/components/site/json-ld";
 import { PageSectionsRenderer } from "@/components/site/page-sections-renderer";
 import { SiteSidebarPageLayout } from "@/components/site/site-sidebar-layout";
@@ -13,32 +13,27 @@ import {
 } from "@/lib/pages";
 import { getSettingsMap } from "@/lib/settings";
 import { auth } from "@/auth";
-import { getMembershipFlags } from "@/lib/membership";
-import { resolvePricingBillingOptions } from "@/lib/pricing";
+import type { CatalogSearchParams } from "@/components/site/catalog/catalog-listing-screen";
+import { CatalogProductScreen, catalogProductMetadata } from "@/components/site/catalog/catalog-product-screen";
+import { catalogHubMetadataIfMatch, renderCatalogHubIfMatch } from "@/lib/catalog-path-page";
+import { getCachedCatalogProduct } from "@/lib/catalog-products";
 import { prepareRichHtml } from "@/lib/html";
 import { buildCollectionJsonLd, buildWebPageJsonLd } from "@/lib/json-ld";
+import { getMembershipFlags } from "@/lib/membership";
 import { parsePerformance } from "@/lib/performance";
+import { resolvePricingBillingOptions } from "@/lib/pricing";
 import { publicPageHref } from "@/lib/public-urls";
 import { buildPublicMetadata, resolvePageSeo } from "@/lib/seo";
+import {
+  parseUrlStructure,
+  publicProductHref,
+  systemReservedFirstSegments,
+} from "@/lib/url-structure";
 
 type PageProps = {
   params: Promise<{ slug: string }>;
+  searchParams?: Promise<CatalogSearchParams>;
 };
-
-const RESERVED_SLUGS = new Set([
-  "admin",
-  "api",
-  "projeler",
-  "blog",
-  "yapilan-isler",
-  "anasayfa",
-  "giris",
-  "kayit",
-  "uye",
-  "sifremi-unuttum",
-  "sifre-sifirla",
-  "paket",
-]);
 
 function PageBodyWithOptionalSidebar({
   enabled,
@@ -59,38 +54,53 @@ function PageBodyWithOptionalSidebar({
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { slug } = await params;
-  if (RESERVED_SLUGS.has(slug)) return {};
-
-  const [advanced, classic, settings] = await Promise.all([
-    getAdvancedPageBySlug(slug).catch(() => null),
-    getClassicPageBySlug(slug).catch(() => null),
-    getSettingsMap().catch(() => ({}) as Record<string, string>),
-  ]);
-  const page = advanced ?? classic;
-  if (!page) return { title: "Sayfa bulunamadı" };
-
-  const seo = resolvePageSeo({
-    title: page.title,
-    summary: page.summary,
-    content: page.content,
-    seoTitle: page.seoTitle,
-    seoDescription: page.seoDescription,
-  });
-
-  return buildPublicMetadata({
-    settings,
-    title: seo.seoTitle,
-    description: seo.seoDescription,
-    path: publicPageHref(slug),
-    image: page.image,
-  });
-}
-
-export default async function CmsPage({ params }: PageProps) {
-  const { slug } = await params;
-  if (RESERVED_SLUGS.has(slug)) notFound();
+  const hubMeta = await catalogHubMetadataIfMatch(slug);
+  if (hubMeta) return hubMeta;
 
   const settings = await getSettingsMap().catch(() => ({}) as Record<string, string>);
+  const urls = parseUrlStructure(settings);
+  if (systemReservedFirstSegments().has(slug)) return {};
+
+  const [advanced, classic] = await Promise.all([
+    getAdvancedPageBySlug(slug).catch(() => null),
+    getClassicPageBySlug(slug).catch(() => null),
+  ]);
+  const page = advanced ?? classic;
+  if (page) {
+    const seo = resolvePageSeo({
+      title: page.title,
+      summary: page.summary,
+      content: page.content,
+      seoTitle: page.seoTitle,
+      seoDescription: page.seoDescription,
+    });
+
+    return buildPublicMetadata({
+      settings,
+      title: seo.seoTitle,
+      description: seo.seoDescription,
+      path: publicPageHref(slug),
+      image: page.image,
+    });
+  }
+
+  const product = await getCachedCatalogProduct(slug).catch(() => null);
+  if (product && urls.product === "") {
+    return catalogProductMetadata(product.slug);
+  }
+
+  return { title: "Sayfa bulunamadı" };
+}
+
+export default async function CmsPage({ params, searchParams }: PageProps) {
+  const { slug } = await params;
+  const search = searchParams ? await searchParams : {};
+  const hub = await renderCatalogHubIfMatch(slug, search);
+  if (hub) return hub;
+
+  const settings = await getSettingsMap().catch(() => ({}) as Record<string, string>);
+  const urls = parseUrlStructure(settings);
+  if (systemReservedFirstSegments().has(slug)) notFound();
   const [membership, session] = await Promise.all([
     getMembershipFlags(),
     auth(),
@@ -169,7 +179,15 @@ export default async function CmsPage({ params }: PageProps) {
   }
 
   const classic = await getClassicPageBySlug(slug).catch(() => null);
-  if (!classic) notFound();
+  if (!classic) {
+    const product = await getCachedCatalogProduct(slug).catch(() => null);
+    if (!product) notFound();
+    const canonical = publicProductHref(product.slug, urls, product.urlId);
+    if (`/${slug}` !== canonical) {
+      permanentRedirect(canonical);
+    }
+    return <CatalogProductScreen slug={product.slug} urls={urls} />;
+  }
 
   const perf = parsePerformance(settings);
   const classicContent = prepareRichHtml(classic.content, {

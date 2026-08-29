@@ -1,7 +1,8 @@
 "use server";
 
+import { requirePermissionOrThrow } from "@/lib/staff-permissions";
+
 import { revalidatePath } from "next/cache";
-import { auth } from "@/auth";
 import { buildReplyOutboundContent } from "@/lib/mail";
 import {
   bumpThreadRootActivity,
@@ -22,14 +23,6 @@ export type MailActionState = {
   error?: string;
   message?: string;
 };
-
-async function requireAdmin() {
-  const session = await auth();
-  if (!session?.user) {
-    throw new Error("Oturum bulunamadı.");
-  }
-  return session;
-}
 
 function revalidateMail() {
   revalidatePath("/admin/email");
@@ -66,7 +59,7 @@ async function resolveCustomerQuoteMessage(parent: {
 }
 
 export async function markMailReadAction(id: string, isRead = true) {
-  await requireAdmin();
+  await requirePermissionOrThrow("email", "update");
   const rootId = await findThreadRootId(id);
   const threadIds = await collectThreadMessageIds(rootId);
 
@@ -78,7 +71,7 @@ export async function markMailReadAction(id: string, isRead = true) {
 }
 
 export async function toggleMailStarAction(id: string) {
-  await requireAdmin();
+  await requirePermissionOrThrow("email", "update");
   const current = await prisma.mailMessage.findUnique({
     where: { id },
     select: { isStarred: true },
@@ -96,7 +89,7 @@ export async function moveMailToFolderAction(
   id: string,
   folder: "INBOX" | "SPAM" | "TRASH" | "DRAFT",
 ) {
-  await requireAdmin();
+  await requirePermissionOrThrow("email", "update");
   await prisma.mailMessage.update({
     where: { id },
     data: { folder },
@@ -109,7 +102,7 @@ export async function replyMailAction(
   formData: FormData,
 ): Promise<MailActionState> {
   try {
-    await requireAdmin();
+    await requirePermissionOrThrow("email", "update");
 
     const parentId = String(formData.get("parentId") ?? "").trim();
     const body = String(formData.get("body") ?? "").trim();
@@ -220,7 +213,7 @@ export async function composeMailAction(
   formData: FormData,
 ): Promise<MailActionState> {
   try {
-    await requireAdmin();
+    await requirePermissionOrThrow("email", "create");
 
     const to = String(formData.get("to") ?? "").trim();
     const subject = String(formData.get("subject") ?? "").trim();
@@ -298,7 +291,7 @@ export async function loadMoreMailMessagesAction(input: {
   q?: string | null;
   cursor: string;
 }) {
-  await requireAdmin();
+  await requirePermissionOrThrow("email", "view");
   const { listMailMessagesPage } = await import("@/lib/mail-queries");
   return listMailMessagesPage({
     folder: input.folder,
@@ -310,7 +303,7 @@ export async function loadMoreMailMessagesAction(input: {
 
 export async function syncImapInboxAction(): Promise<MailActionState> {
   try {
-    await requireAdmin();
+    await requirePermissionOrThrow("email", "update");
     const { syncImapInboxNow } = await import("@/lib/mail-imap-sync");
     const result = await syncImapInboxNow();
 

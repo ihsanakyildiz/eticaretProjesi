@@ -18,11 +18,24 @@ function createPrismaClient() {
   });
 }
 
+function hasCurrentDelegates(client: PrismaClient | undefined) {
+  return Boolean(
+    client &&
+      "mailMessage" in client &&
+      "shippingCarrier" in client &&
+      "pageSectionProduct" in client &&
+      "pageSectionProductCategory" in client,
+  );
+}
+
 function resolvePrismaClient() {
   const cached = globalForPrisma.prisma;
-  // Schema güncellenince eski global client’ta yeni modeller olmayabilir
-  if (cached && "mailMessage" in cached) {
+  if (cached && hasCurrentDelegates(cached)) {
     return cached;
+  }
+
+  if (cached) {
+    void cached.$disconnect().catch(() => undefined);
   }
 
   const client = createPrismaClient();

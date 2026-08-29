@@ -1,8 +1,9 @@
 "use server";
 
+import { requirePermission, requirePermissionOrThrow } from "@/lib/staff-permissions";
+
 import { revalidatePath } from "next/cache";
 import { bustWorkCache } from "@/lib/works";
-import { auth } from "@/auth";
 import { collectDescendantIds } from "@/lib/category-tree";
 import { prisma } from "@/lib/prisma";
 import { slugify } from "@/lib/slug";
@@ -19,14 +20,6 @@ export type WorkCategoryFormState = {
   message?: string;
   fieldErrors?: Record<string, string>;
 };
-
-async function requireAdmin() {
-  const session = await auth();
-  if (!session?.user) {
-    throw new Error("UNAUTHORIZED");
-  }
-  return session;
-}
 
 function revalidateWorkCategoryPublic(slug?: string | null) {
   revalidatePath("/yapilan-isler");
@@ -122,11 +115,8 @@ export async function createWorkCategoryAction(
   _prev: WorkCategoryFormState,
   formData: FormData,
 ): Promise<WorkCategoryFormState> {
-  try {
-    await requireAdmin();
-  } catch {
-    return { error: "Oturum bulunamadı." };
-  }
+  const gate = await requirePermission("works_categories", "create");
+  if (!gate.ok) return { error: gate.error };
 
   const data = parseCategoryPayload(formData);
   if (!data.name) {
@@ -193,11 +183,8 @@ export async function updateWorkCategoryAction(
   _prev: WorkCategoryFormState,
   formData: FormData,
 ): Promise<WorkCategoryFormState> {
-  try {
-    await requireAdmin();
-  } catch {
-    return { error: "Oturum bulunamadı." };
-  }
+  const gate = await requirePermission("works_categories", "update");
+  if (!gate.ok) return { error: gate.error };
 
   const id = String(formData.get("id") ?? "").trim();
   if (!id) return { error: "Kategori bulunamadı." };
@@ -285,7 +272,7 @@ export async function getCategoryWorksAction(
   categoryId: string,
 ): Promise<{ works: CategoryWorkItem[]; error?: string }> {
   try {
-    await requireAdmin();
+    await requirePermissionOrThrow("works_categories", "view");
   } catch {
     return { works: [], error: "Oturum bulunamadı." };
   }
@@ -307,11 +294,8 @@ export async function deleteWorkCategoryAction(input: {
   /** Bağlı çalışmalar varsa zorunlu */
   worksMode?: "delete" | "deactivate";
 }): Promise<DeleteWorkCategoryResult> {
-  try {
-    await requireAdmin();
-  } catch {
-    return { error: "Oturum bulunamadı." };
-  }
+  const gate = await requirePermission("works_categories", "delete");
+  if (!gate.ok) return { error: gate.error };
 
   const id = String(input.id ?? "").trim();
   if (!id) return { error: "Kategori bulunamadı." };
@@ -394,11 +378,8 @@ export async function deactivateWorkCategoryAction(input: {
   /** workId -> hedef kategoriId (boş = taşınmaz, pasife alınır) */
   moves?: Record<string, string>;
 }): Promise<DeactivateWorkCategoryResult> {
-  try {
-    await requireAdmin();
-  } catch {
-    return { error: "Oturum bulunamadı." };
-  }
+  const gate = await requirePermission("works_categories", "update");
+  if (!gate.ok) return { error: gate.error };
 
   const id = String(input.id ?? "").trim();
   if (!id) return { error: "Kategori bulunamadı." };
@@ -471,11 +452,8 @@ export async function deactivateWorkCategoryAction(input: {
 }
 
 export async function activateWorkCategoryAction(categoryId: string): Promise<DeactivateWorkCategoryResult> {
-  try {
-    await requireAdmin();
-  } catch {
-    return { error: "Oturum bulunamadı." };
-  }
+  const gate = await requirePermission("works_categories", "update");
+  if (!gate.ok) return { error: gate.error };
 
   const id = categoryId.trim();
   if (!id) return { error: "Kategori bulunamadı." };
@@ -498,7 +476,7 @@ export async function activateWorkCategoryAction(categoryId: string): Promise<De
 /** @deprecated Power butonu artık modal kullanıyor; geriye dönük uyumluluk */
 export async function toggleWorkCategoryActiveAction(formData: FormData) {
   try {
-    await requireAdmin();
+    await requirePermissionOrThrow("works_categories", "update");
   } catch {
     return;
   }

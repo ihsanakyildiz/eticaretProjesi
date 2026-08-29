@@ -2,6 +2,7 @@
 
 import { useActionState } from "react";
 import { Loader2, RefreshCw, Trash2 } from "lucide-react";
+import { Can } from "@/components/admin/admin-permissions";
 import { cacheAction, type CachePanelState } from "./cache-actions";
 
 const initialState: CachePanelState = {
@@ -69,49 +70,53 @@ export function CachePanel({ lastClearedLabel, lastModeLabel }: CachePanelProps)
         </div>
 
         <div className="grid gap-3 md:grid-cols-2">
-          <form action={formAction}>
-            <input type="hidden" name="mode" value="refresh" />
-            <button
-              type="submit"
-              disabled={isPending}
-              className="flex w-full flex-col items-start gap-2 rounded-lg border border-[#e9ebec] bg-white p-4 text-left transition hover:border-[#0ab39c]/40 hover:bg-[#0ab39c]/5 disabled:cursor-not-allowed disabled:opacity-70"
-            >
-              <span className="inline-flex items-center gap-2 text-sm font-semibold text-slate-800">
-                {isPending ? (
-                  <Loader2 className="h-4 w-4 animate-spin text-[#0ab39c]" />
-                ) : (
-                  <RefreshCw className="h-4 w-4 text-[#0ab39c]" />
-                )}
-                Önbelleği Yenile
-              </span>
-              <span className="text-xs leading-relaxed text-slate-500">
-                Sayfa ve layout cache’ini revalidate eder. Güvenli ve hızlıdır; günlük kullanım için
-                önerilir.
-              </span>
-            </button>
-          </form>
+          <Can resource="settings_performance" action="update">
+            <form action={formAction}>
+              <input type="hidden" name="mode" value="refresh" />
+              <button
+                type="submit"
+                disabled={isPending}
+                className="flex w-full flex-col items-start gap-2 rounded-lg border border-[#e9ebec] bg-white p-4 text-left transition hover:border-[#0ab39c]/40 hover:bg-[#0ab39c]/5 disabled:cursor-not-allowed disabled:opacity-70"
+              >
+                <span className="inline-flex items-center gap-2 text-sm font-semibold text-slate-800">
+                  {isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin text-[#0ab39c]" />
+                  ) : (
+                    <RefreshCw className="h-4 w-4 text-[#0ab39c]" />
+                  )}
+                  Önbelleği Yenile
+                </span>
+                <span className="text-xs leading-relaxed text-slate-500">
+                  Sayfa ve layout cache’ini revalidate eder. Güvenli ve hızlıdır; günlük kullanım için
+                  önerilir.
+                </span>
+              </button>
+            </form>
+          </Can>
 
-          <form action={formAction}>
-            <input type="hidden" name="mode" value="purge" />
-            <button
-              type="submit"
-              disabled={isPending}
-              className="flex w-full flex-col items-start gap-2 rounded-lg border border-rose-200 bg-white p-4 text-left transition hover:border-rose-300 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-70"
-            >
-              <span className="inline-flex items-center gap-2 text-sm font-semibold text-rose-700">
-                {isPending ? (
-                  <Loader2 className="h-4 w-4 animate-spin text-rose-600" />
-                ) : (
-                  <Trash2 className="h-4 w-4 text-rose-600" />
-                )}
-                Önbelleği Tamamen Temizle
-              </span>
-              <span className="text-xs leading-relaxed text-slate-500">
-                Revalidate + <code className="text-[11px]">.next/cache</code> disk önbelleğini siler.
-                Büyük değişikliklerden sonra kullanın.
-              </span>
-            </button>
-          </form>
+          <Can resource="settings_performance" action="update">
+            <form action={formAction}>
+              <input type="hidden" name="mode" value="purge" />
+              <button
+                type="submit"
+                disabled={isPending}
+                className="flex w-full flex-col items-start gap-2 rounded-lg border border-rose-200 bg-white p-4 text-left transition hover:border-rose-300 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-70"
+              >
+                <span className="inline-flex items-center gap-2 text-sm font-semibold text-rose-700">
+                  {isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin text-rose-600" />
+                  ) : (
+                    <Trash2 className="h-4 w-4 text-rose-600" />
+                  )}
+                  Önbelleği Tamamen Temizle
+                </span>
+                <span className="text-xs leading-relaxed text-slate-500">
+                  Revalidate + <code className="text-[11px]">.next/cache</code> disk önbelleğini siler.
+                  Büyük değişikliklerden sonra kullanın.
+                </span>
+              </button>
+            </form>
+          </Can>
         </div>
       </div>
     </section>

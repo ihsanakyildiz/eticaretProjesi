@@ -1,7 +1,7 @@
 "use server";
 
-import { auth } from "@/auth";
 import { runCacheAction, type CacheActionMode, type CacheActionResult } from "@/lib/cache-manager";
+import { requirePermission } from "@/lib/staff-permissions";
 
 export type CachePanelState = CacheActionResult & {
   error?: string;
@@ -11,10 +11,8 @@ export async function cacheAction(
   _prev: CachePanelState,
   formData: FormData,
 ): Promise<CachePanelState> {
-  const session = await auth();
-  if (!session?.user) {
-    return { success: false, message: "", error: "Oturum bulunamadı." };
-  }
+  const gate = await requirePermission("settings_performance", "update");
+  if (!gate.ok) return { success: false, message: "", error: gate.error };
 
   const mode = String(formData.get("mode") ?? "refresh") as CacheActionMode;
   if (mode !== "refresh" && mode !== "purge") {

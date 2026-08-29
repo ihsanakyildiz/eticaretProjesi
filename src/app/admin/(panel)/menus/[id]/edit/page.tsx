@@ -19,6 +19,8 @@ function targetIdFromItem(item: MenuItemWithLinks): string | null {
       return null;
     case "PAGE":
       return item.pageId;
+    case "PRODUCT_CATEGORY":
+      return item.productCategoryId;
     case "WORK_CATEGORY":
       return item.workCategoryId;
     case "WORK":
@@ -55,6 +57,7 @@ export default async function EditMenuGroupPage({ params }: EditMenuGroupPagePro
   const [
     group,
     pages,
+    productCategories,
     workCategories,
     works,
     projectCategories,
@@ -69,6 +72,7 @@ export default async function EditMenuGroupPage({ params }: EditMenuGroupPagePro
           orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
           include: {
             page: { select: { id: true, title: true, slug: true } },
+            productCategory: { select: { id: true, name: true, slug: true, urlId: true } },
             workCategory: { select: { id: true, name: true, slug: true } },
             work: { select: { id: true, title: true, slug: true } },
             projectCategory: { select: { id: true, name: true, slug: true } },
@@ -83,6 +87,17 @@ export default async function EditMenuGroupPage({ params }: EditMenuGroupPagePro
       where: { isActive: true },
       orderBy: [{ sortOrder: "asc" }, { title: "asc" }],
       select: { id: true, title: true, slug: true },
+    }),
+    prisma.productCategory.findMany({
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+      select: {
+        id: true,
+        parentId: true,
+        name: true,
+        slug: true,
+        sortOrder: true,
+        isActive: true,
+      },
     }),
     prisma.workCategory.findMany({
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
@@ -136,6 +151,7 @@ export default async function EditMenuGroupPage({ params }: EditMenuGroupPagePro
 
   if (!group) notFound();
 
+  const productCatFlat = flattenCategoryTree(buildCategoryTree(productCategories));
   const workCatFlat = flattenCategoryTree(buildCategoryTree(workCategories));
   const projectCatFlat = flattenCategoryTree(buildCategoryTree(projectCategories));
   const blogCatFlat = flattenCategoryTree(buildCategoryTree(blogCategories));
@@ -148,6 +164,7 @@ export default async function EditMenuGroupPage({ params }: EditMenuGroupPagePro
     href: item.href,
     description: item.description,
     openInNewTab: item.openInNewTab,
+    includeProductSubcategories: item.includeProductSubcategories,
     isActive: item.isActive,
     sortOrder: item.sortOrder,
     targetId: targetIdFromItem(item),
@@ -175,6 +192,12 @@ export default async function EditMenuGroupPage({ params }: EditMenuGroupPagePro
             id: page.id,
             label: page.title,
             searchText: `${page.title} ${page.slug}`,
+          })),
+          productCategories: productCatFlat.map((item) => ({
+            id: item.id,
+            label: item.name,
+            depth: item.depth,
+            searchText: item.name,
           })),
           workCategories: workCatFlat.map((item) => ({
             id: item.id,
@@ -219,6 +242,7 @@ export default async function EditMenuGroupPage({ params }: EditMenuGroupPagePro
           name: group.name,
           slug: group.slug,
           description: group.description ?? "",
+          placement: group.placement,
           sortOrder: group.sortOrder,
           isActive: group.isActive,
         }}

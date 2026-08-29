@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Briefcase, Plus } from "lucide-react";
+import { Can } from "@/components/admin/admin-permissions";
 import {
   buildCategoryTree,
   flattenCategoryTree,
@@ -97,17 +98,19 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
               yıldızı ile ana sayfada öne çıkarabilirsiniz.
             </p>
           </div>
-          <Link
-            href={
-              initialCategoryId
-                ? `/admin/projects/new?categoryId=${initialCategoryId}`
-                : "/admin/projects/new"
-            }
-            className="inline-flex items-center justify-center gap-2 rounded-md bg-[#0ab39c] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#099885]"
-          >
-            <Plus className="h-4 w-4" />
-            Yeni Proje
-          </Link>
+          <Can resource="projects" action="create">
+            <Link
+              href={
+                initialCategoryId
+                  ? `/admin/projects/new?categoryId=${initialCategoryId}`
+                  : "/admin/projects/new"
+              }
+              className="inline-flex items-center justify-center gap-2 rounded-md bg-[#0ab39c] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#099885]"
+            >
+              <Plus className="h-4 w-4" />
+              Yeni Proje
+            </Link>
+          </Can>
         </div>
       </div>
 

@@ -2,6 +2,7 @@
 
 import { Menu, Moon, PanelLeft, PanelLeftClose, Search, Sun } from "lucide-react";
 import { logoutAction } from "@/app/admin/(panel)/actions";
+import { Can } from "./admin-permissions";
 import { AdminNotifications } from "./admin-notifications";
 import { useSidebar } from "./sidebar-context";
 import { useAdminTheme } from "./theme-provider";
@@ -74,7 +75,9 @@ export function AdminHeader({
           {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
         </button>
 
-        <AdminNotifications initialUnreadCount={unreadNotificationCount} />
+        <Can resource="email" action="view">
+          <AdminNotifications initialUnreadCount={unreadNotificationCount} />
+        </Can>
 
         <div className="hidden h-8 w-px bg-[#e9ebec] sm:block" />
 

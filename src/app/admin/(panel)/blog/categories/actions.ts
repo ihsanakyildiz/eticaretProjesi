@@ -2,10 +2,10 @@
 
 import { revalidatePath } from "next/cache";
 import { bustBlogCache } from "@/lib/blog";
-import { auth } from "@/auth";
 import { collectDescendantIds } from "@/lib/category-tree";
 import { prisma } from "@/lib/prisma";
 import { slugify } from "@/lib/slug";
+import { requirePermission, requirePermissionOrThrow } from "@/lib/staff-permissions";
 import {
   deletePublicAsset,
   saveOptimizedImage,
@@ -19,14 +19,6 @@ export type BlogCategoryFormState = {
   message?: string;
   fieldErrors?: Record<string, string>;
 };
-
-async function requireAdmin() {
-  const session = await auth();
-  if (!session?.user) {
-    throw new Error("UNAUTHORIZED");
-  }
-  return session;
-}
 
 async function uniqueBlogCategorySlug(base: string, excludeId?: string) {
   const slug = slugify(base) || "kategori";
@@ -116,11 +108,8 @@ export async function createBlogCategoryAction(
   _prev: BlogCategoryFormState,
   formData: FormData,
 ): Promise<BlogCategoryFormState> {
-  try {
-    await requireAdmin();
-  } catch {
-    return { error: "Oturum bulunamadı." };
-  }
+  const gate = await requirePermission("blog_categories", "create");
+  if (!gate.ok) return { error: gate.error };
 
   const data = parseCategoryPayload(formData);
   if (!data.name) {
@@ -188,11 +177,8 @@ export async function updateBlogCategoryAction(
   _prev: BlogCategoryFormState,
   formData: FormData,
 ): Promise<BlogCategoryFormState> {
-  try {
-    await requireAdmin();
-  } catch {
-    return { error: "Oturum bulunamadı." };
-  }
+  const gate = await requirePermission("blog_categories", "update");
+  if (!gate.ok) return { error: gate.error };
 
   const id = String(formData.get("id") ?? "").trim();
   if (!id) return { error: "Kategori bulunamadı." };
@@ -281,7 +267,7 @@ export async function getCategoryPostsAction(
   categoryId: string,
 ): Promise<{ posts: CategoryPostItem[]; error?: string }> {
   try {
-    await requireAdmin();
+    await requirePermissionOrThrow("blog_categories", "view");
   } catch {
     return { posts: [], error: "Oturum bulunamadı." };
   }
@@ -303,11 +289,8 @@ export async function deleteBlogCategoryAction(input: {
   /** Bağlı yazılar varsa zorunlu */
   postsMode?: "delete" | "deactivate";
 }): Promise<DeleteBlogCategoryResult> {
-  try {
-    await requireAdmin();
-  } catch {
-    return { error: "Oturum bulunamadı." };
-  }
+  const gate = await requirePermission("blog_categories", "delete");
+  if (!gate.ok) return { error: gate.error };
 
   const id = String(input.id ?? "").trim();
   if (!id) return { error: "Kategori bulunamadı." };
@@ -391,11 +374,8 @@ export async function deactivateBlogCategoryAction(input: {
   /** postId -> hedef kategoriId (boş = taşınmaz, pasife alınır) */
   moves?: Record<string, string>;
 }): Promise<DeactivateBlogCategoryResult> {
-  try {
-    await requireAdmin();
-  } catch {
-    return { error: "Oturum bulunamadı." };
-  }
+  const gate = await requirePermission("blog_categories", "update");
+  if (!gate.ok) return { error: gate.error };
 
   const id = String(input.id ?? "").trim();
   if (!id) return { error: "Kategori bulunamadı." };
@@ -469,11 +449,8 @@ export async function deactivateBlogCategoryAction(input: {
 }
 
 export async function activateBlogCategoryAction(categoryId: string): Promise<DeactivateBlogCategoryResult> {
-  try {
-    await requireAdmin();
-  } catch {
-    return { error: "Oturum bulunamadı." };
-  }
+  const gate = await requirePermission("blog_categories", "update");
+  if (!gate.ok) return { error: gate.error };
 
   const id = categoryId.trim();
   if (!id) return { error: "Kategori bulunamadı." };
@@ -497,7 +474,7 @@ export async function activateBlogCategoryAction(categoryId: string): Promise<De
 /** @deprecated Power butonu artık modal kullanıyor; geriye dönük uyumluluk */
 export async function toggleBlogCategoryActiveAction(formData: FormData) {
   try {
-    await requireAdmin();
+    await requirePermissionOrThrow("blog_categories", "update");
   } catch {
     return;
   }

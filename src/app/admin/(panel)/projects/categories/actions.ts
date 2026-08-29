@@ -2,10 +2,10 @@
 
 import { revalidatePath } from "next/cache";
 import { bustProjectCache } from "@/lib/projects";
-import { auth } from "@/auth";
 import { collectDescendantIds } from "@/lib/category-tree";
 import { prisma } from "@/lib/prisma";
 import { slugify } from "@/lib/slug";
+import { requirePermission, requirePermissionOrThrow } from "@/lib/staff-permissions";
 import {
   deletePublicAsset,
   saveOptimizedImage,
@@ -19,14 +19,6 @@ export type ProjectCategoryFormState = {
   message?: string;
   fieldErrors?: Record<string, string>;
 };
-
-async function requireAdmin() {
-  const session = await auth();
-  if (!session?.user) {
-    throw new Error("UNAUTHORIZED");
-  }
-  return session;
-}
 
 function revalidateProjectCategoryPublic(slug?: string | null) {
   revalidatePath("/projeler");
@@ -122,11 +114,8 @@ export async function createProjectCategoryAction(
   _prev: ProjectCategoryFormState,
   formData: FormData,
 ): Promise<ProjectCategoryFormState> {
-  try {
-    await requireAdmin();
-  } catch {
-    return { error: "Oturum bulunamadı." };
-  }
+  const gate = await requirePermission("project_categories", "create");
+  if (!gate.ok) return { error: gate.error };
 
   const data = parseCategoryPayload(formData);
   if (!data.name) {
@@ -193,11 +182,8 @@ export async function updateProjectCategoryAction(
   _prev: ProjectCategoryFormState,
   formData: FormData,
 ): Promise<ProjectCategoryFormState> {
-  try {
-    await requireAdmin();
-  } catch {
-    return { error: "Oturum bulunamadı." };
-  }
+  const gate = await requirePermission("project_categories", "update");
+  if (!gate.ok) return { error: gate.error };
 
   const id = String(formData.get("id") ?? "").trim();
   if (!id) return { error: "Kategori bulunamadı." };
@@ -285,7 +271,7 @@ export async function getCategoryProjectsAction(
   categoryId: string,
 ): Promise<{ projects: CategoryProjectItem[]; error?: string }> {
   try {
-    await requireAdmin();
+    await requirePermissionOrThrow("project_categories", "view");
   } catch {
     return { projects: [], error: "Oturum bulunamadı." };
   }
@@ -307,11 +293,8 @@ export async function deleteProjectCategoryAction(input: {
   /** Bağlı projeler varsa zorunlu */
   projectsMode?: "delete" | "deactivate";
 }): Promise<DeleteProjectCategoryResult> {
-  try {
-    await requireAdmin();
-  } catch {
-    return { error: "Oturum bulunamadı." };
-  }
+  const gate = await requirePermission("project_categories", "delete");
+  if (!gate.ok) return { error: gate.error };
 
   const id = String(input.id ?? "").trim();
   if (!id) return { error: "Kategori bulunamadı." };
@@ -394,11 +377,8 @@ export async function deactivateProjectCategoryAction(input: {
   /** projectId -> hedef kategoriId (boş = taşınmaz, pasife alınır) */
   moves?: Record<string, string>;
 }): Promise<DeactivateProjectCategoryResult> {
-  try {
-    await requireAdmin();
-  } catch {
-    return { error: "Oturum bulunamadı." };
-  }
+  const gate = await requirePermission("project_categories", "update");
+  if (!gate.ok) return { error: gate.error };
 
   const id = String(input.id ?? "").trim();
   if (!id) return { error: "Kategori bulunamadı." };
@@ -471,11 +451,8 @@ export async function deactivateProjectCategoryAction(input: {
 }
 
 export async function activateProjectCategoryAction(categoryId: string): Promise<DeactivateProjectCategoryResult> {
-  try {
-    await requireAdmin();
-  } catch {
-    return { error: "Oturum bulunamadı." };
-  }
+  const gate = await requirePermission("project_categories", "update");
+  if (!gate.ok) return { error: gate.error };
 
   const id = categoryId.trim();
   if (!id) return { error: "Kategori bulunamadı." };
@@ -498,7 +475,7 @@ export async function activateProjectCategoryAction(categoryId: string): Promise
 /** @deprecated Power butonu artık modal kullanıyor; geriye dönük uyumluluk */
 export async function toggleProjectCategoryActiveAction(formData: FormData) {
   try {
-    await requireAdmin();
+    await requirePermissionOrThrow("project_categories", "update");
   } catch {
     return;
   }

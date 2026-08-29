@@ -1,6 +1,13 @@
 import type { Metadata } from "next";
 import { stripHtml } from "@/lib/html";
 import { absoluteUrl, getSiteOrigin } from "@/lib/site-origin";
+import {
+  catalogHubTitle,
+  publicBrandIndexPath,
+  publicCatalogPath,
+  publicCategoryIndexPath,
+  type UrlStructure,
+} from "@/lib/url-structure";
 
 /** Google SERP için önerilen üst sınırlar */
 export const SEO_TITLE_MAX = 60;
@@ -79,6 +86,9 @@ export type ResolveBlogSeoInput = ResolveWorkSeoInput;
 /** Klasik sayfalar için aynı SEO üretim kuralları */
 export const resolvePageSeo = resolveWorkSeo;
 export type ResolvePageSeoInput = ResolveWorkSeoInput;
+
+export const resolveProductSeo = resolveWorkSeo;
+export type ResolveProductSeoInput = ResolveWorkSeoInput;
 
 export function resolveHomeMetadata(settings: Record<string, string>, advanced?: {
   seoTitle?: string | null;
@@ -194,7 +204,42 @@ export const PUBLIC_HUB_SEO = {
     description: "Konularına göre blog yazılarımızı keşfedin.",
     path: "/blog/kategori",
   },
+  products: {
+    title: "Katalog",
+    description: "Mağaza kataloğumuzdaki ürünleri inceleyin.",
+    path: "/katalog",
+  },
+  productCategories: {
+    title: "Kategoriler",
+    description: "Kategorilere göre ürünlerimizi keşfedin.",
+    path: "/kategori",
+  },
+  productBrands: {
+    title: "Markalar",
+    description: "Markalara göre ürünlerimizi inceleyin.",
+    path: "/marka",
+  },
 } as const;
+
+export function catalogPublicHubs(structure: UrlStructure) {
+  return {
+    products: {
+      title: catalogHubTitle(structure),
+      description: "Mağaza kataloğumuzdaki ürünleri inceleyin.",
+      path: publicCatalogPath(structure),
+    },
+    productCategories: {
+      title: "Kategoriler",
+      description: "Kategorilere göre ürünlerimizi keşfedin.",
+      path: publicCategoryIndexPath(structure),
+    },
+    productBrands: {
+      title: "Markalar",
+      description: "Markalara göre ürünlerimizi inceleyin.",
+      path: publicBrandIndexPath(structure),
+    },
+  };
+}
 
 export function buildPublicMetadata(input: {
   settings: Record<string, string>;

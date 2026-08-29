@@ -1,8 +1,9 @@
 "use server";
 
+import { requirePermission, requirePermissionOrThrow } from "@/lib/staff-permissions";
+
 import { revalidatePath, revalidateTag } from "next/cache";
 import { bustBlogCache } from "@/lib/blog";
-import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { resolveBlogSeo, SEO_DESCRIPTION_MAX, SEO_TITLE_MAX } from "@/lib/seo";
 import { slugify } from "@/lib/slug";
@@ -24,14 +25,6 @@ export type DeleteBlogPostResult = {
   error?: string;
   message?: string;
 };
-
-async function requireAdmin() {
-  const session = await auth();
-  if (!session?.user) {
-    throw new Error("UNAUTHORIZED");
-  }
-  return session;
-}
 
 async function uniqueBlogPostSlug(base: string, excludeId?: string) {
   const slug = slugify(base) || "yazi";
@@ -109,11 +102,8 @@ export async function createBlogPostAction(
   _prev: BlogPostFormState,
   formData: FormData,
 ): Promise<BlogPostFormState> {
-  try {
-    await requireAdmin();
-  } catch {
-    return { error: "Oturum bulunamadı." };
-  }
+  const gate = await requirePermission("blog_posts", "create");
+  if (!gate.ok) return { error: gate.error };
 
   const data = parseBlogPostPayload(formData);
   if (!data.title) {
@@ -196,11 +186,8 @@ export async function updateBlogPostAction(
   _prev: BlogPostFormState,
   formData: FormData,
 ): Promise<BlogPostFormState> {
-  try {
-    await requireAdmin();
-  } catch {
-    return { error: "Oturum bulunamadı." };
-  }
+  const gate = await requirePermission("blog_posts", "update");
+  if (!gate.ok) return { error: gate.error };
 
   const id = String(formData.get("id") ?? "").trim();
   if (!id) return { error: "Yazı bulunamadı." };
@@ -282,11 +269,8 @@ export async function updateBlogPostAction(
 }
 
 export async function deleteBlogPostAction(formData: FormData): Promise<DeleteBlogPostResult> {
-  try {
-    await requireAdmin();
-  } catch {
-    return { error: "Oturum bulunamadı." };
-  }
+  const gate = await requirePermission("blog_posts", "delete");
+  if (!gate.ok) return { error: gate.error };
 
   const id = String(formData.get("id") ?? "").trim();
   if (!id) return { error: "Yazı bulunamadı." };
@@ -306,7 +290,7 @@ export async function deleteBlogPostAction(formData: FormData): Promise<DeleteBl
 
 export async function toggleBlogPostActiveAction(formData: FormData) {
   try {
-    await requireAdmin();
+    await requirePermissionOrThrow("blog_posts", "update");
   } catch {
     return;
   }

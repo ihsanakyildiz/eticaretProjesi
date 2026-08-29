@@ -7,6 +7,7 @@ import {
   memberRegisterAction,
   type MemberAuthState,
 } from "@/app/(site)/(auth)/actions";
+import { PhoneInput } from "@/components/phone-input";
 import { membershipLoginHref } from "@/lib/membership-urls";
 
 const initialState: MemberAuthState = {};
@@ -71,6 +72,7 @@ export function MemberRegisterForm({
             />
           </div>
         </div>
+        <PhoneInput variant="site" name="phone" />
         <div>
           <label htmlFor="password" className="mb-1.5 block text-sm font-medium text-site-fg">
             Şifre

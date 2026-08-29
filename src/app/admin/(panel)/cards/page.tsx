@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { LayoutGrid, Plus } from "lucide-react";
+import { Can } from "@/components/admin/admin-permissions";
 import { prisma } from "@/lib/prisma";
 import { CardsTable } from "./cards-table";
 
@@ -42,13 +43,15 @@ export default async function CardsPage() {
               oluşturun. Yeni kart eklerken tipi seçersiniz.
             </p>
           </div>
-          <Link
-            href="/admin/cards/new"
-            className="inline-flex items-center justify-center gap-2 rounded-md bg-[#0ab39c] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#099885]"
-          >
-            <Plus className="h-4 w-4" />
-            Yeni Kart
-          </Link>
+          <Can resource="cards" action="create">
+            <Link
+              href="/admin/cards/new"
+              className="inline-flex items-center justify-center gap-2 rounded-md bg-[#0ab39c] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#099885]"
+            >
+              <Plus className="h-4 w-4" />
+              Yeni Kart
+            </Link>
+          </Can>
         </div>
       </div>
 

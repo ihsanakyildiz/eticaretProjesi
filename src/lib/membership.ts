@@ -4,7 +4,10 @@ import { isSettingEnabled, getSettingsMap } from "@/lib/settings";
 
 export async function requireAdmin() {
   const session = await auth();
-  if (!session?.user?.id || session.user.role !== Role.ADMIN) {
+  if (
+    !session?.user?.id ||
+    (session.user.role !== Role.ADMIN && session.user.role !== Role.STAFF)
+  ) {
     throw new Error("UNAUTHORIZED");
   }
   return session;

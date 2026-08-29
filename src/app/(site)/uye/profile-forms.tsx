@@ -2,6 +2,7 @@
 
 import { useActionState, useRef, useState } from "react";
 import { ImageIcon, Loader2, Save, Trash2, Upload } from "lucide-react";
+import { PhoneInput } from "@/components/phone-input";
 import {
   removeMemberAvatarFormAction,
   updateMemberAvatarAction,
@@ -100,7 +101,7 @@ export function MemberProfileForms({ name, email, phone, image, hasPassword }: P
       </section>
 
       <section className="rounded-2xl border border-site-border bg-site-card p-5 sm:p-6">
-        <h2 className="text-lg font-semibold text-site-fg">Profil bilgileri</h2>
+        <h2 className="text-lg font-semibold text-site-fg">Üyelik bilgilerim</h2>
         {profileState.error ? (
           <p className="mt-3 text-sm text-rose-600">{profileState.error}</p>
         ) : null}
@@ -127,14 +128,7 @@ export function MemberProfileForms({ name, email, phone, image, hasPassword }: P
               className="w-full rounded-lg border border-site-border bg-site-bg px-3 py-2.5 text-sm outline-none focus:border-site-primary"
             />
           </div>
-          <div>
-            <label className="mb-1.5 block text-sm font-medium">Telefon</label>
-            <input
-              name="phone"
-              defaultValue={phone}
-              className="w-full rounded-lg border border-site-border bg-site-bg px-3 py-2.5 text-sm outline-none focus:border-site-primary"
-            />
-          </div>
+          <PhoneInput variant="site" name="phone" defaultValue={phone} />
           <div className="sm:col-span-2">
             <button
               type="submit"

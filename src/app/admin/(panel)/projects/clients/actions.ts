@@ -1,8 +1,9 @@
 "use server";
 
+import { requirePermission } from "@/lib/staff-permissions";
+
 import { revalidatePath } from "next/cache";
 import { bustProjectCache } from "@/lib/projects";
-import { auth } from "@/auth";
 import { normalizeProjectUrl } from "@/lib/project-portfolio";
 import { prisma } from "@/lib/prisma";
 import { slugify } from "@/lib/slug";
@@ -24,14 +25,6 @@ export type DeleteProjectClientResult = {
   error?: string;
   message?: string;
 };
-
-async function requireAdmin() {
-  const session = await auth();
-  if (!session?.user) {
-    throw new Error("UNAUTHORIZED");
-  }
-  return session;
-}
 
 async function uniqueProjectClientSlug(base: string, excludeId?: string) {
   const slug = slugify(base) || "musteri";
@@ -82,11 +75,8 @@ export async function createProjectClientAction(
   _prev: ProjectClientFormState,
   formData: FormData,
 ): Promise<ProjectClientFormState> {
-  try {
-    await requireAdmin();
-  } catch {
-    return { error: "Oturum bulunamadı." };
-  }
+  const gate = await requirePermission("project_clients", "create");
+  if (!gate.ok) return { error: gate.error };
 
   const payload = parseClientPayload(formData);
   if (!payload.name) {
@@ -142,11 +132,8 @@ export async function updateProjectClientAction(
   _prev: ProjectClientFormState,
   formData: FormData,
 ): Promise<ProjectClientFormState> {
-  try {
-    await requireAdmin();
-  } catch {
-    return { error: "Oturum bulunamadı." };
-  }
+  const gate = await requirePermission("project_clients", "update");
+  if (!gate.ok) return { error: gate.error };
 
   const id = String(formData.get("id") ?? "").trim();
   if (!id) return { error: "Müşteri bulunamadı." };
@@ -209,11 +196,8 @@ export async function updateProjectClientAction(
 export async function deleteProjectClientAction(input: {
   id: string;
 }): Promise<DeleteProjectClientResult> {
-  try {
-    await requireAdmin();
-  } catch {
-    return { error: "Oturum bulunamadı." };
-  }
+  const gate = await requirePermission("project_clients", "delete");
+  if (!gate.ok) return { error: gate.error };
 
   const id = String(input.id ?? "").trim();
   if (!id) return { error: "Müşteri bulunamadı." };
@@ -248,11 +232,8 @@ export async function toggleProjectClientActiveAction(input: {
   id: string;
   isActive: boolean;
 }): Promise<DeleteProjectClientResult> {
-  try {
-    await requireAdmin();
-  } catch {
-    return { error: "Oturum bulunamadı." };
-  }
+  const gate = await requirePermission("project_clients", "update");
+  if (!gate.ok) return { error: gate.error };
 
   const id = String(input.id ?? "").trim();
   if (!id) return { error: "Müşteri bulunamadı." };

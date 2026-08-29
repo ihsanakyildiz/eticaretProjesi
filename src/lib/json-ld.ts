@@ -300,3 +300,50 @@ export function buildBlogPostingJsonLd(input: {
     },
   ]);
 }
+
+export function buildProductJsonLd(input: {
+  settings: Record<string, string>;
+  title: string;
+  description: string;
+  path: string;
+  crumbs: SeoCrumb[];
+  image?: string | null;
+  priceMinor: number;
+  currency?: string;
+  sku?: string | null;
+  brandName?: string | null;
+  availability: "InStock" | "OutOfStock" | "PreOrder";
+  showPrice?: boolean;
+}) {
+  const origin = getSiteOrigin(input.settings);
+  const url = absoluteUrl(input.path, origin);
+  const image = input.image ? absoluteUrl(input.image, origin) : undefined;
+  const offer =
+    input.showPrice === false
+      ? undefined
+      : {
+          "@type": "Offer",
+          url,
+          priceCurrency: input.currency ?? "TRY",
+          price: (input.priceMinor / 100).toFixed(2),
+          availability: `https://schema.org/${input.availability}`,
+          itemCondition: "https://schema.org/NewCondition",
+        };
+
+  return graphJsonLd([
+    buildBreadcrumbNode(origin, input.crumbs),
+    {
+      "@type": "Product",
+      "@id": `${url}#product`,
+      name: input.title,
+      description: input.description,
+      url,
+      image,
+      sku: input.sku || undefined,
+      brand: input.brandName
+        ? { "@type": "Brand", name: input.brandName }
+        : undefined,
+      offers: offer,
+    },
+  ]);
+}

@@ -52,6 +52,7 @@ export type MenuItemRow = {
   href: string | null;
   description: string | null;
   openInNewTab: boolean;
+  includeProductSubcategories: boolean;
   isActive: boolean;
   sortOrder: number;
   targetId: string | null;
@@ -210,6 +211,7 @@ function MenuItemModal({
           href: state.item.href,
           description: state.item.description,
           openInNewTab: state.item.openInNewTab,
+          includeProductSubcategories: state.item.includeProductSubcategories,
           sortOrder: state.item.sortOrder,
           isActive: state.item.isActive,
           targetId: state.item.targetId,

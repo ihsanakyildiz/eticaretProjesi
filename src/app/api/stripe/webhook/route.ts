@@ -86,6 +86,34 @@ export async function POST(request: Request) {
     switch (event.type) {
       case "checkout.session.completed": {
         const session = event.data.object as Stripe.Checkout.Session;
+        if (session.mode === "payment" && session.metadata?.kind === "order" && session.metadata.orderId) {
+          const orderId = session.metadata.orderId;
+          const order = await prisma.order.findUnique({
+            where: { id: orderId },
+            select: { id: true, totalMinor: true, status: true },
+          });
+          if (order && order.status === "AWAITING_PAYMENT") {
+            await prisma.$transaction([
+              prisma.order.update({
+                where: { id: order.id },
+                data: { status: "PAYMENT_ACCEPTED" },
+              }),
+              prisma.orderStatusEvent.create({
+                data: { orderId: order.id, status: "PAYMENT_ACCEPTED" },
+              }),
+              prisma.orderPayment.create({
+                data: {
+                  orderId: order.id,
+                  method: "CREDIT_CARD",
+                  amountMinor: order.totalMinor,
+                  transactionId:
+                    typeof session.payment_intent === "string" ? session.payment_intent : session.id,
+                },
+              }),
+            ]);
+          }
+          break;
+        }
         if (session.mode === "subscription" && typeof session.subscription === "string") {
           const subscription = await stripe.subscriptions.retrieve(session.subscription);
           if (session.metadata) {

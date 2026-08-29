@@ -52,6 +52,12 @@ const HomeWhyUs = dynamic(() =>
 const HomeWorks = dynamic(() =>
   import("@/components/site/home/home-works").then((mod) => mod.HomeWorks),
 );
+const HomeProductRail = dynamic(() =>
+  import("@/components/site/home/home-product-rail").then((mod) => mod.HomeProductRail),
+);
+const HomeCategoryRail = dynamic(() =>
+  import("@/components/site/home/home-category-rail").then((mod) => mod.HomeCategoryRail),
+);
 const ContactFormSection = dynamic(() =>
   import("@/components/site/contact/contact-form-section").then(
     (mod) => mod.ContactFormSection,
@@ -350,6 +356,31 @@ export function PageSectionsRenderer({
                     categoryId: work.categoryId,
                     categoryName: work.categoryName,
                   }))}
+                />
+              </SectionShell>
+            );
+          case "PRODUCTS":
+            return (
+              <SectionShell key={section.id} anchorId={anchor}>
+                <HomeProductRail
+                  title={section.title}
+                  subtitle={section.subtitle}
+                  eyebrow={section.settings.eyebrow}
+                  products={section.products}
+                  source={section.productSource}
+                />
+              </SectionShell>
+            );
+          case "PRODUCT_CATEGORIES":
+            return (
+              <SectionShell key={section.id} anchorId={anchor}>
+                <HomeCategoryRail
+                  title={section.title}
+                  subtitle={section.subtitle}
+                  eyebrow={section.settings.eyebrow}
+                  categories={section.catalogCategories}
+                  cardsPerRow={section.settings.cardsPerRow ?? 4}
+                  showProductCount={section.settings.showProductCount !== false}
                 />
               </SectionShell>
             );

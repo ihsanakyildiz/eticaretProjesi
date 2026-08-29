@@ -14,6 +14,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import { Can } from "@/components/admin/admin-permissions";
 import {
   deletePricingPlanAction,
   togglePricingPlanActiveAction,
@@ -279,34 +280,40 @@ export function PricingPlansTable({ plans }: { plans: PricingPlanRow[] }) {
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        title={plan.isActive ? "Pasifleştir" : "Aktifleştir"}
-                        disabled={isPending}
-                        onClick={() => onToggle(plan.id)}
-                        className="rounded-md p-2 text-slate-500 hover:bg-slate-100 hover:text-[#405189]"
-                      >
-                        <Power className="h-4 w-4" />
-                      </button>
-                      <Link
-                        href={`/admin/pricing/${plan.id}/edit`}
-                        className="rounded-md p-2 text-slate-500 hover:bg-slate-100 hover:text-[#405189]"
-                        title="Düzenle"
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </Link>
-                      <button
-                        type="button"
-                        title="Sil"
-                        disabled={isPending}
-                        onClick={() => {
-                          setDeleteError(null);
-                          setDeleteTarget(plan);
-                        }}
-                        className="rounded-md p-2 text-slate-500 hover:bg-rose-50 hover:text-rose-600"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
+                      <Can resource="pricing" action="update">
+                        <button
+                          type="button"
+                          title={plan.isActive ? "Pasifleştir" : "Aktifleştir"}
+                          disabled={isPending}
+                          onClick={() => onToggle(plan.id)}
+                          className="rounded-md p-2 text-slate-500 hover:bg-slate-100 hover:text-[#405189]"
+                        >
+                          <Power className="h-4 w-4" />
+                        </button>
+                      </Can>
+                      <Can resource="pricing" action="update">
+                        <Link
+                          href={`/admin/pricing/${plan.id}/edit`}
+                          className="rounded-md p-2 text-slate-500 hover:bg-slate-100 hover:text-[#405189]"
+                          title="Düzenle"
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Link>
+                      </Can>
+                      <Can resource="pricing" action="delete">
+                        <button
+                          type="button"
+                          title="Sil"
+                          disabled={isPending}
+                          onClick={() => {
+                            setDeleteError(null);
+                            setDeleteTarget(plan);
+                          }}
+                          className="rounded-md p-2 text-slate-500 hover:bg-rose-50 hover:text-rose-600"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </Can>
                     </div>
                   </td>
                 </tr>

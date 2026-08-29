@@ -4,6 +4,13 @@ export type SiteNavItem = {
   children?: SiteNavItem[];
 };
 
+export type SiteCategoryNavItem = {
+  label: string;
+  href: string;
+  image?: string | null;
+  children?: SiteCategoryNavItem[];
+};
+
 export type SiteHeaderProps = {
   siteName: string;
   phone?: string;
@@ -12,7 +19,8 @@ export type SiteHeaderProps = {
   hours?: string;
   ctaLabel?: string;
   ctaHref?: string;
-  items: SiteNavItem[];
+  pageItems: SiteNavItem[];
+  categoryItems: SiteCategoryNavItem[];
   membershipEnabled?: boolean;
   memberLoggedIn?: boolean;
   memberName?: string | null;

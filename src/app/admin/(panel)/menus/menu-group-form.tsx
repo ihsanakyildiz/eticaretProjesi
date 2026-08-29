@@ -5,6 +5,11 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Loader2, Save } from "lucide-react";
 import { AdminSwitch } from "@/components/admin/admin-switch";
+import type { MenuPlacement } from "@prisma/client";
+import {
+  MENU_PLACEMENT_LABELS,
+  MENU_PLACEMENTS,
+} from "@/lib/menus";
 import {
   createMenuGroupAction,
   updateMenuGroupAction,
@@ -18,6 +23,7 @@ type MenuGroupFormValues = {
   name?: string;
   slug?: string;
   description?: string;
+  placement?: MenuPlacement;
   sortOrder?: number;
   isActive?: boolean;
 };
@@ -77,7 +83,7 @@ export function MenuGroupForm({
         <div className="border-b border-[#e9ebec] px-5 py-4">
           <h2 className="text-base font-semibold text-slate-800">Menü Grubu</h2>
           <p className="mt-1 text-sm text-slate-500">
-            Header, footer veya özel alanlarda kullanabileceğiniz menü koleksiyonu
+            Menünün sitede nerede görüneceğini konum alanından seçin
           </p>
         </div>
         <div className="grid gap-5 p-5 md:grid-cols-2">
@@ -115,7 +121,28 @@ export function MenuGroupForm({
               className={inputClass}
             />
             <p className="mt-1.5 text-xs text-slate-400">
-              Frontend’de bu slug ile çağrılır.
+              Teknik kimlik; görünüm yeri aşağıdaki konum alanından seçilir.
+            </p>
+          </div>
+          <div>
+            <label htmlFor="placement" className="mb-1.5 block text-sm font-medium text-slate-700">
+              Görünüm yeri *
+            </label>
+            <select
+              id="placement"
+              name="placement"
+              defaultValue={initial?.placement ?? "NONE"}
+              className={inputClass}
+            >
+              {MENU_PLACEMENTS.map((placement) => (
+                <option key={placement} value={placement}>
+                  {MENU_PLACEMENT_LABELS[placement]}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1.5 text-xs text-slate-400">
+              Aynı konumda yalnızca bir aktif menü kullanılır; yeni seçim önceki grubu
+              “Atanmamış” yapar.
             </p>
           </div>
           <div>

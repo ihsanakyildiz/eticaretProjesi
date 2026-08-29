@@ -1,81 +1,28 @@
+import { SiteChrome } from "@/components/site/site-chrome";
 import { SiteFooter } from "@/components/site/site-footer";
 import { SiteHeader } from "@/components/site/site-header";
 import { SiteThemeProvider } from "@/components/site/site-theme-provider";
 import { ScrollToTop } from "@/components/site/scroll-to-top";
-import type { SiteNavItem } from "@/components/site/site-types";
 import { auth } from "@/auth";
-import { getMenuBySlug } from "@/lib/menus";
+import {
+  FALLBACK_FOOTER_BAR,
+  FALLBACK_PAGE_NAV,
+  getPublicHeaderNav,
+  getPublicNavItems,
+  getPublicNavItemsByPlacement,
+} from "@/lib/menu-storefront";
 import { getMembershipFlags } from "@/lib/membership";
 import { getSettingsMap } from "@/lib/settings";
 import { parseThemeMode } from "@/lib/site-theme";
+import { CartProvider } from "@/components/site/cart/cart-provider";
+import { SiteUrlProvider } from "@/components/site/site-url-provider";
+import { parseUrlStructure } from "@/lib/url-structure";
 import { Role } from "@prisma/client";
 
-function fallbackNav(): SiteNavItem[] {
-  return [
-    {
-      label: "Ana Sayfa",
-      href: "/",
-      children: [
-        { label: "Özet", href: "/#hizmetler" },
-        { label: "Projeler", href: "/#projeler" },
-      ],
-    },
-    {
-      label: "Hakkımızda",
-      href: "/hakkimizda",
-      children: [
-        { label: "Ekip", href: "/hakkimizda" },
-        { label: "Kariyer", href: "/kariyer" },
-      ],
-    },
-    {
-      label: "Sayfalar",
-      href: "/hizmetler",
-      children: [
-        { label: "Hizmetler", href: "/hizmetler" },
-        { label: "Yapılan İşler", href: "/yapilan-isler" },
-        { label: "İş Kategorileri", href: "/yapilan-isler/kategori" },
-        { label: "Projeler", href: "/projeler" },
-        { label: "Proje Kategorileri", href: "/projeler/kategori" },
-        { label: "Proje Etiketleri", href: "/projeler/etiket" },
-        { label: "SSS", href: "/#sss" },
-        { label: "Fiyatlandırma", href: "/#fiyatlandirma" },
-      ],
-    },
-    {
-      label: "Blog",
-      href: "/blog",
-      children: [
-        { label: "Tüm Yazılar", href: "/blog" },
-        { label: "Kategoriler", href: "/blog/kategori" },
-      ],
-    },
-    { label: "İletişim", href: "/iletisim" },
-  ];
-}
-
-async function resolveNav(): Promise<SiteNavItem[]> {
+async function resolveFooterNav() {
   try {
-    const menu = await getMenuBySlug("header-menu");
-    if (!menu?.items?.length) return fallbackNav();
-
-    return menu.items.map((item) => ({
-      label: item.label,
-      href: item.hrefResolved || item.href || "#",
-      children: item.children?.map((child) => ({
-        label: child.label,
-        href: child.hrefResolved || child.href || "#",
-      })),
-    }));
-  } catch {
-    return fallbackNav();
-  }
-}
-
-async function resolveFooterNav(): Promise<SiteNavItem[]> {
-  try {
-    const menu = await getMenuBySlug("footer-menu");
-    if (!menu?.items?.length) {
+    const items = await getPublicNavItems("footer-menu");
+    if (!items?.length) {
       return [
         { label: "Ana Sayfa", href: "/" },
         { label: "Hizmetler", href: "/hizmetler" },
@@ -84,28 +31,46 @@ async function resolveFooterNav(): Promise<SiteNavItem[]> {
         { label: "İletişim", href: "/iletisim" },
       ];
     }
-    return menu.items.map((item) => ({
+    return items.map((item) => ({
       label: item.label,
-      href: item.hrefResolved || item.href || "#",
+      href: item.href,
     }));
   } catch {
     return [{ label: "Ana Sayfa", href: "/" }];
   }
 }
 
+async function resolveFooterBarNav() {
+  try {
+    const items = await getPublicNavItemsByPlacement("FOOTER");
+    if (!items?.length) return FALLBACK_FOOTER_BAR;
+    return items.map((item) => ({
+      label: item.label,
+      href: item.href,
+    }));
+  } catch {
+    return FALLBACK_FOOTER_BAR;
+  }
+}
+
 export default async function SiteLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
-  const [settings, headerItems, footerItems, session, membership] = await Promise.all([
+  const [settings, headerNav, footerItems, footerBarItems, session, membership] = await Promise.all([
     getSettingsMap().catch(() => ({}) as Record<string, string>),
-    resolveNav(),
+    getPublicHeaderNav().catch(() => ({
+      pageItems: FALLBACK_PAGE_NAV,
+      categoryItems: [],
+    })),
     resolveFooterNav(),
+    resolveFooterBarNav(),
     auth().catch(() => null),
     getMembershipFlags(),
   ]);
 
   const siteName = settings.site_name || "İhsan Akyıldız";
   const themeDefaultMode = parseThemeMode(settings.theme_default_mode);
+  const urlStructure = parseUrlStructure(settings);
   const memberLoggedIn = Boolean(
     session?.user?.id &&
       (session.user.role === Role.MEMBER || session.user.role === Role.ADMIN),
@@ -113,6 +78,8 @@ export default async function SiteLayout({
 
   return (
     <SiteThemeProvider defaultMode={themeDefaultMode}>
+      <SiteUrlProvider value={urlStructure}>
+      <CartProvider>
       <div className="site-shell min-h-screen">
         <a
           href="#icerik"
@@ -120,33 +87,46 @@ export default async function SiteLayout({
         >
           İçeriğe geç
         </a>
-        <SiteHeader
-          siteName={siteName}
-          phone={settings.contact_phone}
-          email={settings.contact_email}
-          address={settings.contact_address}
-          hours={settings.contact_working_hours || "Pzt–Cum: 10:00 – 19:00"}
-          ctaLabel="Teklif Alın"
-          ctaHref="/iletisim"
-          items={headerItems}
-          membershipEnabled={membership.enabled}
-          memberLoggedIn={memberLoggedIn}
-          memberName={session?.user?.name}
-        />
-        <main id="icerik">{children}</main>
-        <SiteFooter
-          siteName={siteName}
-          description={
-            settings.site_description ||
-            "Web tasarım, yazılım ve dijital çözümlerle markanızı büyütüyoruz."
+        <SiteChrome
+          header={
+            <SiteHeader
+              siteName={siteName}
+              phone={settings.contact_phone}
+              email={settings.contact_email}
+              address={settings.contact_address}
+              hours={settings.contact_working_hours || "Pzt–Cum: 10:00 – 19:00"}
+              ctaLabel="Teklif Alın"
+              ctaHref="/iletisim"
+              pageItems={headerNav.pageItems}
+              categoryItems={headerNav.categoryItems}
+              membershipEnabled={membership.enabled}
+              memberLoggedIn={memberLoggedIn}
+              memberName={session?.user?.name}
+            />
           }
-          phone={settings.contact_phone}
-          email={settings.contact_email}
-          address={settings.contact_address}
-          items={footerItems}
-        />
-        <ScrollToTop />
+          footer={
+            <>
+              <SiteFooter
+                siteName={siteName}
+                description={
+                  settings.site_description ||
+                  "Web tasarım, yazılım ve dijital çözümlerle markanızı büyütüyoruz."
+                }
+                phone={settings.contact_phone}
+                email={settings.contact_email}
+                address={settings.contact_address}
+                items={footerItems}
+                barItems={footerBarItems}
+              />
+              <ScrollToTop />
+            </>
+          }
+        >
+          {children}
+        </SiteChrome>
       </div>
+      </CartProvider>
+      </SiteUrlProvider>
     </SiteThemeProvider>
   );
 }

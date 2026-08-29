@@ -2,6 +2,7 @@ import type { NextAuthConfig } from "next-auth";
 
 /** Edge middleware’de @prisma/client kullanılamaz — string karşılaştır */
 const ADMIN = "ADMIN";
+const STAFF = "STAFF";
 const MEMBER = "MEMBER";
 
 export const authConfig = {
@@ -23,7 +24,7 @@ export const authConfig = {
     session({ session, token }) {
       if (session.user) {
         session.user.id = token.id ? String(token.id) : String(token.sub ?? "");
-        if (token.role === ADMIN || token.role === MEMBER) {
+        if (token.role === ADMIN || token.role === STAFF || token.role === MEMBER) {
           session.user.role = token.role;
         }
       }
@@ -37,6 +38,7 @@ export const authConfig = {
       const isAdminRoute = path === "/admin" || path.startsWith("/admin/");
       const isAdminLogin = path === "/admin/login";
       const isMemberArea = path === "/uye" || path.startsWith("/uye/");
+      const isCheckout = path === "/odeme" || path.startsWith("/odeme/");
       const isSiteAuth =
         path === "/giris" ||
         path === "/kayit" ||
@@ -54,23 +56,23 @@ export const authConfig = {
       }
 
       if (isAdminRoute) {
-        if (!isLoggedIn || role !== ADMIN) {
+        if (!isLoggedIn || (role !== ADMIN && role !== STAFF)) {
           return Response.redirect(new URL("/admin/login", nextUrl));
         }
         return true;
       }
 
-      if (isMemberArea) {
+      if (isMemberArea || isCheckout) {
         if (!isLoggedIn) {
           return Response.redirect(
-            new URL(`/giris?callbackUrl=${encodeURIComponent(path)}`, nextUrl),
+            new URL(`/giris?callbackUrl=${encodeURIComponent(path + nextUrl.search)}`, nextUrl),
           );
         }
         return true;
       }
 
       if (isSiteAuth && isLoggedIn) {
-        if (role === ADMIN) {
+        if (role === ADMIN || role === STAFF) {
           return Response.redirect(new URL("/admin", nextUrl));
         }
         return Response.redirect(new URL("/uye", nextUrl));

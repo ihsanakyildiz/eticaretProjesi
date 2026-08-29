@@ -32,6 +32,8 @@ export const PAGE_SECTION_TYPES = [
   "CONTACT_FORM",
   "CONTACT_INFO",
   "GRID_ROW",
+  "PRODUCTS",
+  "PRODUCT_CATEGORIES",
 ] as const satisfies readonly PageSectionType[];
 
 export type PageSectionTypeValue = (typeof PAGE_SECTION_TYPES)[number];
@@ -130,6 +132,20 @@ export const PAGE_SECTION_TYPE_META: PageSectionTypeMeta[] = [
       "Bootstrap tarzı 12’li responsive grid. Kolonlara istediğiniz bölümleri yerleştirin.",
     defaultLabel: "Grid satırı",
   },
+  {
+    type: "PRODUCTS",
+    label: "Ürün vitrini",
+    description:
+      "Yeni, çok satan, indirimli, kategori, marka veya elle seçilen ürünleri listeler.",
+    defaultLabel: "Ürün vitrini",
+  },
+  {
+    type: "PRODUCT_CATEGORIES",
+    label: "Ürün kategorileri",
+    description:
+      "Üst kategorileri, alt kategorileri veya elle seçilen ürün kategorilerini listeler.",
+    defaultLabel: "Ürün kategorileri",
+  },
 ];
 
 export function getPageSectionTypeMeta(type: PageSectionTypeValue) {
@@ -157,8 +173,210 @@ export const CARD_SLIDER_EFFECTS = [
 
 export type CardSliderEffect = (typeof CARD_SLIDER_EFFECTS)[number]["value"];
 
+export const PRODUCT_SECTION_SOURCES = [
+  "NEW",
+  "BEST_SELLERS",
+  "MOST_CLICKED",
+  "MOST_VIEWED",
+  "ON_SALE",
+  "RECENTLY_VIEWED",
+  "MANUAL",
+  "CATEGORY",
+  "BRAND",
+  "FILTER",
+] as const;
+
+export type ProductSectionSource = (typeof PRODUCT_SECTION_SOURCES)[number];
+
+export const PRODUCT_SECTION_SOURCE_META: {
+  value: ProductSectionSource;
+  label: string;
+}[] = [
+  { value: "NEW", label: "Yeni ürünler" },
+  { value: "BEST_SELLERS", label: "En çok satanlar" },
+  { value: "MOST_CLICKED", label: "En çok tıklananlar" },
+  { value: "MOST_VIEWED", label: "En çok bakılanlar" },
+  { value: "ON_SALE", label: "İndirimli ürünler" },
+  { value: "RECENTLY_VIEWED", label: "En son baktıklarım" },
+  { value: "MANUAL", label: "Elle seçim" },
+  { value: "CATEGORY", label: "Kategori" },
+  { value: "BRAND", label: "Marka" },
+  { value: "FILTER", label: "Filtre değeri" },
+];
+
+export const PRODUCT_SECTION_RANKS = [
+  "NEW",
+  "BEST_SELLERS",
+  "MOST_CLICKED",
+  "MOST_VIEWED",
+  "ON_SALE",
+] as const;
+
+export type ProductSectionRank = (typeof PRODUCT_SECTION_RANKS)[number];
+
+export const PRODUCT_SECTION_RANK_META: {
+  value: ProductSectionRank;
+  label: string;
+}[] = [
+  { value: "NEW", label: "En yeniler" },
+  { value: "BEST_SELLERS", label: "En çok satanlar" },
+  { value: "MOST_CLICKED", label: "En çok tıklananlar" },
+  { value: "MOST_VIEWED", label: "En çok bakılanlar" },
+  { value: "ON_SALE", label: "İndirimliler" },
+];
+
+export function isProductSectionSource(value: string): value is ProductSectionSource {
+  return (PRODUCT_SECTION_SOURCES as readonly string[]).includes(value);
+}
+
+export function isProductSectionRank(value: string): value is ProductSectionRank {
+  return (PRODUCT_SECTION_RANKS as readonly string[]).includes(value);
+}
+
+export type ProductSourceScope = "none" | "category" | "brand" | "filter" | "manual";
+
+export function productSourceScope(source: ProductSectionSource): ProductSourceScope {
+  switch (source) {
+    case "CATEGORY":
+      return "category";
+    case "BRAND":
+      return "brand";
+    case "FILTER":
+      return "filter";
+    case "MANUAL":
+      return "manual";
+    case "NEW":
+    case "BEST_SELLERS":
+    case "MOST_CLICKED":
+    case "MOST_VIEWED":
+    case "ON_SALE":
+    case "RECENTLY_VIEWED":
+      return "none";
+    default: {
+      const _exhaustive: never = source;
+      return _exhaustive;
+    }
+  }
+}
+
+export function productRankFieldLabel(source: ProductSectionSource): string {
+  switch (source) {
+    case "BRAND":
+      return "Bu markalarda";
+    case "CATEGORY":
+      return "Bu kategorilerde";
+    case "FILTER":
+      return "Bu filtrede";
+    case "NEW":
+    case "BEST_SELLERS":
+    case "MOST_CLICKED":
+    case "MOST_VIEWED":
+    case "ON_SALE":
+    case "RECENTLY_VIEWED":
+    case "MANUAL":
+      return "Sıralama";
+    default: {
+      const _exhaustive: never = source;
+      return _exhaustive;
+    }
+  }
+}
+
+export function uniqueTrimmedIds(values: string[], max = 48): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of values) {
+    const id = raw.trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    out.push(id);
+    if (out.length >= max) break;
+  }
+  return out;
+}
+
+export function productScopeIdsFromSettings(
+  settings: PageSectionSettings,
+  fallback: {
+    categoryId: string | null;
+    brandId: string | null;
+    filterValueId: string | null;
+  },
+) {
+  return {
+    categoryIds: settings.productCategoryIds?.length
+      ? settings.productCategoryIds
+      : fallback.categoryId
+        ? [fallback.categoryId]
+        : [],
+    brandIds: settings.productBrandIds?.length
+      ? settings.productBrandIds
+      : fallback.brandId
+        ? [fallback.brandId]
+        : [],
+    filterValueIds: settings.productFilterValueIds?.length
+      ? settings.productFilterValueIds
+      : fallback.filterValueId
+        ? [fallback.filterValueId]
+        : [],
+  };
+}
+
+export const PRODUCT_CATEGORY_SECTION_SOURCES = [
+  "ROOTS",
+  "ALL",
+  "CHILDREN",
+  "MANUAL",
+] as const;
+
+export type ProductCategorySectionSource =
+  (typeof PRODUCT_CATEGORY_SECTION_SOURCES)[number];
+
+export const PRODUCT_CATEGORY_SECTION_SOURCE_META: {
+  value: ProductCategorySectionSource;
+  label: string;
+}[] = [
+  { value: "ROOTS", label: "Üst kategoriler" },
+  { value: "ALL", label: "Tüm kategoriler" },
+  { value: "CHILDREN", label: "Alt kategoriler" },
+  { value: "MANUAL", label: "Elle seçim" },
+];
+
+export function isProductCategorySectionSource(
+  value: string,
+): value is ProductCategorySectionSource {
+  return (PRODUCT_CATEGORY_SECTION_SOURCES as readonly string[]).includes(value);
+}
+
+export type ProductCategorySourceScope = "none" | "parent" | "manual";
+
+export function productCategorySourceScope(
+  source: ProductCategorySectionSource,
+): ProductCategorySourceScope {
+  switch (source) {
+    case "CHILDREN":
+      return "parent";
+    case "MANUAL":
+      return "manual";
+    case "ROOTS":
+    case "ALL":
+      return "none";
+    default: {
+      const _exhaustive: never = source;
+      return _exhaustive;
+    }
+  }
+}
+
 export type PageSectionSettings = {
   limit?: number;
+  productSource?: ProductSectionSource;
+  productRank?: ProductSectionRank;
+  productCategoryIds?: string[];
+  productBrandIds?: string[];
+  productFilterValueIds?: string[];
+  productCategorySource?: ProductCategorySectionSource;
+  showProductCount?: boolean;
   showFeatures?: boolean;
   anchorId?: string;
   /** Başlık üstündeki küçük rozet / etiket (örn. Hizmetlerimiz) */
@@ -207,6 +425,8 @@ export const SECTIONS_WITH_EYEBROW = [
   "CONTACT_FORM",
   "CONTACT_INFO",
   "GRID_ROW",
+  "PRODUCTS",
+  "PRODUCT_CATEGORIES",
 ] as const satisfies readonly PageSectionTypeValue[];
 
 export function sectionSupportsEyebrow(type: PageSectionTypeValue): boolean {
@@ -216,6 +436,15 @@ export function sectionSupportsEyebrow(type: PageSectionTypeValue): boolean {
 function parseBoolean(value: unknown): boolean | undefined {
   if (typeof value === "boolean") return value;
   return undefined;
+}
+
+function parseIdList(value: unknown, max = 48): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const ids = uniqueTrimmedIds(
+    value.filter((item): item is string => typeof item === "string"),
+    max,
+  );
+  return ids.length > 0 ? ids : undefined;
 }
 
 function parseString(value: unknown, max: number): string | undefined {
@@ -242,6 +471,26 @@ export function parseSectionSettings(raw: string | null | undefined): PageSectio
     if (typeof obj.limit === "number" && Number.isFinite(obj.limit)) {
       settings.limit = Math.max(1, Math.min(48, Math.round(obj.limit)));
     }
+    if (typeof obj.productSource === "string" && isProductSectionSource(obj.productSource)) {
+      settings.productSource = obj.productSource;
+    }
+    if (typeof obj.productRank === "string" && isProductSectionRank(obj.productRank)) {
+      settings.productRank = obj.productRank;
+    }
+    const productCategoryIds = parseIdList(obj.productCategoryIds);
+    if (productCategoryIds) settings.productCategoryIds = productCategoryIds;
+    const productBrandIds = parseIdList(obj.productBrandIds);
+    if (productBrandIds) settings.productBrandIds = productBrandIds;
+    const productFilterValueIds = parseIdList(obj.productFilterValueIds);
+    if (productFilterValueIds) settings.productFilterValueIds = productFilterValueIds;
+    if (
+      typeof obj.productCategorySource === "string" &&
+      isProductCategorySectionSource(obj.productCategorySource)
+    ) {
+      settings.productCategorySource = obj.productCategorySource;
+    }
+    const showProductCount = parseBoolean(obj.showProductCount);
+    if (showProductCount !== undefined) settings.showProductCount = showProductCount;
     const showFeatures = parseBoolean(obj.showFeatures);
     if (showFeatures !== undefined) settings.showFeatures = showFeatures;
     const anchorId = parseString(obj.anchorId, 80);
@@ -318,6 +567,30 @@ export function stringifySectionSettings(settings: PageSectionSettings): string 
   const cleaned: PageSectionSettings = {};
   if (typeof settings.limit === "number" && Number.isFinite(settings.limit)) {
     cleaned.limit = Math.max(1, Math.min(48, Math.round(settings.limit)));
+  }
+  if (settings.productSource && isProductSectionSource(settings.productSource)) {
+    cleaned.productSource = settings.productSource;
+  }
+  if (settings.productRank && isProductSectionRank(settings.productRank)) {
+    cleaned.productRank = settings.productRank;
+  }
+  if (settings.productCategoryIds?.length) {
+    cleaned.productCategoryIds = uniqueTrimmedIds(settings.productCategoryIds);
+  }
+  if (settings.productBrandIds?.length) {
+    cleaned.productBrandIds = uniqueTrimmedIds(settings.productBrandIds);
+  }
+  if (settings.productFilterValueIds?.length) {
+    cleaned.productFilterValueIds = uniqueTrimmedIds(settings.productFilterValueIds);
+  }
+  if (
+    settings.productCategorySource &&
+    isProductCategorySectionSource(settings.productCategorySource)
+  ) {
+    cleaned.productCategorySource = settings.productCategorySource;
+  }
+  if (typeof settings.showProductCount === "boolean") {
+    cleaned.showProductCount = settings.showProductCount;
   }
   if (typeof settings.showFeatures === "boolean") {
     cleaned.showFeatures = settings.showFeatures;
@@ -426,6 +699,10 @@ export function defaultLimitForType(type: PageSectionTypeValue): number {
       return 18;
     case "BLOG":
       return 3;
+    case "PRODUCTS":
+      return 8;
+    case "PRODUCT_CATEGORIES":
+      return 12;
     default: {
       const _exhaustive: never = type;
       return _exhaustive;

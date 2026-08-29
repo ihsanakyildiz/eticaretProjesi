@@ -9,6 +9,7 @@ type SiteFooterProps = {
   email?: string;
   address?: string;
   items: SiteNavItem[];
+  barItems?: SiteNavItem[];
 };
 
 function SocialGlyph({ label }: { label: string }) {
@@ -24,6 +25,10 @@ export function SiteFooter({
   email,
   address,
   items,
+  barItems = [
+    { label: "Gizlilik", href: "/gizlilik" },
+    { label: "İletişim", href: "/iletisim" },
+  ],
 }: SiteFooterProps) {
   const year = new Date().getFullYear();
 
@@ -136,13 +141,16 @@ export function SiteFooter({
           <p>
             © {year} {siteName}. Tüm hakları saklıdır.
           </p>
-          <div className="flex gap-4">
-            <SiteLink href="/gizlilik" className="hover:text-site-primary">
-              Gizlilik
-            </SiteLink>
-            <SiteLink href="/iletisim" className="hover:text-site-primary">
-              İletişim
-            </SiteLink>
+          <div className="flex flex-wrap gap-4">
+            {barItems.map((item) => (
+              <SiteLink
+                key={`${item.href}-${item.label}`}
+                href={item.href}
+                className="hover:text-site-primary"
+              >
+                {item.label}
+              </SiteLink>
+            ))}
           </div>
         </div>
       </div>

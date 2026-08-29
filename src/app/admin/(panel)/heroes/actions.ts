@@ -1,8 +1,9 @@
 "use server";
 
+import { requirePermission, requirePermissionOrThrow } from "@/lib/staff-permissions";
+
 import { revalidatePath } from "next/cache";
 import type { HeroLayout, HeroMediaKind, Prisma } from "@prisma/client";
-import { auth } from "@/auth";
 import {
   HERO_BACKGROUND_STYLES,
   HERO_LAYOUTS,
@@ -47,12 +48,6 @@ function heroWriteErrorMessage(error: unknown, fallback: string) {
 type MediaOrderItem =
   | { type: "existing"; id: string; kind: HeroMediaKindValue; label?: string; alt?: string; href?: string }
   | { type: "new"; index: number; kind: HeroMediaKindValue; label?: string; alt?: string; href?: string };
-
-async function requireAdmin() {
-  const session = await auth();
-  if (!session?.user) throw new Error("UNAUTHORIZED");
-  return session;
-}
 
 async function uniqueHeroSlug(base: string, excludeId?: string) {
   const slug = slugify(base) || "hero";
@@ -335,11 +330,8 @@ export async function createHeroAction(
   _prev: HeroFormState,
   formData: FormData,
 ): Promise<HeroFormState> {
-  try {
-    await requireAdmin();
-  } catch {
-    return { error: "Oturum bulunamadı." };
-  }
+  const gate = await requirePermission("heroes", "create");
+  if (!gate.ok) return { error: gate.error };
 
   const data = parseHeroPayload(formData);
   if (!data.name) {
@@ -388,11 +380,8 @@ export async function updateHeroAction(
   _prev: HeroFormState,
   formData: FormData,
 ): Promise<HeroFormState> {
-  try {
-    await requireAdmin();
-  } catch {
-    return { error: "Oturum bulunamadı." };
-  }
+  const gate = await requirePermission("heroes", "update");
+  if (!gate.ok) return { error: gate.error };
 
   const id = String(formData.get("id") ?? "").trim();
   if (!id) return { error: "Hero alanı bulunamadı." };
@@ -432,11 +421,8 @@ export async function updateHeroAction(
 }
 
 export async function deleteHeroAction(formData: FormData): Promise<DeleteHeroResult> {
-  try {
-    await requireAdmin();
-  } catch {
-    return { error: "Oturum bulunamadı." };
-  }
+  const gate = await requirePermission("heroes", "delete");
+  if (!gate.ok) return { error: gate.error };
 
   const id = String(formData.get("id") ?? "").trim();
   if (!id) return { error: "Hero alanı bulunamadı." };
@@ -461,7 +447,7 @@ export async function deleteHeroAction(formData: FormData): Promise<DeleteHeroRe
 
 export async function toggleHeroActiveAction(formData: FormData) {
   try {
-    await requireAdmin();
+    await requirePermissionOrThrow("heroes", "update");
   } catch {
     return;
   }
@@ -484,11 +470,8 @@ export async function createHeroSlideAction(
   _prev: HeroFormState,
   formData: FormData,
 ): Promise<HeroFormState> {
-  try {
-    await requireAdmin();
-  } catch {
-    return { error: "Oturum bulunamadı." };
-  }
+  const gate = await requirePermission("heroes", "create");
+  if (!gate.ok) return { error: gate.error };
 
   const heroId = String(formData.get("heroId") ?? "").trim();
   if (!heroId) return { error: "Hero alanı bulunamadı." };
@@ -575,11 +558,8 @@ export async function updateHeroSlideAction(
   _prev: HeroFormState,
   formData: FormData,
 ): Promise<HeroFormState> {
-  try {
-    await requireAdmin();
-  } catch {
-    return { error: "Oturum bulunamadı." };
-  }
+  const gate = await requirePermission("heroes", "update");
+  if (!gate.ok) return { error: gate.error };
 
   const id = String(formData.get("id") ?? "").trim();
   if (!id) return { error: "Slayt bulunamadı." };
@@ -656,11 +636,8 @@ export async function updateHeroSlideAction(
 }
 
 export async function deleteHeroSlideAction(formData: FormData): Promise<DeleteHeroResult> {
-  try {
-    await requireAdmin();
-  } catch {
-    return { error: "Oturum bulunamadı." };
-  }
+  const gate = await requirePermission("heroes", "delete");
+  if (!gate.ok) return { error: gate.error };
 
   const id = String(formData.get("id") ?? "").trim();
   if (!id) return { error: "Slayt bulunamadı." };
@@ -685,7 +662,7 @@ export async function deleteHeroSlideAction(formData: FormData): Promise<DeleteH
 
 export async function toggleHeroSlideActiveAction(formData: FormData) {
   try {
-    await requireAdmin();
+    await requirePermissionOrThrow("heroes", "update");
   } catch {
     return;
   }

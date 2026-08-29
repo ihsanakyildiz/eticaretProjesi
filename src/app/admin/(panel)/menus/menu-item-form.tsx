@@ -17,6 +17,7 @@ const initialState: MenuFormState = {};
 
 export type MenuLinkOptions = {
   pages: SearchableSelectOption[];
+  productCategories: SearchableSelectOption[];
   workCategories: SearchableSelectOption[];
   works: SearchableSelectOption[];
   projectCategories: SearchableSelectOption[];
@@ -36,6 +37,7 @@ export type MenuItemFormValues = {
   sortOrder?: number;
   isActive?: boolean;
   targetId?: string | null;
+  includeProductSubcategories?: boolean;
 };
 
 function targetOptionsFor(
@@ -47,6 +49,8 @@ function targetOptionsFor(
       return [];
     case "PAGE":
       return options.pages;
+    case "PRODUCT_CATEGORY":
+      return options.productCategories;
     case "WORK_CATEGORY":
       return options.workCategories;
     case "WORK":
@@ -234,6 +238,17 @@ export function MenuItemForm({
               </div>
             </div>
           )}
+
+          {linkType === "PRODUCT_CATEGORY" ? (
+            <div className="md:col-span-2">
+              <AdminSwitch
+                name="includeProductSubcategories"
+                label="Alt kategorileri otomatik ekle"
+                description="Seçilen kategorinin alt kategorileri mega menüde listelenir. Ürünü olmayan kategoriler sitede gizlenir."
+                defaultChecked={initial?.includeProductSubcategories ?? false}
+              />
+            </div>
+          ) : null}
 
           <div className="md:col-span-2">
             <label htmlFor="description" className="mb-1.5 block text-sm font-medium text-slate-700">

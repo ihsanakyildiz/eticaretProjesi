@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Menu, Plus } from "lucide-react";
+import { Can } from "@/components/admin/admin-permissions";
 import { prisma } from "@/lib/prisma";
 import { MenuGroupsTable } from "./menu-groups-table";
 
@@ -17,6 +18,7 @@ export default async function MenusPage() {
       name: true,
       slug: true,
       description: true,
+      placement: true,
       isActive: true,
       sortOrder: true,
       _count: { select: { items: true } },
@@ -36,17 +38,19 @@ export default async function MenusPage() {
               Menüler
             </h1>
             <p className="mt-2 max-w-2xl text-sm text-slate-500">
-              Header, footer veya özel alanlar için menü grupları oluşturun; CMS
-              içeriklerini veya özel mega linkleri sürükle-bırak ile düzenleyin.
+              Header, footer veya özel alanlar için menü grupları oluşturun.
+              Görünüm yerini (top menü, header, footer) gruptan seçin.
             </p>
           </div>
-          <Link
-            href="/admin/menus/new"
-            className="inline-flex items-center justify-center gap-2 rounded-md bg-[#0ab39c] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#099885]"
-          >
-            <Plus className="h-4 w-4" />
-            Yeni Menü
-          </Link>
+          <Can resource="menus" action="create">
+            <Link
+              href="/admin/menus/new"
+              className="inline-flex items-center justify-center gap-2 rounded-md bg-[#0ab39c] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#099885]"
+            >
+              <Plus className="h-4 w-4" />
+              Yeni Menü
+            </Link>
+          </Can>
         </div>
       </div>
 

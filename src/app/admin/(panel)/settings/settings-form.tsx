@@ -1,15 +1,21 @@
 "use client";
 
 import { useActionState, useEffect, useRef, useState } from "react";
+import { Can } from "@/components/admin/admin-permissions";
 import { AdminSwitch } from "@/components/admin/admin-switch";
 import { SmtpSettingsPanel } from "@/components/admin/smtp-settings-panel";
 import { FileUp, ImageIcon, Loader2, Save, Trash2, Upload } from "lucide-react";
 import {
+  GENERAL_SETTING_TABS,
+  generalTabForGroupId,
+  isGeneralSettingTabId,
   settingGroups,
+  type GeneralSettingTabId,
   type SettingFieldDef,
   type SettingGroupDef,
   type SettingsScope,
 } from "@/config/settings";
+import { UrlStructurePanel } from "./url-structure-panel";
 import { saveSettingsAction, type SettingsFormState } from "./actions";
 
 const initialState: SettingsFormState = {};
@@ -287,6 +293,26 @@ type SettingsFormProps = {
   submitLabel?: string;
 };
 
+function settingsResourceFromScope(scope: SettingsScope): string {
+  switch (scope) {
+    case "general":
+    case "all":
+      return "settings";
+    case "membership":
+      return "settings_membership";
+    case "performance":
+      return "settings_performance";
+    case "theme":
+      return "settings_theme";
+    case "pricing":
+      return "pricing";
+    default: {
+      const _exhaustive: never = scope;
+      return _exhaustive;
+    }
+  }
+}
+
 export function SettingsForm({
   values,
   groups = settingGroups,
@@ -294,12 +320,32 @@ export function SettingsForm({
   submitLabel = "Ayarları Kaydet",
 }: SettingsFormProps) {
   const [state, formAction, isPending] = useActionState(saveSettingsAction, initialState);
+  const [tab, setTab] = useState<GeneralSettingTabId>("general");
+  const useTabs = scope === "general";
 
   useEffect(() => {
-    if (state.success && state.message) {
-      window.scrollTo({ top: 0, behavior: "smooth" });
+    if (!useTabs || typeof window === "undefined") return;
+    const hash = window.location.hash.replace(/^#/, "");
+    if (!hash) return;
+    if (isGeneralSettingTabId(hash)) {
+      setTab(hash);
+      return;
     }
+    const fromGroup = generalTabForGroupId(hash);
+    if (fromGroup) setTab(fromGroup);
+  }, [useTabs]);
+
+  useEffect(() => {
+    if (!state.success && !state.error) return;
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }, [state]);
+
+  function selectTab(next: GeneralSettingTabId) {
+    setTab(next);
+    if (typeof window !== "undefined") {
+      window.history.replaceState(null, "", `#${next}`);
+    }
+  }
 
   return (
     <form action={formAction} className="space-y-6">
@@ -323,76 +369,111 @@ export function SettingsForm({
         </div>
       ) : null}
 
-      {groups.map((group) => (
-        <section
-          key={group.id}
-          id={group.id}
-          className="rounded-lg border border-[#e9ebec] bg-white shadow-sm"
-        >
-          <div className="border-b border-[#e9ebec] px-5 py-4">
-            <h2 className="text-base font-semibold text-slate-800">{group.title}</h2>
-            <p className="mt-1 text-sm text-slate-500">{group.description}</p>
-          </div>
-
-          <div className={group.id === "mail" ? "p-5" : "grid gap-5 p-5 md:grid-cols-2"}>
-            {group.id === "mail" ? (
-              <SmtpSettingsPanel values={values} />
-            ) : (
-              group.fields.map((field) => (
-                <div
-                  key={field.key}
-                  className={
-                    field.type === "textarea" ||
-                    field.type === "image" ||
-                    field.type === "file" ||
-                    field.codeEditor
-                      ? "md:col-span-2"
-                      : undefined
-                  }
+      {useTabs ? (
+        <div className="sticky top-16 z-20 overflow-x-auto rounded-lg border border-[#e9ebec] bg-white shadow-sm">
+          <div className="flex min-w-max gap-1 px-2" role="tablist" aria-label="Ayar grupları">
+            {GENERAL_SETTING_TABS.map((item) => {
+              const active = tab === item.id;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => selectTab(item.id)}
+                  className={`border-b-2 px-4 py-3 text-sm whitespace-nowrap transition ${
+                    active
+                      ? "border-[#0ab39c] font-semibold text-slate-900"
+                      : "border-transparent text-slate-500 hover:text-slate-800"
+                  }`}
                 >
-                  {field.type !== "boolean" ? (
-                    <label
-                      htmlFor={field.key}
-                      className="mb-1.5 block text-sm font-medium text-slate-700"
-                    >
-                      {field.label}
-                    </label>
-                  ) : null}
-                  <FieldInput field={field} value={values[field.key] ?? field.defaultValue ?? ""} />
-                  {field.hint && field.type !== "boolean" ? (
-                    <p
-                      className={`mt-1.5 text-xs leading-relaxed text-slate-400 ${
-                        field.hint.trim().startsWith("<") ? "break-all font-mono text-[11px]" : ""
-                      }`}
-                    >
-                      {field.hint}
-                    </p>
-                  ) : null}
-                </div>
-              ))
-            )}
+                  {item.label}
+                </button>
+              );
+            })}
           </div>
-        </section>
-      ))}
+        </div>
+      ) : null}
+
+      {groups.map((group) => {
+        const groupTab = generalTabForGroupId(group.id) ?? "general";
+        const hidden = useTabs && groupTab !== tab;
+        return (
+          <section
+            key={group.id}
+            id={group.id}
+            aria-hidden={hidden}
+            className={`rounded-lg border border-[#e9ebec] bg-white shadow-sm ${hidden ? "hidden" : ""}`}
+          >
+            <div className="border-b border-[#e9ebec] px-5 py-4">
+              <h2 className="text-base font-semibold text-slate-800">{group.title}</h2>
+              <p className="mt-1 text-sm text-slate-500">{group.description}</p>
+            </div>
+
+            <div className={group.id === "mail" || group.id === "urls" ? "p-5" : "grid gap-5 p-5 md:grid-cols-2"}>
+              {group.id === "mail" ? (
+                <SmtpSettingsPanel values={values} />
+              ) : group.id === "urls" ? (
+                <UrlStructurePanel values={values} />
+              ) : (
+                group.fields.map((field) => (
+                  <div
+                    key={field.key}
+                    className={
+                      field.type === "textarea" ||
+                      field.type === "image" ||
+                      field.type === "file" ||
+                      field.codeEditor
+                        ? "md:col-span-2"
+                        : undefined
+                    }
+                  >
+                    {field.type !== "boolean" ? (
+                      <label
+                        htmlFor={field.key}
+                        className="mb-1.5 block text-sm font-medium text-slate-700"
+                      >
+                        {field.label}
+                      </label>
+                    ) : null}
+                    <FieldInput field={field} value={values[field.key] ?? field.defaultValue ?? ""} />
+                    {field.hint && field.type !== "boolean" ? (
+                      <p
+                        className={`mt-1.5 text-xs leading-relaxed text-slate-400 ${
+                          field.hint.trim().startsWith("<") ? "break-all font-mono text-[11px]" : ""
+                        }`}
+                      >
+                        {field.hint}
+                      </p>
+                    ) : null}
+                  </div>
+                ))
+              )}
+            </div>
+          </section>
+        );
+      })}
 
       <div className="sticky bottom-4 z-10 flex justify-end">
-        <button
-          type="submit"
-          disabled={isPending}
-          className="inline-flex items-center gap-2 rounded-md bg-[#0ab39c] px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-[#0ab39c]/25 transition hover:bg-[#099885] disabled:cursor-not-allowed disabled:opacity-70"
-        >
-          {isPending ? (
-            <>
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Kaydediliyor...
-            </>
-          ) : (
-            <>
-              <Save className="h-4 w-4" />
-              {submitLabel}
-            </>
-          )}
-        </button>
+        <Can resource={settingsResourceFromScope(scope)} action="update">
+          <button
+            type="submit"
+            disabled={isPending}
+            className="inline-flex items-center gap-2 rounded-md bg-[#0ab39c] px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-[#0ab39c]/25 transition hover:bg-[#099885] disabled:cursor-not-allowed disabled:opacity-70"
+          >
+            {isPending ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Kaydediliyor...
+              </>
+            ) : (
+              <>
+                <Save className="h-4 w-4" />
+                {submitLabel}
+              </>
+            )}
+          </button>
+        </Can>
       </div>
     </form>
   );

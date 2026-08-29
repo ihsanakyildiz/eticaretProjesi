@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { CircleDollarSign, Plus } from "lucide-react";
+import { Can } from "@/components/admin/admin-permissions";
 import { ensurePricingPlansTable } from "@/lib/ensure-pricing-schema";
 import { prisma } from "@/lib/prisma";
 import { getPricingBillingOptions } from "@/lib/pricing";
@@ -76,13 +77,15 @@ pm2 restart ihsanakyildiz`}
               hostinge kurulum ve kaynak kod teslimini kapsar. Detay: /paket/[slug]
             </p>
           </div>
-          <Link
-            href="/admin/pricing/new"
-            className="inline-flex items-center justify-center gap-2 rounded-md bg-[#0ab39c] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#099885]"
-          >
-            <Plus className="h-4 w-4" />
-            Yeni Paket
-          </Link>
+          <Can resource="pricing" action="create">
+            <Link
+              href="/admin/pricing/new"
+              className="inline-flex items-center justify-center gap-2 rounded-md bg-[#0ab39c] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#099885]"
+            >
+              <Plus className="h-4 w-4" />
+              Yeni Paket
+            </Link>
+          </Can>
         </div>
       </div>
 

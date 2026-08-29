@@ -5,6 +5,8 @@ import {
   CircleDollarSign,
   CircleHelp,
   Columns3,
+  Award,
+  Factory,
   FileText,
   FolderKanban,
   Gauge,
@@ -18,12 +20,18 @@ import {
   Menu,
   PenLine,
   Settings,
+  ShoppingBag,
+  SlidersHorizontal,
   Sparkles,
+  SwatchBook,
   Tags,
   HeartPulse,
   Palette,
+  Percent,
+  Truck,
   Users,
   UserCog,
+  UserRoundCog,
   type LucideIcon,
 } from "lucide-react";
 
@@ -50,44 +58,55 @@ export const adminNavSections: AdminNavSection[] = [
         icon: LayoutDashboard,
       },
       {
-        label: "Sayfalar",
-        href: "/admin/pages",
-        icon: FileText,
-      },
-      {
-        label: "Hero",
-        href: "/admin/heroes",
-        icon: Images,
-      },
-      {
-        label: "Kartlar",
-        href: "/admin/cards",
-        icon: LayoutGrid,
-      },
-      {
-        label: "Fiyatlandırma",
-        href: "/admin/pricing",
-        icon: CircleDollarSign,
-      },
-      {
-        label: "SSS",
-        href: "/admin/faqs",
-        icon: CircleHelp,
-      },
-      {
-        label: "Menüler",
-        href: "/admin/menus",
-        icon: Menu,
-      },
-      {
-        label: "Sidebar",
-        href: "/admin/sidebars",
-        icon: Columns3,
+        label: "Tasarım",
+        icon: Palette,
+        children: [
+          { label: "Sayfalar", href: "/admin/pages", icon: FileText },
+          { label: "Hero", href: "/admin/heroes", icon: Images },
+          { label: "Kartlar", href: "/admin/cards", icon: LayoutGrid },
+          { label: "Fiyatlandırma", href: "/admin/pricing", icon: CircleDollarSign },
+          { label: "SSS", href: "/admin/faqs", icon: CircleHelp },
+          { label: "Menüler", href: "/admin/menus", icon: Menu },
+          { label: "Sidebar", href: "/admin/sidebars", icon: Columns3 },
+        ],
       },
       {
         label: "E-posta",
         href: "/admin/email",
         icon: Mail,
+      },
+    ],
+  },
+  {
+    title: "Mağaza",
+    items: [
+      {
+        label: "Ürünler",
+        icon: ShoppingBag,
+        children: [
+          { label: "Katalog", href: "/admin/products", icon: LayoutGrid },
+          { label: "Kategoriler", href: "/admin/products/categories", icon: Tags },
+          { label: "Markalar", href: "/admin/products/brands", icon: Award },
+          { label: "Varyantlar", href: "/admin/products/attributes", icon: SwatchBook },
+          { label: "Filtreler", href: "/admin/products/filters", icon: SlidersHorizontal },
+          { label: "Tedarikçiler", href: "/admin/products/suppliers", icon: Factory },
+          { label: "KDV Oranları", href: "/admin/products/tax-rates", icon: Percent },
+        ],
+      },
+      {
+        label: "Müşteriler",
+        href: "/admin/members",
+        icon: Users,
+      },
+      {
+        label: "Siparişler",
+        href: "/admin/orders",
+        icon: ShoppingBag,
+      },
+      {
+        label: "Kargo firmaları",
+        href: "/admin/shipping",
+        icon: Truck,
       },
     ],
   },
@@ -126,9 +145,9 @@ export const adminNavSections: AdminNavSection[] = [
     title: "Sistem",
     items: [
       {
-        label: "Üyeler",
-        href: "/admin/members",
-        icon: Users,
+        label: "Personel",
+        href: "/admin/staff",
+        icon: UserRoundCog,
       },
       {
         label: "Ayarlar",
@@ -140,7 +159,7 @@ export const adminNavSections: AdminNavSection[] = [
             icon: Settings,
           },
           {
-            label: "Üyelik",
+            label: "Müşteri hesapları",
             href: "/admin/settings/membership",
             icon: UserCog,
           },

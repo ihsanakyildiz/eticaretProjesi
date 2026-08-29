@@ -8,11 +8,13 @@ export type SearchableSelectOption = {
   label: string;
   depth?: number;
   searchText?: string;
+  disabled?: boolean;
+  disabledLabel?: string;
 };
 
 type SearchableSelectProps = {
   id?: string;
-  name: string;
+  name?: string;
   value: string;
   onChange: (value: string) => void;
   options: SearchableSelectOption[];
@@ -109,7 +111,24 @@ export function SearchableSelect({
     setQuery("");
   };
 
+  const isOptionDisabled = (option: SearchableSelectOption | undefined) => Boolean(option?.disabled);
+
+  const moveHighlight = (direction: 1 | -1) => {
+    const count = filtered.length + 1;
+    setHighlightIndex((prev) => {
+      let next = prev;
+      for (let step = 0; step < count; step += 1) {
+        next = (next + direction + count) % count;
+        if (next === 0) return 0;
+        if (!isOptionDisabled(filtered[next - 1])) return next;
+      }
+      return prev;
+    });
+  };
+
   const selectValue = (next: string) => {
+    const option = options.find((item) => item.id === next);
+    if (next && isOptionDisabled(option)) return;
     onChange(next);
     close();
   };
@@ -123,16 +142,14 @@ export function SearchableSelect({
   };
 
   const onSearchKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
-    const itemCount = filtered.length + 1; // empty option + filtered
-
     if (event.key === "ArrowDown") {
       event.preventDefault();
-      setHighlightIndex((prev) => (prev + 1) % itemCount);
+      moveHighlight(1);
       return;
     }
     if (event.key === "ArrowUp") {
       event.preventDefault();
-      setHighlightIndex((prev) => (prev - 1 + itemCount) % itemCount);
+      moveHighlight(-1);
       return;
     }
     if (event.key === "Enter") {
@@ -142,14 +159,14 @@ export function SearchableSelect({
         return;
       }
       const option = filtered[highlightIndex - 1];
-      if (option) selectValue(option.id);
+      if (option && !isOptionDisabled(option)) selectValue(option.id);
       return;
     }
   };
 
   return (
     <div ref={rootRef} className={`relative ${className}`}>
-      <input type="hidden" name={name} value={value} />
+      {name ? <input type="hidden" name={name} value={value} /> : null}
 
       <button
         id={triggerId}
@@ -239,17 +256,32 @@ export function SearchableSelect({
                 const itemIndex = index + 1;
                 const isSelected = option.id === value;
                 const isHighlighted = highlightIndex === itemIndex;
+                const isDisabled = isOptionDisabled(option);
                 const depth = option.depth ?? 0;
 
                 return (
-                  <li key={option.id} role="option" aria-selected={isSelected}>
+                  <li
+                    key={option.id}
+                    role="option"
+                    aria-selected={isSelected}
+                    aria-disabled={isDisabled}
+                  >
                     <button
                       type="button"
-                      onMouseEnter={() => setHighlightIndex(itemIndex)}
+                      disabled={isDisabled}
+                      onMouseEnter={() => {
+                        if (!isDisabled) setHighlightIndex(itemIndex);
+                      }}
                       onClick={() => selectValue(option.id)}
                       className={`flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm ${
-                        isHighlighted ? "bg-[#f3f6f9]" : ""
-                      } ${isSelected ? "font-medium text-[#0ab39c]" : "text-slate-700"}`}
+                        isDisabled
+                          ? "cursor-not-allowed text-slate-400"
+                          : isHighlighted
+                            ? "bg-[#f3f6f9]"
+                            : ""
+                      } ${!isDisabled && isSelected ? "font-medium text-[#0ab39c]" : ""} ${
+                        !isDisabled && !isSelected ? "text-slate-700" : ""
+                      }`}
                       style={{ paddingLeft: `${12 + depth * 14}px` }}
                     >
                       <span className="min-w-0 truncate">
@@ -258,7 +290,13 @@ export function SearchableSelect({
                         ) : null}
                         {option.label}
                       </span>
-                      {isSelected ? <Check className="h-4 w-4 shrink-0" /> : null}
+                      {isDisabled ? (
+                        <span className="shrink-0 text-[11px] font-medium tracking-wide text-slate-400 uppercase">
+                          {option.disabledLabel ?? "Eklendi"}
+                        </span>
+                      ) : isSelected ? (
+                        <Check className="h-4 w-4 shrink-0" />
+                      ) : null}
                     </button>
                   </li>
                 );

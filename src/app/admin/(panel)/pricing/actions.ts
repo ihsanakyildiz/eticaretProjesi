@@ -1,8 +1,9 @@
 "use server";
 
+import { requirePermissionOrThrow } from "@/lib/staff-permissions";
+
 import { revalidatePath, revalidateTag } from "next/cache";
 import { PricingPriceType } from "@prisma/client";
-import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import {
   serializePricingFeatures,
@@ -33,14 +34,6 @@ export type DeletePricingResult = {
   error?: string;
   message?: string;
 };
-
-async function requireAdmin() {
-  const session = await auth();
-  if (!session?.user || session.user.role !== "ADMIN") {
-    throw new Error("UNAUTHORIZED");
-  }
-  return session;
-}
 
 async function uniquePricingSlug(base: string, excludeId?: string) {
   const slug = slugify(base) || "paket";
@@ -266,7 +259,7 @@ export async function createPricingPlanAction(
   formData: FormData,
 ): Promise<PricingFormState> {
   try {
-    await requireAdmin();
+    await requirePermissionOrThrow("pricing", "create");
     const data = parsePricingPayload(formData);
 
     if (!data.name) {
@@ -345,7 +338,7 @@ export async function updatePricingPlanAction(
   formData: FormData,
 ): Promise<PricingFormState> {
   try {
-    await requireAdmin();
+    await requirePermissionOrThrow("pricing", "update");
     const existing = await prisma.pricingPlan.findUnique({ where: { id } });
     if (!existing) return { error: "Paket bulunamadı." };
 
@@ -433,7 +426,7 @@ export async function deletePricingPlanAction(
   id: string,
 ): Promise<DeletePricingResult> {
   try {
-    await requireAdmin();
+    await requirePermissionOrThrow("pricing", "delete");
     const existing = await prisma.pricingPlan.findUnique({ where: { id } });
     if (!existing) return { error: "Paket bulunamadı." };
 
@@ -466,7 +459,7 @@ export async function togglePricingPlanActiveAction(
   id: string,
 ): Promise<DeletePricingResult> {
   try {
-    await requireAdmin();
+    await requirePermissionOrThrow("pricing", "update");
     const existing = await prisma.pricingPlan.findUnique({ where: { id } });
     if (!existing) return { error: "Paket bulunamadı." };
 
@@ -493,7 +486,7 @@ export async function updatePricingBillingSettingsAction(
   formData: FormData,
 ): Promise<PricingFormState> {
   try {
-    await requireAdmin();
+    await requirePermissionOrThrow("pricing", "update");
     const monthlyEnabled =
       formData.get("pricing_billing_monthly_enabled") === "on" ||
       formData.get("pricing_billing_monthly_enabled") === "true";

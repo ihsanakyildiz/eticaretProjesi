@@ -41,6 +41,8 @@ export const config = {
     "/admin/:path*",
     "/uye",
     "/uye/:path*",
+    "/odeme",
+    "/odeme/:path*",
     "/giris",
     "/kayit",
     "/sifremi-unuttum",

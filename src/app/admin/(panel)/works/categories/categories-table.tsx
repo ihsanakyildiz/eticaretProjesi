@@ -13,6 +13,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import { Can } from "@/components/admin/admin-permissions";
 import { AdminPublicLink, AdminPublicTextLink } from "@/components/admin/admin-public-link";
 import {
   buildCategoryTree,
@@ -161,40 +162,48 @@ function CategoryTreeRows({
 
               <div className="flex items-center justify-end gap-1.5">
                 <AdminPublicLink href={publicWorkCategoryHref(category.slug)} />
-                <Link
-                  href={`/admin/works/categories/new?parentId=${category.id}`}
-                  title="Alt kategori ekle"
-                  className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[#0ab39c]/30 text-[#0ab39c] transition hover:bg-[#0ab39c]/10"
-                >
-                  <FolderPlus className="h-4 w-4" />
-                </Link>
-                <button
-                  type="button"
-                  title={category.isActive ? "Pasife al" : "Aktif et"}
-                  onClick={() =>
-                    category.isActive
-                      ? onRequestDeactivate(category)
-                      : onRequestActivate(category)
-                  }
-                  className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[#e9ebec] text-slate-500 transition hover:bg-slate-50 hover:text-[#0ab39c]"
-                >
-                  <Power className="h-4 w-4" />
-                </button>
-                <Link
-                  href={`/admin/works/categories/${category.id}/edit`}
-                  title="Düzenle"
-                  className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[#e9ebec] text-slate-500 transition hover:bg-slate-50 hover:text-[#405189]"
-                >
-                  <Pencil className="h-4 w-4" />
-                </Link>
-                <button
-                  type="button"
-                  title="Sil"
-                  onClick={() => onRequestDelete(category)}
-                  className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-rose-200 text-rose-500 transition hover:bg-rose-50"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
+                <Can resource="works_categories" action="create">
+                  <Link
+                    href={`/admin/works/categories/new?parentId=${category.id}`}
+                    title="Alt kategori ekle"
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[#0ab39c]/30 text-[#0ab39c] transition hover:bg-[#0ab39c]/10"
+                  >
+                    <FolderPlus className="h-4 w-4" />
+                  </Link>
+                </Can>
+                <Can resource="works_categories" action="update">
+                  <button
+                    type="button"
+                    title={category.isActive ? "Pasife al" : "Aktif et"}
+                    onClick={() =>
+                      category.isActive
+                        ? onRequestDeactivate(category)
+                        : onRequestActivate(category)
+                    }
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[#e9ebec] text-slate-500 transition hover:bg-slate-50 hover:text-[#0ab39c]"
+                  >
+                    <Power className="h-4 w-4" />
+                  </button>
+                </Can>
+                <Can resource="works_categories" action="update">
+                  <Link
+                    href={`/admin/works/categories/${category.id}/edit`}
+                    title="Düzenle"
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[#e9ebec] text-slate-500 transition hover:bg-slate-50 hover:text-[#405189]"
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </Link>
+                </Can>
+                <Can resource="works_categories" action="delete">
+                  <button
+                    type="button"
+                    title="Sil"
+                    onClick={() => onRequestDelete(category)}
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-rose-200 text-rose-500 transition hover:bg-rose-50"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </Can>
               </div>
             </div>
 
@@ -322,12 +331,14 @@ export function WorkCategoriesTable({
     return (
       <div className="rounded-lg border border-[#e9ebec] bg-white px-5 py-12 text-center shadow-sm">
         <p className="text-sm text-slate-500">Henüz hizmet kategorisi eklenmedi.</p>
-        <Link
-          href="/admin/works/categories/new"
-          className="mt-4 inline-flex rounded-md bg-[#0ab39c] px-4 py-2 text-sm font-semibold text-white hover:bg-[#099885]"
-        >
-          İlk Kategoriyi Ekle
-        </Link>
+        <Can resource="works_categories" action="create">
+          <Link
+            href="/admin/works/categories/new"
+            className="mt-4 inline-flex rounded-md bg-[#0ab39c] px-4 py-2 text-sm font-semibold text-white hover:bg-[#099885]"
+          >
+            İlk Kategoriyi Ekle
+          </Link>
+        </Can>
       </div>
     );
   }

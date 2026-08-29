@@ -3,7 +3,6 @@
 import { revalidatePath } from "next/cache";
 import { bustProjectCache } from "@/lib/projects";
 import { bustWorkCache } from "@/lib/works";
-import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import {
   normalizeProjectUrl,
@@ -15,6 +14,7 @@ import {
 } from "@/lib/project-portfolio";
 import { resolveProjectSeo, SEO_DESCRIPTION_MAX, SEO_TITLE_MAX } from "@/lib/seo";
 import { slugify } from "@/lib/slug";
+import { requirePermission, requirePermissionOrThrow } from "@/lib/staff-permissions";
 import {
   deletePublicAsset,
   saveOptimizedImage,
@@ -34,14 +34,6 @@ export type DeleteProjectResult = {
   error?: string;
   message?: string;
 };
-
-async function requireAdmin() {
-  const session = await auth();
-  if (!session?.user) {
-    throw new Error("UNAUTHORIZED");
-  }
-  return session;
-}
 
 async function uniqueProjectSlug(base: string, excludeId?: string) {
   const reserved = new Set(["kategori", "etiket"]);
@@ -300,11 +292,8 @@ export async function createProjectAction(
   _prev: ProjectFormState,
   formData: FormData,
 ): Promise<ProjectFormState> {
-  try {
-    await requireAdmin();
-  } catch {
-    return { error: "Oturum bulunamadı." };
-  }
+  const gate = await requirePermission("projects", "create");
+  if (!gate.ok) return { error: gate.error };
 
   const data = parseProjectPayload(formData);
   if (!data.title) {
@@ -437,11 +426,8 @@ export async function updateProjectAction(
   _prev: ProjectFormState,
   formData: FormData,
 ): Promise<ProjectFormState> {
-  try {
-    await requireAdmin();
-  } catch {
-    return { error: "Oturum bulunamadı." };
-  }
+  const gate = await requirePermission("projects", "update");
+  if (!gate.ok) return { error: gate.error };
 
   const id = String(formData.get("id") ?? "").trim();
   if (!id) return { error: "Proje bulunamadı." };
@@ -580,11 +566,8 @@ export async function updateProjectAction(
 }
 
 export async function deleteProjectAction(formData: FormData): Promise<DeleteProjectResult> {
-  try {
-    await requireAdmin();
-  } catch {
-    return { error: "Oturum bulunamadı." };
-  }
+  const gate = await requirePermission("projects", "delete");
+  if (!gate.ok) return { error: gate.error };
 
   const id = String(formData.get("id") ?? "").trim();
   if (!id) return { error: "Proje bulunamadı." };
@@ -611,7 +594,7 @@ export async function deleteProjectAction(formData: FormData): Promise<DeletePro
 
 export async function toggleProjectActiveAction(formData: FormData) {
   try {
-    await requireAdmin();
+    await requirePermissionOrThrow("projects", "update");
   } catch {
     return;
   }
@@ -633,7 +616,7 @@ export async function toggleProjectActiveAction(formData: FormData) {
 
 export async function toggleProjectFeaturedAction(formData: FormData) {
   try {
-    await requireAdmin();
+    await requirePermissionOrThrow("projects", "update");
   } catch {
     return;
   }

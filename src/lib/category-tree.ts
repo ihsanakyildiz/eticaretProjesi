@@ -108,3 +108,39 @@ export function getCategoryBreadcrumb<T extends CategoryNodeBase>(
 
   return trail;
 }
+
+/** Kökten hedefe id listesi (hedef dahil) */
+export function collectAncestorIds<T extends CategoryNodeBase>(
+  items: T[],
+  id: string,
+): string[] {
+  return getCategoryBreadcrumb(items, id).map((item) => item.id);
+}
+
+export type NamedTreeNode = {
+  id: string;
+  name: string;
+  children: NamedTreeNode[];
+};
+
+export function pruneCategoryTree<T extends CategoryNodeBase>(
+  nodes: CategoryTreeNode<T>[],
+  blockedIds: Set<string>,
+): CategoryTreeNode<T>[] {
+  return nodes
+    .filter((node) => !blockedIds.has(node.id))
+    .map((node) => ({
+      ...node,
+      children: pruneCategoryTree(node.children, blockedIds),
+    }));
+}
+
+export function toNamedTree<T extends CategoryNodeBase>(
+  nodes: CategoryTreeNode<T>[],
+): NamedTreeNode[] {
+  return nodes.map((node) => ({
+    id: node.id,
+    name: node.name,
+    children: toNamedTree(node.children),
+  }));
+}

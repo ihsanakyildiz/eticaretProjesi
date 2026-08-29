@@ -1,8 +1,9 @@
 "use server";
 
+import { requirePermission } from "@/lib/staff-permissions";
+
 import { revalidatePath } from "next/cache";
 import { bustProjectCache } from "@/lib/projects";
-import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { slugify } from "@/lib/slug";
 
@@ -18,14 +19,6 @@ export type DeleteProjectFeatureResult = {
   error?: string;
   message?: string;
 };
-
-async function requireAdmin() {
-  const session = await auth();
-  if (!session?.user) {
-    throw new Error("UNAUTHORIZED");
-  }
-  return session;
-}
 
 function revalidateFeaturePublicPaths(slug?: string) {
   bustProjectCache();
@@ -96,11 +89,8 @@ export async function createProjectFeatureAction(
   _prev: ProjectFeatureFormState,
   formData: FormData,
 ): Promise<ProjectFeatureFormState> {
-  try {
-    await requireAdmin();
-  } catch {
-    return { error: "Oturum bulunamadı." };
-  }
+  const gate = await requirePermission("project_features", "create");
+  if (!gate.ok) return { error: gate.error };
 
   const payload = parseFeaturePayload(formData);
   const fieldErrors: Record<string, string> = {};
@@ -146,11 +136,8 @@ export async function updateProjectFeatureAction(
   _prev: ProjectFeatureFormState,
   formData: FormData,
 ): Promise<ProjectFeatureFormState> {
-  try {
-    await requireAdmin();
-  } catch {
-    return { error: "Oturum bulunamadı." };
-  }
+  const gate = await requirePermission("project_features", "update");
+  if (!gate.ok) return { error: gate.error };
 
   const id = String(formData.get("id") ?? "").trim();
   if (!id) return { error: "Özellik bulunamadı." };
@@ -199,11 +186,8 @@ export async function updateProjectFeatureAction(
 export async function deleteProjectFeatureAction(input: {
   id: string;
 }): Promise<DeleteProjectFeatureResult> {
-  try {
-    await requireAdmin();
-  } catch {
-    return { error: "Oturum bulunamadı." };
-  }
+  const gate = await requirePermission("project_features", "delete");
+  if (!gate.ok) return { error: gate.error };
 
   const id = String(input.id ?? "").trim();
   if (!id) return { error: "Özellik bulunamadı." };
@@ -234,11 +218,8 @@ export async function toggleProjectFeatureActiveAction(input: {
   id: string;
   isActive: boolean;
 }): Promise<DeleteProjectFeatureResult> {
-  try {
-    await requireAdmin();
-  } catch {
-    return { error: "Oturum bulunamadı." };
-  }
+  const gate = await requirePermission("project_features", "update");
+  if (!gate.ok) return { error: gate.error };
 
   const id = String(input.id ?? "").trim();
   if (!id) return { error: "Özellik bulunamadı." };

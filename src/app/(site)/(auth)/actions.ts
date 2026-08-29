@@ -6,6 +6,8 @@ import { AuthError } from "next-auth";
 import { Role } from "@prisma/client";
 import { redirect } from "next/navigation";
 import { signIn } from "@/auth";
+import { nextCustomerNo } from "@/lib/customer-addresses";
+import { joinFullName, splitFullName } from "@/lib/customers";
 import { getMembershipFlags } from "@/lib/membership";
 import { prisma } from "@/lib/prisma";
 import { getSettingsMapUncached } from "@/lib/settings";
@@ -64,6 +66,7 @@ export async function memberRegisterAction(
 
   const name = String(formData.get("name") ?? "").trim();
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
+  const phone = String(formData.get("phone") ?? "").trim().slice(0, 50) || null;
   const password = String(formData.get("password") ?? "");
   const passwordConfirm = String(formData.get("passwordConfirm") ?? "");
   const callbackRaw = String(formData.get("callbackUrl") ?? "/uye").trim() || "/uye";
@@ -85,14 +88,21 @@ export async function memberRegisterAction(
   }
 
   const passwordHash = await hash(password, 10);
-  await prisma.user.create({
-    data: {
-      name,
-      email,
-      password: passwordHash,
-      role: Role.MEMBER,
-      isActive: true,
-    },
+  const names = splitFullName(name);
+  await prisma.$transaction(async (tx) => {
+    await tx.user.create({
+      data: {
+        customerNo: await nextCustomerNo(tx),
+        name: joinFullName(names.firstName, names.lastName) ?? name,
+        firstName: names.firstName || null,
+        lastName: names.lastName || null,
+        email,
+        phone,
+        password: passwordHash,
+        role: Role.MEMBER,
+        isActive: true,
+      },
+    });
   });
 
   try {

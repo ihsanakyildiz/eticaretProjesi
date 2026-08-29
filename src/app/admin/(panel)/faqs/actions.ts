@@ -1,7 +1,8 @@
 "use server";
 
+import { requirePermission, requirePermissionOrThrow } from "@/lib/staff-permissions";
+
 import { revalidatePath } from "next/cache";
-import { auth } from "@/auth";
 import { stripHtml } from "@/lib/html";
 import { prisma } from "@/lib/prisma";
 import { slugify } from "@/lib/slug";
@@ -18,12 +19,6 @@ export type DeleteFaqResult = {
   error?: string;
   message?: string;
 };
-
-async function requireAdmin() {
-  const session = await auth();
-  if (!session?.user) throw new Error("UNAUTHORIZED");
-  return session;
-}
 
 async function uniqueFaqGroupSlug(base: string, excludeId?: string) {
   const slug = slugify(base) || "sss";
@@ -77,11 +72,8 @@ export async function createFaqGroupAction(
   _prev: FaqFormState,
   formData: FormData,
 ): Promise<FaqFormState> {
-  try {
-    await requireAdmin();
-  } catch {
-    return { error: "Oturum bulunamadı." };
-  }
+  const gate = await requirePermission("faqs", "create");
+  if (!gate.ok) return { error: gate.error };
 
   const data = parseGroupPayload(formData);
   if (!data.name) {
@@ -126,11 +118,8 @@ export async function updateFaqGroupAction(
   _prev: FaqFormState,
   formData: FormData,
 ): Promise<FaqFormState> {
-  try {
-    await requireAdmin();
-  } catch {
-    return { error: "Oturum bulunamadı." };
-  }
+  const gate = await requirePermission("faqs", "update");
+  if (!gate.ok) return { error: gate.error };
 
   const id = String(formData.get("id") ?? "").trim();
   if (!id) return { error: "SSS grubu bulunamadı." };
@@ -166,11 +155,8 @@ export async function updateFaqGroupAction(
 }
 
 export async function deleteFaqGroupAction(formData: FormData): Promise<DeleteFaqResult> {
-  try {
-    await requireAdmin();
-  } catch {
-    return { error: "Oturum bulunamadı." };
-  }
+  const gate = await requirePermission("faqs", "delete");
+  if (!gate.ok) return { error: gate.error };
 
   const id = String(formData.get("id") ?? "").trim();
   if (!id) return { error: "SSS grubu bulunamadı." };
@@ -185,7 +171,7 @@ export async function deleteFaqGroupAction(formData: FormData): Promise<DeleteFa
 
 export async function toggleFaqGroupActiveAction(formData: FormData) {
   try {
-    await requireAdmin();
+    await requirePermissionOrThrow("faqs", "update");
   } catch {
     return;
   }
@@ -208,11 +194,8 @@ export async function createFaqItemAction(
   _prev: FaqFormState,
   formData: FormData,
 ): Promise<FaqFormState> {
-  try {
-    await requireAdmin();
-  } catch {
-    return { error: "Oturum bulunamadı." };
-  }
+  const gate = await requirePermission("faqs", "create");
+  if (!gate.ok) return { error: gate.error };
 
   const groupId = String(formData.get("groupId") ?? "").trim();
   if (!groupId) return { error: "SSS grubu bulunamadı." };
@@ -267,11 +250,8 @@ export async function updateFaqItemAction(
   _prev: FaqFormState,
   formData: FormData,
 ): Promise<FaqFormState> {
-  try {
-    await requireAdmin();
-  } catch {
-    return { error: "Oturum bulunamadı." };
-  }
+  const gate = await requirePermission("faqs", "update");
+  if (!gate.ok) return { error: gate.error };
 
   const id = String(formData.get("id") ?? "").trim();
   if (!id) return { error: "Soru bulunamadı." };
@@ -313,11 +293,8 @@ export async function updateFaqItemAction(
 }
 
 export async function deleteFaqItemAction(formData: FormData): Promise<DeleteFaqResult> {
-  try {
-    await requireAdmin();
-  } catch {
-    return { error: "Oturum bulunamadı." };
-  }
+  const gate = await requirePermission("faqs", "delete");
+  if (!gate.ok) return { error: gate.error };
 
   const id = String(formData.get("id") ?? "").trim();
   if (!id) return { error: "Soru bulunamadı." };
@@ -333,7 +310,7 @@ export async function deleteFaqItemAction(formData: FormData): Promise<DeleteFaq
 
 export async function toggleFaqItemActiveAction(formData: FormData) {
   try {
-    await requireAdmin();
+    await requirePermissionOrThrow("faqs", "update");
   } catch {
     return;
   }

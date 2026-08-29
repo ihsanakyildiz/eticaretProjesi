@@ -1,8 +1,9 @@
 import type { MetadataRoute } from "next";
 import { prisma } from "@/lib/prisma";
-import { publicPageHref } from "@/lib/public-urls";
+import { publicPageHref, publicProductBrandHref, publicProductCategoryHref, publicProductHref } from "@/lib/public-urls";
 import { getSettingsMap } from "@/lib/settings";
 import { getSiteOrigin } from "@/lib/site-origin";
+import { parseUrlStructure, publicBrandIndexPath, publicCatalogPath, publicCategoryIndexPath } from "@/lib/url-structure";
 
 function entry(
   origin: string,
@@ -22,6 +23,7 @@ function entry(
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const settings = await getSettingsMap().catch(() => ({}) as Record<string, string>);
   const origin = getSiteOrigin(settings);
+  const urls = parseUrlStructure(settings);
   const now = new Date();
 
   const items: MetadataRoute.Sitemap = [
@@ -33,12 +35,26 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     entry(origin, "/yapilan-isler/kategori", now, "weekly", 0.7),
     entry(origin, "/blog", now, "weekly", 0.8),
     entry(origin, "/blog/kategori", now, "weekly", 0.7),
+    entry(origin, publicCatalogPath(urls), now, "weekly", 0.8),
+    entry(origin, publicCategoryIndexPath(urls), now, "weekly", 0.7),
+    entry(origin, publicBrandIndexPath(urls), now, "weekly", 0.65),
     entry(origin, "/iletisim", now, "monthly", 0.6),
   ];
 
   try {
-    const [pages, projects, works, posts, projectCats, workCats, blogCats, projectTags] =
-      await Promise.all([
+    const [
+      pages,
+      projects,
+      works,
+      posts,
+      projectCats,
+      workCats,
+      blogCats,
+      projectTags,
+      products,
+      productCats,
+      brands,
+    ] = await Promise.all([
         prisma.page.findMany({
           where: { isActive: true, slug: { not: "anasayfa" } },
           select: { slug: true, updatedAt: true },
@@ -71,6 +87,18 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
           where: { isActive: true, projects: { some: { isActive: true } } },
           select: { slug: true, updatedAt: true },
         }),
+        prisma.product.findMany({
+          where: { isActive: true, visibility: { not: "NONE" } },
+          select: { slug: true, urlId: true, updatedAt: true },
+        }),
+        prisma.productCategory.findMany({
+          where: { isActive: true },
+          select: { slug: true, urlId: true, updatedAt: true },
+        }),
+        prisma.brand.findMany({
+          where: { isActive: true },
+          select: { slug: true, urlId: true, updatedAt: true },
+        }),
       ]);
 
     for (const page of pages) {
@@ -102,6 +130,15 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     }
     for (const row of posts) {
       items.push(entry(origin, `/blog/${row.slug}`, row.updatedAt, "weekly", 0.75));
+    }
+    for (const row of productCats) {
+      items.push(entry(origin, publicProductCategoryHref(row.slug, urls, row.urlId), row.updatedAt, "weekly", 0.65));
+    }
+    for (const row of brands) {
+      items.push(entry(origin, publicProductBrandHref(row.slug, urls, row.urlId), row.updatedAt, "weekly", 0.6));
+    }
+    for (const row of products) {
+      items.push(entry(origin, publicProductHref(row.slug, urls, row.urlId), row.updatedAt, "weekly", 0.75));
     }
   } catch {
     // Sitemap hub URL'leri yine de yayınlanır

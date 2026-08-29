@@ -1,7 +1,6 @@
 "use server";
 
 import { revalidatePath, revalidateTag } from "next/cache";
-import { auth } from "@/auth";
 import {
   getSettingDefsByScope,
   getSettingGroupsByScope,
@@ -9,6 +8,7 @@ import {
   type SettingsScope,
 } from "@/config/settings";
 import { prisma } from "@/lib/prisma";
+import { requirePermission } from "@/lib/staff-permissions";
 import { getDetectedSitePath } from "@/lib/settings";
 import { isValidThemeColor, sanitizeThemeColor } from "@/lib/site-theme";
 import { THEME_DEFAULTS } from "@/config/theme-settings";
@@ -163,17 +163,35 @@ async function resolveFieldValue(
   return raw;
 }
 
+function settingsResourceForScope(scope: SettingsScope) {
+  switch (scope) {
+    case "membership":
+      return "settings_membership";
+    case "performance":
+      return "settings_performance";
+    case "theme":
+      return "settings_theme";
+    case "pricing":
+      return "pricing";
+    case "general":
+    case "all":
+      return "settings";
+    default: {
+      const _exhaustive: never = scope;
+      return _exhaustive;
+    }
+  }
+}
+
 export async function saveSettingsAction(
   _prevState: SettingsFormState,
   formData: FormData,
 ): Promise<SettingsFormState> {
-  const session = await auth();
-  if (!session?.user) {
-    return { error: "Oturum bulunamadı." };
-  }
+  const scope = parseScope(formData);
+  const gate = await requirePermission(settingsResourceForScope(scope), "update");
+  if (!gate.ok) return { error: gate.error };
 
   try {
-    const scope = parseScope(formData);
     const groups = getSettingGroupsByScope(scope);
     const defs = getSettingDefsByScope(scope);
     const existingRows = await prisma.setting.findMany();
@@ -267,6 +285,10 @@ export async function saveSettingsAction(
     revalidateTag("site");
     revalidateTag("pages");
     revalidatePath("/");
+    revalidatePath("/", "layout");
+    revalidatePath("/katalog");
+    revalidatePath("/kategori");
+    revalidatePath("/marka");
     revalidatePath("/admin/settings");
     revalidatePath("/admin/settings/performance");
     revalidatePath("/admin/settings/theme");

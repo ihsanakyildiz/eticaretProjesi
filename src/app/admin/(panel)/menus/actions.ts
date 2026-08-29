@@ -1,9 +1,10 @@
 "use server";
 
-import type { MenuLinkType } from "@prisma/client";
+import { requirePermission, requirePermissionOrThrow } from "@/lib/staff-permissions";
+
+import type { MenuLinkType, MenuPlacement } from "@prisma/client";
 import { revalidatePath } from "next/cache";
-import { auth } from "@/auth";
-import { MENU_LINK_TYPES } from "@/lib/menus";
+import { MENU_LINK_TYPES, MENU_PLACEMENTS } from "@/lib/menus";
 import { prisma } from "@/lib/prisma";
 import { slugify } from "@/lib/slug";
 
@@ -19,12 +20,6 @@ export type DeleteMenuResult = {
   error?: string;
   message?: string;
 };
-
-async function requireAdmin() {
-  const session = await auth();
-  if (!session?.user) throw new Error("UNAUTHORIZED");
-  return session;
-}
 
 async function uniqueMenuGroupSlug(base: string, excludeId?: string) {
   const slug = slugify(base) || "menu";
@@ -44,10 +39,15 @@ async function uniqueMenuGroupSlug(base: string, excludeId?: string) {
   }
 }
 
+function isMenuPlacement(value: string): value is MenuPlacement {
+  return (MENU_PLACEMENTS as string[]).includes(value);
+}
+
 function parseGroupPayload(formData: FormData) {
   const name = String(formData.get("name") ?? "").trim();
   const slugInput = String(formData.get("slug") ?? "").trim();
   const description = String(formData.get("description") ?? "").trim();
+  const placementRaw = String(formData.get("placement") ?? "NONE").trim();
   const sortOrder = Number.parseInt(String(formData.get("sortOrder") ?? "0"), 10);
   const isActive = formData.get("isActive") === "on" || formData.get("isActive") === "true";
 
@@ -55,6 +55,7 @@ function parseGroupPayload(formData: FormData) {
     name,
     slugInput,
     description,
+    placement: isMenuPlacement(placementRaw) ? placementRaw : ("NONE" as MenuPlacement),
     sortOrder: Number.isFinite(sortOrder) ? sortOrder : 0,
     isActive,
   };
@@ -67,6 +68,7 @@ function isMenuLinkType(value: string): value is MenuLinkType {
 function emptyRefs() {
   return {
     pageId: null as string | null,
+    productCategoryId: null as string | null,
     workCategoryId: null as string | null,
     workId: null as string | null,
     projectCategoryId: null as string | null,
@@ -86,6 +88,9 @@ function parseItemPayload(formData: FormData) {
   const isActive = formData.get("isActive") === "on" || formData.get("isActive") === "true";
   const openInNewTab =
     formData.get("openInNewTab") === "on" || formData.get("openInNewTab") === "true";
+  const includeProductSubcategories =
+    formData.get("includeProductSubcategories") === "on" ||
+    formData.get("includeProductSubcategories") === "true";
 
   const linkType: MenuLinkType = isMenuLinkType(linkTypeRaw) ? linkTypeRaw : "CUSTOM";
   const refs = emptyRefs();
@@ -96,6 +101,9 @@ function parseItemPayload(formData: FormData) {
       break;
     case "PAGE":
       refs.pageId = targetId;
+      break;
+    case "PRODUCT_CATEGORY":
+      refs.productCategoryId = targetId;
       break;
     case "WORK_CATEGORY":
       refs.workCategoryId = targetId;
@@ -130,6 +138,7 @@ function parseItemPayload(formData: FormData) {
     sortOrder: Number.isFinite(sortOrder) ? sortOrder : 0,
     isActive,
     openInNewTab,
+    includeProductSubcategories: linkType === "PRODUCT_CATEGORY" ? includeProductSubcategories : false,
     ...refs,
   };
 }
@@ -140,6 +149,9 @@ function validateItemTarget(data: ReturnType<typeof parseItemPayload>): string |
     return "Özel link için URL zorunludur.";
   }
   if (data.linkType === "PAGE" && !data.pageId) return "Sayfa seçin.";
+  if (data.linkType === "PRODUCT_CATEGORY" && !data.productCategoryId) {
+    return "Ürün kategorisi seçin.";
+  }
   if (data.linkType === "WORK_CATEGORY" && !data.workCategoryId) return "İş kategorisi seçin.";
   if (data.linkType === "WORK" && !data.workId) return "Çalışma seçin.";
   if (data.linkType === "PROJECT_CATEGORY" && !data.projectCategoryId) {
@@ -206,6 +218,7 @@ async function collectDescendantIds(rootId: string): Promise<Set<string>> {
 
 function revalidateMenus(groupId?: string) {
   revalidatePath("/admin/menus");
+  revalidatePath("/", "layout");
   if (groupId) revalidatePath(`/admin/menus/${groupId}/edit`);
 }
 
@@ -213,11 +226,8 @@ export async function createMenuGroupAction(
   _prev: MenuFormState,
   formData: FormData,
 ): Promise<MenuFormState> {
-  try {
-    await requireAdmin();
-  } catch {
-    return { error: "Oturum bulunamadı." };
-  }
+  const gate = await requirePermission("menus", "create");
+  if (!gate.ok) return { error: gate.error };
 
   const data = parseGroupPayload(formData);
   if (!data.name) {
@@ -236,14 +246,23 @@ export async function createMenuGroupAction(
       sortOrder = (last?.sortOrder ?? -1) + 1;
     }
 
-    const created = await prisma.menuGroup.create({
-      data: {
-        name: data.name,
-        slug,
-        description: data.description || null,
-        sortOrder,
-        isActive: data.isActive,
-      },
+    const created = await prisma.$transaction(async (tx) => {
+      if (data.placement !== "NONE") {
+        await tx.menuGroup.updateMany({
+          where: { placement: data.placement },
+          data: { placement: "NONE" },
+        });
+      }
+      return tx.menuGroup.create({
+        data: {
+          name: data.name,
+          slug,
+          description: data.description || null,
+          placement: data.placement,
+          sortOrder,
+          isActive: data.isActive,
+        },
+      });
     });
 
     revalidateMenus(created.id);
@@ -262,11 +281,8 @@ export async function updateMenuGroupAction(
   _prev: MenuFormState,
   formData: FormData,
 ): Promise<MenuFormState> {
-  try {
-    await requireAdmin();
-  } catch {
-    return { error: "Oturum bulunamadı." };
-  }
+  const gate = await requirePermission("menus", "update");
+  if (!gate.ok) return { error: gate.error };
 
   const id = String(formData.get("id") ?? "").trim();
   if (!id) return { error: "Geçersiz menü." };
@@ -278,15 +294,24 @@ export async function updateMenuGroupAction(
 
   try {
     const slug = await uniqueMenuGroupSlug(data.slugInput || data.name, id);
-    await prisma.menuGroup.update({
-      where: { id },
-      data: {
-        name: data.name,
-        slug,
-        description: data.description || null,
-        sortOrder: data.sortOrder,
-        isActive: data.isActive,
-      },
+    await prisma.$transaction(async (tx) => {
+      if (data.placement !== "NONE") {
+        await tx.menuGroup.updateMany({
+          where: { placement: data.placement, NOT: { id } },
+          data: { placement: "NONE" },
+        });
+      }
+      await tx.menuGroup.update({
+        where: { id },
+        data: {
+          name: data.name,
+          slug,
+          description: data.description || null,
+          placement: data.placement,
+          sortOrder: data.sortOrder,
+          isActive: data.isActive,
+        },
+      });
     });
     revalidateMenus(id);
     return { success: true, message: "Menü grubu güncellendi." };
@@ -297,11 +322,8 @@ export async function updateMenuGroupAction(
 }
 
 export async function deleteMenuGroupAction(formData: FormData): Promise<DeleteMenuResult> {
-  try {
-    await requireAdmin();
-  } catch {
-    return { error: "Oturum bulunamadı." };
-  }
+  const gate = await requirePermission("menus", "delete");
+  if (!gate.ok) return { error: gate.error };
 
   const id = String(formData.get("id") ?? "").trim();
   if (!id) return { error: "Geçersiz menü." };
@@ -318,7 +340,7 @@ export async function deleteMenuGroupAction(formData: FormData): Promise<DeleteM
 
 export async function toggleMenuGroupActiveAction(formData: FormData) {
   try {
-    await requireAdmin();
+    await requirePermissionOrThrow("menus", "update");
   } catch {
     return;
   }
@@ -340,11 +362,8 @@ export async function createMenuItemAction(
   _prev: MenuFormState,
   formData: FormData,
 ): Promise<MenuFormState> {
-  try {
-    await requireAdmin();
-  } catch {
-    return { error: "Oturum bulunamadı." };
-  }
+  const gate = await requirePermission("menus", "create");
+  if (!gate.ok) return { error: gate.error };
 
   const groupId = String(formData.get("groupId") ?? "").trim();
   if (!groupId) return { error: "Menü grubu bulunamadı." };
@@ -379,7 +398,9 @@ export async function createMenuItemAction(
         href: data.href,
         description: data.description,
         openInNewTab: data.openInNewTab,
+        includeProductSubcategories: data.includeProductSubcategories,
         pageId: data.pageId,
+        productCategoryId: data.productCategoryId,
         workCategoryId: data.workCategoryId,
         workId: data.workId,
         projectCategoryId: data.projectCategoryId,
@@ -407,11 +428,8 @@ export async function updateMenuItemAction(
   _prev: MenuFormState,
   formData: FormData,
 ): Promise<MenuFormState> {
-  try {
-    await requireAdmin();
-  } catch {
-    return { error: "Oturum bulunamadı." };
-  }
+  const gate = await requirePermission("menus", "update");
+  if (!gate.ok) return { error: gate.error };
 
   const id = String(formData.get("id") ?? "").trim();
   const groupId = String(formData.get("groupId") ?? "").trim();
@@ -436,7 +454,9 @@ export async function updateMenuItemAction(
         href: data.href,
         description: data.description,
         openInNewTab: data.openInNewTab,
+        includeProductSubcategories: data.includeProductSubcategories,
         pageId: data.pageId,
+        productCategoryId: data.productCategoryId,
         workCategoryId: data.workCategoryId,
         workId: data.workId,
         projectCategoryId: data.projectCategoryId,
@@ -460,11 +480,8 @@ export async function updateMenuItemAction(
 }
 
 export async function deleteMenuItemAction(formData: FormData): Promise<DeleteMenuResult> {
-  try {
-    await requireAdmin();
-  } catch {
-    return { error: "Oturum bulunamadı." };
-  }
+  const gate = await requirePermission("menus", "delete");
+  if (!gate.ok) return { error: gate.error };
 
   const id = String(formData.get("id") ?? "").trim();
   if (!id) return { error: "Geçersiz menü öğesi." };
@@ -486,7 +503,7 @@ export async function deleteMenuItemAction(formData: FormData): Promise<DeleteMe
 
 export async function toggleMenuItemActiveAction(formData: FormData) {
   try {
-    await requireAdmin();
+    await requirePermissionOrThrow("menus", "update");
   } catch {
     return;
   }
@@ -514,11 +531,8 @@ export async function reorderMenuItemsAction(
   groupId: string,
   updates: MenuItemOrderUpdate[],
 ): Promise<DeleteMenuResult> {
-  try {
-    await requireAdmin();
-  } catch {
-    return { error: "Oturum bulunamadı." };
-  }
+  const gate = await requirePermission("menus", "update");
+  if (!gate.ok) return { error: gate.error };
 
   if (!groupId || updates.length === 0) {
     return { error: "Geçersiz sıralama." };

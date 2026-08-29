@@ -14,6 +14,9 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import { Can } from "@/components/admin/admin-permissions";
+import { MENU_PLACEMENT_SHORT } from "@/lib/menus";
+import type { MenuPlacement } from "@prisma/client";
 import { deleteMenuGroupAction, toggleMenuGroupActiveAction } from "./actions";
 
 export type MenuGroupRow = {
@@ -21,6 +24,7 @@ export type MenuGroupRow = {
   name: string;
   slug: string;
   description: string | null;
+  placement: MenuPlacement;
   isActive: boolean;
   sortOrder: number;
   _count: { items: number };
@@ -119,7 +123,12 @@ export function MenuGroupsTable({ groups }: { groups: MenuGroupRow[] }) {
     const needle = query.trim().toLocaleLowerCase("tr-TR");
     if (!needle) return groups;
     return groups.filter((group) =>
-      [group.name, group.slug, group.description ?? ""]
+      [
+        group.name,
+        group.slug,
+        group.description ?? "",
+        MENU_PLACEMENT_SHORT[group.placement],
+      ]
         .join(" ")
         .toLocaleLowerCase("tr-TR")
         .includes(needle),
@@ -130,12 +139,14 @@ export function MenuGroupsTable({ groups }: { groups: MenuGroupRow[] }) {
     return (
       <div className="rounded-lg border border-[#e9ebec] bg-white px-5 py-12 text-center shadow-sm">
         <p className="text-sm text-slate-500">Henüz menü grubu yok.</p>
-        <Link
-          href="/admin/menus/new"
-          className="mt-4 inline-flex rounded-md bg-[#0ab39c] px-4 py-2 text-sm font-semibold text-white hover:bg-[#099885]"
-        >
-          İlk Menüyü Ekle
-        </Link>
+        <Can resource="menus" action="create">
+          <Link
+            href="/admin/menus/new"
+            className="mt-4 inline-flex rounded-md bg-[#0ab39c] px-4 py-2 text-sm font-semibold text-white hover:bg-[#099885]"
+          >
+            İlk Menüyü Ekle
+          </Link>
+        </Can>
       </div>
     );
   }
@@ -167,10 +178,11 @@ export function MenuGroupsTable({ groups }: { groups: MenuGroupRow[] }) {
           <div className="px-5 py-10 text-center text-sm text-slate-500">Sonuç yok.</div>
         ) : (
           <div className="overflow-x-auto">
-            <div className="min-w-[860px]">
-              <div className="grid grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_80px_70px_90px_140px] gap-2 border-b border-[#e9ebec] px-4 py-3 text-xs font-semibold tracking-wide text-slate-500 uppercase">
+            <div className="min-w-[980px]">
+              <div className="grid grid-cols-[minmax(0,1.5fr)_minmax(0,0.9fr)_minmax(0,0.9fr)_70px_60px_80px_130px] gap-2 border-b border-[#e9ebec] px-4 py-3 text-xs font-semibold tracking-wide text-slate-500 uppercase">
                 <div>Menü</div>
                 <div>Slug</div>
+                <div>Konum</div>
                 <div>Öğe</div>
                 <div>Sıra</div>
                 <div>Durum</div>
@@ -179,7 +191,7 @@ export function MenuGroupsTable({ groups }: { groups: MenuGroupRow[] }) {
               {filtered.map((group) => (
                 <div
                   key={group.id}
-                  className="grid grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_80px_70px_90px_140px] items-center gap-2 border-b border-[#e9ebec] px-4 py-3 text-sm last:border-0"
+                  className="grid grid-cols-[minmax(0,1.5fr)_minmax(0,0.9fr)_minmax(0,0.9fr)_70px_60px_80px_130px] items-center gap-2 border-b border-[#e9ebec] px-4 py-3 text-sm last:border-0"
                 >
                   <div className="min-w-0">
                     <p className="truncate font-medium text-slate-800">{group.name}</p>
@@ -188,6 +200,9 @@ export function MenuGroupsTable({ groups }: { groups: MenuGroupRow[] }) {
                     ) : null}
                   </div>
                   <div className="truncate text-xs text-slate-500">/{group.slug}</div>
+                  <div className="text-xs text-slate-600">
+                    {MENU_PLACEMENT_SHORT[group.placement]}
+                  </div>
                   <div className="inline-flex items-center gap-1 text-slate-600">
                     <Menu className="h-3.5 w-3.5 text-slate-400" />
                     {group._count.items}
@@ -207,32 +222,38 @@ export function MenuGroupsTable({ groups }: { groups: MenuGroupRow[] }) {
                     )}
                   </div>
                   <div className="flex items-center justify-end gap-1.5">
-                    <form action={toggleMenuGroupActiveAction}>
-                      <input type="hidden" name="id" value={group.id} />
-                      <button
-                        type="submit"
-                        title={group.isActive ? "Pasife al" : "Aktif et"}
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[#e9ebec] text-slate-500 hover:text-[#0ab39c]"
+                    <Can resource="menus" action="update">
+                      <form action={toggleMenuGroupActiveAction}>
+                        <input type="hidden" name="id" value={group.id} />
+                        <button
+                          type="submit"
+                          title={group.isActive ? "Pasife al" : "Aktif et"}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[#e9ebec] text-slate-500 hover:text-[#0ab39c]"
+                        >
+                          <Power className="h-4 w-4" />
+                        </button>
+                      </form>
+                    </Can>
+                    <Can resource="menus" action="update">
+                      <Link
+                        href={`/admin/menus/${group.id}/edit`}
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[#e9ebec] text-slate-500 hover:text-[#405189]"
                       >
-                        <Power className="h-4 w-4" />
+                        <Pencil className="h-4 w-4" />
+                      </Link>
+                    </Can>
+                    <Can resource="menus" action="delete">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDeleteError(null);
+                          setDeleteTarget(group);
+                        }}
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-rose-200 text-rose-500 hover:bg-rose-50"
+                      >
+                        <Trash2 className="h-4 w-4" />
                       </button>
-                    </form>
-                    <Link
-                      href={`/admin/menus/${group.id}/edit`}
-                      className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[#e9ebec] text-slate-500 hover:text-[#405189]"
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </Link>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setDeleteError(null);
-                        setDeleteTarget(group);
-                      }}
-                      className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-rose-200 text-rose-500 hover:bg-rose-50"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
+                    </Can>
                   </div>
                 </div>
               ))}

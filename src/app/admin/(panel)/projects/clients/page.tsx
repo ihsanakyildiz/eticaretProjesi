@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Building2, Plus } from "lucide-react";
+import { Can } from "@/components/admin/admin-permissions";
 import { prisma } from "@/lib/prisma";
 import { ProjectClientsTable } from "./clients-table";
 
@@ -41,13 +42,15 @@ export default async function ProjectClientsPage() {
               Müşteri kayıtlarını buradan yönetin. Bir müşteriye birden fazla proje bağlayabilirsiniz.
             </p>
           </div>
-          <Link
-            href="/admin/projects/clients/new"
-            className="inline-flex items-center justify-center gap-2 rounded-md bg-[#0ab39c] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#099885]"
-          >
-            <Plus className="h-4 w-4" />
-            Yeni Müşteri
-          </Link>
+          <Can resource="project_clients" action="create">
+            <Link
+              href="/admin/projects/clients/new"
+              className="inline-flex items-center justify-center gap-2 rounded-md bg-[#0ab39c] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#099885]"
+            >
+              <Plus className="h-4 w-4" />
+              Yeni Müşteri
+            </Link>
+          </Can>
         </div>
       </div>
 

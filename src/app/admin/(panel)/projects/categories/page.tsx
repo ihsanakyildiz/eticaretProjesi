@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Plus, Tags } from "lucide-react";
+import { Can } from "@/components/admin/admin-permissions";
 import {
   buildCategoryTree,
   flattenCategoryTree,
@@ -62,13 +63,15 @@ export default async function ProjectCategoriesPage() {
               kategori ekleyebilirsiniz.
             </p>
           </div>
-          <Link
-            href="/admin/projects/categories/new"
-            className="inline-flex items-center justify-center gap-2 rounded-md bg-[#0ab39c] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#099885]"
-          >
-            <Plus className="h-4 w-4" />
-            Yeni Kategori
-          </Link>
+          <Can resource="project_categories" action="create">
+            <Link
+              href="/admin/projects/categories/new"
+              className="inline-flex items-center justify-center gap-2 rounded-md bg-[#0ab39c] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#099885]"
+            >
+              <Plus className="h-4 w-4" />
+              Yeni Kategori
+            </Link>
+          </Can>
         </div>
       </div>
 

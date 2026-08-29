@@ -20,7 +20,7 @@ const REVALIDATE_PATHS: Array<{ path: string; type?: "page" | "layout" }> = [
   { path: "/admin/login", type: "page" },
 ];
 
-const CACHE_TAGS = ["site", "settings", "pages", "blog", "projects", "works"] as const;
+const CACHE_TAGS = ["site", "settings", "pages", "blog", "projects", "works", "products"] as const;
 
 async function pathExists(target: string) {
   try {

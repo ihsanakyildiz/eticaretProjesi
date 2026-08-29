@@ -14,6 +14,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import { Can } from "@/components/admin/admin-permissions";
 import { deleteHeroAction, toggleHeroActiveAction } from "./actions";
 
 export type HeroRow = {
@@ -129,12 +130,14 @@ export function HeroesTable({ heroes }: { heroes: HeroRow[] }) {
     return (
       <div className="rounded-lg border border-[#e9ebec] bg-white px-5 py-12 text-center shadow-sm">
         <p className="text-sm text-slate-500">Henüz hero alanı yok.</p>
-        <Link
-          href="/admin/heroes/new"
-          className="mt-4 inline-flex rounded-md bg-[#0ab39c] px-4 py-2 text-sm font-semibold text-white hover:bg-[#099885]"
-        >
-          İlk Hero Alanını Ekle
-        </Link>
+        <Can resource="heroes" action="create">
+          <Link
+            href="/admin/heroes/new"
+            className="mt-4 inline-flex rounded-md bg-[#0ab39c] px-4 py-2 text-sm font-semibold text-white hover:bg-[#099885]"
+          >
+            İlk Hero Alanını Ekle
+          </Link>
+        </Can>
       </div>
     );
   }
@@ -206,32 +209,38 @@ export function HeroesTable({ heroes }: { heroes: HeroRow[] }) {
                     )}
                   </div>
                   <div className="flex items-center justify-end gap-1.5">
-                    <form action={toggleHeroActiveAction}>
-                      <input type="hidden" name="id" value={hero.id} />
-                      <button
-                        type="submit"
-                        title={hero.isActive ? "Pasife al" : "Aktif et"}
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[#e9ebec] text-slate-500 hover:text-[#0ab39c]"
+                    <Can resource="heroes" action="update">
+                      <form action={toggleHeroActiveAction}>
+                        <input type="hidden" name="id" value={hero.id} />
+                        <button
+                          type="submit"
+                          title={hero.isActive ? "Pasife al" : "Aktif et"}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[#e9ebec] text-slate-500 hover:text-[#0ab39c]"
+                        >
+                          <Power className="h-4 w-4" />
+                        </button>
+                      </form>
+                    </Can>
+                    <Can resource="heroes" action="update">
+                      <Link
+                        href={`/admin/heroes/${hero.id}/edit`}
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[#e9ebec] text-slate-500 hover:text-[#405189]"
                       >
-                        <Power className="h-4 w-4" />
+                        <Pencil className="h-4 w-4" />
+                      </Link>
+                    </Can>
+                    <Can resource="heroes" action="delete">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDeleteError(null);
+                          setDeleteTarget(hero);
+                        }}
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-rose-200 text-rose-500 hover:bg-rose-50"
+                      >
+                        <Trash2 className="h-4 w-4" />
                       </button>
-                    </form>
-                    <Link
-                      href={`/admin/heroes/${hero.id}/edit`}
-                      className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[#e9ebec] text-slate-500 hover:text-[#405189]"
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </Link>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setDeleteError(null);
-                        setDeleteTarget(hero);
-                      }}
-                      className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-rose-200 text-rose-500 hover:bg-rose-50"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
+                    </Can>
                   </div>
                 </div>
               ))}

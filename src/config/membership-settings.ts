@@ -3,21 +3,21 @@ import type { SettingGroupDef } from "@/config/settings";
 export const membershipSettingGroups: SettingGroupDef[] = [
   {
     id: "membership_general",
-    title: "Üyelik Sistemi",
-    description: "Site genelinde üye kayıt ve giriş özelliklerini yönetin",
+    title: "Müşteri hesapları",
+    description: "Site genelinde müşteri kayıt ve giriş özelliklerini yönetin",
     fields: [
       {
         key: "membership_enabled",
-        label: "Üyelik sistemini aç",
+        label: "Müşteri hesaplarını aç",
         type: "boolean",
-        hint: "Kapalıyken kayıt/giriş linkleri ve üye paneli gizlenir; paket satın alma durur.",
+        hint: "Kapalıyken kayıt/giriş linkleri ve müşteri paneli gizlenir; paket satın alma durur.",
         defaultValue: "false",
       },
       {
         key: "membership_allow_register",
         label: "E-posta ile kayda izin ver",
         type: "boolean",
-        hint: "Açıkken ziyaretçiler /kayit sayfasından üye olabilir.",
+        hint: "Açıkken ziyaretçiler /kayit sayfasından müşteri hesabı oluşturabilir.",
         defaultValue: "true",
       },
       {

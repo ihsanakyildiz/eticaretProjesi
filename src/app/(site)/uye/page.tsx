@@ -5,13 +5,13 @@ import { ensureMemberPortalAccess } from "./actions";
 import { MemberProfileForms } from "./profile-forms";
 
 export const metadata: Metadata = {
-  title: "Profilim",
+  title: "Üyelik bilgilerim",
 };
 
 export default async function UyePage() {
   const access = await ensureMemberPortalAccess();
   if (!access.ok) {
-    redirect(access.reason === "disabled" ? "/" : "/giris?callbackUrl=/uye");
+    redirect("/giris?callbackUrl=/uye");
   }
 
   const user = await prisma.user.findUnique({

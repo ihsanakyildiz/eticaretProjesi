@@ -1,7 +1,9 @@
 "use client";
 
 import type { ReactNode } from "react";
+import type { StaffPermissionMap } from "@/config/admin-permissions";
 import { AdminHeader } from "./admin-header";
+import { AdminPermissionsProvider } from "./admin-permissions";
 import { AdminSidebar } from "./admin-sidebar";
 import { SidebarProvider, useSidebar } from "./sidebar-context";
 import { AdminThemeProvider } from "./theme-provider";
@@ -13,6 +15,9 @@ type AdminShellProps = {
   userRole: string;
   unreadNotificationCount: number;
   initialSidebarCollapsed?: boolean;
+  permissionRole: string;
+  isAdmin: boolean;
+  permissionMap: StaffPermissionMap;
 };
 
 function AdminShellLayout({
@@ -21,7 +26,10 @@ function AdminShellLayout({
   userEmail,
   userRole,
   unreadNotificationCount,
-}: Omit<AdminShellProps, "initialSidebarCollapsed">) {
+}: Omit<
+    AdminShellProps,
+    "initialSidebarCollapsed" | "permissionRole" | "isAdmin" | "permissionMap"
+  >) {
   const { isCollapsed, isDesktop, allowTransition } = useSidebar();
   const iconMode = isDesktop && isCollapsed;
 
@@ -53,13 +61,18 @@ function AdminShellLayout({
 
 export function AdminShell({
   initialSidebarCollapsed = false,
+  permissionRole,
+  isAdmin,
+  permissionMap,
   ...props
 }: AdminShellProps) {
   return (
     <AdminThemeProvider>
-      <SidebarProvider initialCollapsed={initialSidebarCollapsed}>
-        <AdminShellLayout {...props} />
-      </SidebarProvider>
+      <AdminPermissionsProvider role={permissionRole} isAdmin={isAdmin} map={permissionMap}>
+        <SidebarProvider initialCollapsed={initialSidebarCollapsed}>
+          <AdminShellLayout {...props} />
+        </SidebarProvider>
+      </AdminPermissionsProvider>
     </AdminThemeProvider>
   );
 }
