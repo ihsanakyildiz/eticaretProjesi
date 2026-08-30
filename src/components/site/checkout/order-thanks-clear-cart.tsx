@@ -4,9 +4,9 @@ import { useEffect } from "react";
 import { useCart } from "@/components/site/cart/cart-provider";
 
 export function OrderThanksClearCart() {
-  const { clear } = useCart();
+  const { clearSelected } = useCart();
   useEffect(() => {
-    clear();
-  }, [clear]);
+    clearSelected();
+  }, [clearSelected]);
   return null;
 }

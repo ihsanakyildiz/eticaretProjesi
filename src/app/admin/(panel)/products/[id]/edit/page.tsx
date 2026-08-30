@@ -22,12 +22,14 @@ export default async function EditProductPage({ params }: EditProductPageProps) 
   const initial = await loadProductEditorInitial(id);
   if (!initial) notFound();
 
-  const lookups = await loadProductEditorLookups({
-    brandId: initial.brandId,
-    supplierId: initial.supplierId,
-    excludeProductId: initial.id,
-  });
-  const settings = await getSettingsMap().catch(() => ({}) as Record<string, string>);
+  const [lookups, settings] = await Promise.all([
+    loadProductEditorLookups({
+      brandId: initial.brandId,
+      supplierId: initial.supplierId,
+      excludeProductId: initial.id,
+    }),
+    getSettingsMap().catch(() => ({}) as Record<string, string>),
+  ]);
 
   return (
     <div className="space-y-6">

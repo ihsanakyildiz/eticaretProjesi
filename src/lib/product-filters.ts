@@ -149,6 +149,8 @@ export function inputTypeForVariantDisplay(
   switch (displayType) {
     case "TEXT":
       return "MULTI_SELECT";
+    case "BUTTON":
+      return "MULTI_SELECT";
     case "COLOR":
       return "SWATCH";
     case "IMAGE":

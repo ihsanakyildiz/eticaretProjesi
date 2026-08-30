@@ -28,19 +28,28 @@ export type CheckoutCarrier = {
   priceMinor: number;
 };
 
+export type CartDeliveryCode = "SAME_DAY" | "DAYS_1_3" | "DAYS_3_5" | "DAYS_5_10";
+
 export type HydratedCartLine = {
   variantId: string;
   productId: string;
   title: string;
+  brandName: string | null;
   variantTitle: string | null;
   href: string;
   sku: string | null;
   image: string | null;
   quantity: number;
   unitPriceMinor: number;
+  compareAtMinor: number | null;
+  savingsMinor: number;
   taxRatePercent: number;
   totalMinor: number;
   extraShippingMinor: number;
+  maxQuantity: number | null;
+  minOrderQty: number;
+  quantityStep: number;
+  estimatedDelivery: CartDeliveryCode | null;
   available: boolean;
 };
 

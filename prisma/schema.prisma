@@ -1142,11 +1142,12 @@ model Brand {
   @@map("brands")
 }
 
-/// Varyant ekseni vitrin tipi — TEXT: 41/42 · COLOR: renk noktası · IMAGE: desen
+/// Varyant ekseni vitrin tipi — TEXT: select · BUTTON: kutu · COLOR: nokta · IMAGE: desen
 enum ProductAttributeDisplayType {
   TEXT
   COLOR
   IMAGE
+  BUTTON
 }
 
 /// Global varyant özelliği (Beden, Renk). Ürüne bağlanan SKU bu değerlerden oluşur.
@@ -1760,4 +1761,70 @@ model ShippingCarrier {
   @@index([isActive, sortOrder])
   @@index([provider])
   @@map("shipping_carriers")
+}
+
+enum ProductImportJobStatus {
+  PREVIEW
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+enum ProductImportRowKind {
+  READY
+  ZERO_PRICE
+  ERROR
+}
+
+enum ProductImportRowWork {
+  PENDING
+  IMPORTED
+  FAILED
+}
+
+model ProductImportJob {
+  id             String                 @id @default(cuid())
+  fileName       String                 @db.VarChar(255)
+  fileSize       Int
+  status         ProductImportJobStatus @default(PREVIEW)
+  rowCount       Int                    @default(0)
+  readyCount     Int                    @default(0)
+  zeroPriceCount Int                    @default(0)
+  errorCount     Int                    @default(0)
+  importedCount  Int                    @default(0)
+  failedCount    Int                    @default(0)
+  currentTitle   String?                @db.VarChar(191)
+  currentRow     Int?
+  error          String?                @db.VarChar(500)
+  startedAt      DateTime?
+  finishedAt     DateTime?
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+  rows           ProductImportJobRow[]
+
+  @@index([status, createdAt])
+  @@map("product_import_jobs")
+}
+
+model ProductImportJobRow {
+  id        String               @id @default(cuid())
+  jobId     String
+  job       ProductImportJob     @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  rowNumber Int
+  title     String               @db.VarChar(191)
+  category  String               @db.VarChar(191)
+  sku       String               @db.VarChar(80)
+  barcode   String               @db.VarChar(64)
+  price     String               @db.VarChar(40)
+  stock     String               @db.VarChar(20)
+  kind      ProductImportRowKind
+  work      ProductImportRowWork @default(PENDING)
+  errors    String               @default("") @db.VarChar(1000)
+  rawJson   String               @db.LongText
+  productId String?
+
+  @@index([jobId, kind, rowNumber])
+  @@index([jobId, work, rowNumber])
+  @@map("product_import_job_rows")
 }

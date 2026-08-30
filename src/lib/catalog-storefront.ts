@@ -1,4 +1,5 @@
 import type { ProductSaleUnit } from "@prisma/client";
+import { isVariantPurchasable, type OutOfStockBehavior } from "@/lib/product-stock";
 import {
   publicProductBrandHref,
   publicProductCategoryHref,
@@ -21,6 +22,7 @@ export type CatalogProductCard = {
   showPrice: boolean;
   onSale: boolean;
   availableForOrder: boolean;
+  outOfStockBehavior: OutOfStockBehavior;
   saleUnit: ProductSaleUnit;
   createdAt: Date;
   viewCount: number;
@@ -33,6 +35,7 @@ export type CatalogProductCard = {
     stockQuantity: number;
     isDefault: boolean;
     trackInventory: boolean;
+    allowBackorder: boolean;
   }[];
 };
 
@@ -122,6 +125,69 @@ export function catalogCardPrice(product: {
     0,
   );
   return { priceMinor, stockQuantity };
+}
+
+export function catalogCardAvailability(product: {
+  availableForOrder: boolean;
+  outOfStockBehavior?: OutOfStockBehavior | null;
+  variants: Array<{
+    stockQuantity: number;
+    trackInventory?: boolean;
+    allowBackorder?: boolean;
+  }>;
+}): "in_stock" | "preorder" | "out_of_stock" {
+  if (!product.availableForOrder) return "out_of_stock";
+  const variants = product.variants;
+  if (variants.length === 0) return "in_stock";
+
+  const anyPurchasable = variants.some((variant) =>
+    isVariantPurchasable({
+      trackInventory: variant.trackInventory !== false,
+      stockQuantity: variant.stockQuantity,
+      allowBackorder: Boolean(variant.allowBackorder),
+      outOfStockBehavior: product.outOfStockBehavior,
+    }),
+  );
+  if (!anyPurchasable) return "out_of_stock";
+
+  const anyPhysical = variants.some(
+    (variant) => variant.trackInventory === false || variant.stockQuantity > 0,
+  );
+  return anyPhysical ? "in_stock" : "preorder";
+}
+
+export function catalogCardAvailabilityLabel(
+  availability: ReturnType<typeof catalogCardAvailability>,
+): string {
+  switch (availability) {
+    case "in_stock":
+      return "Stokta";
+    case "preorder":
+      return "Ön sipariş";
+    case "out_of_stock":
+      return "Tükendi";
+    default: {
+      const _exhaustive: never = availability;
+      return _exhaustive;
+    }
+  }
+}
+
+export function catalogCardSchemaAvailability(
+  availability: ReturnType<typeof catalogCardAvailability>,
+): "InStock" | "PreOrder" | "OutOfStock" {
+  switch (availability) {
+    case "in_stock":
+      return "InStock";
+    case "preorder":
+      return "PreOrder";
+    case "out_of_stock":
+      return "OutOfStock";
+    default: {
+      const _exhaustive: never = availability;
+      return _exhaustive;
+    }
+  }
 }
 
 export function catalogCardHoverImage(product: CatalogProductCard): string | null {

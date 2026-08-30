@@ -69,6 +69,7 @@ function ValueSwatch({
         </span>
       );
     case "TEXT":
+    case "BUTTON":
       return null;
     default: {
       const _exhaustive: never = displayType;

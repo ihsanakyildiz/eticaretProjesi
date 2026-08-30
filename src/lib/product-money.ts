@@ -18,6 +18,14 @@ export function formatMinorTry(minor: number): string {
   }).format(minor / 100);
 }
 
+export function formatMinorTl(minor: number): string {
+  const major = minor / 100;
+  const amount = Number.isInteger(major)
+    ? major.toLocaleString("tr-TR")
+    : major.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return `${amount} TL`;
+}
+
 export function taxIncludedMinor(exclMinor: number, taxPercent: number): number {
   const rate = Number.isFinite(taxPercent) ? taxPercent : 0;
   return Math.round(exclMinor * (1 + rate / 100));

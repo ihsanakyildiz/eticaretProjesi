@@ -301,13 +301,19 @@ function buildVariantWhere(clauses: ResolvedClause[]): Prisma.ProductVariantWher
       case "availability": {
         if (clause.inStock) {
           variantAnd.push({
-            OR: [{ trackInventory: false }, { stockQuantity: { gt: 0 } }, { allowBackorder: true }],
+            OR: [
+              { trackInventory: false },
+              { stockQuantity: { gt: 0 } },
+              { allowBackorder: true },
+              { product: { outOfStockBehavior: "ALLOW" } },
+            ],
           });
         } else {
           variantAnd.push({
             trackInventory: true,
             allowBackorder: false,
             stockQuantity: { lte: 0 },
+            product: { outOfStockBehavior: { not: "ALLOW" } },
           });
         }
         used = true;

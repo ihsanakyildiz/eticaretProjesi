@@ -7,27 +7,25 @@ import {
   parseSidebarUiCookie,
   SIDEBAR_UI_COOKIE,
 } from "@/lib/admin-sidebar-preference";
-import { getUnreadMailNotificationCount } from "@/lib/mail-notifications";
-import { can, isPanelRole, requirePageView } from "@/lib/staff-permissions";
+import { isPanelRole, requirePageView } from "@/lib/staff-permissions";
 
 export default async function AdminPanelLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const session = await getAdminSession();
+  const [session, headerStore, cookieStore] = await Promise.all([
+    getAdminSession(),
+    headers(),
+    cookies(),
+  ]);
 
   if (!session?.user?.id || !isPanelRole(session.user.role)) {
     redirect("/admin/login");
   }
 
-  const headerStore = await headers();
   const pathname = headerStore.get("x-pathname") ?? "/admin";
   const access = await requirePageView(pathname);
-  const unreadNotificationCount = can(access.role, access.map, "email", "view")
-    ? await getUnreadMailNotificationCount()
-    : 0;
-  const cookieStore = await cookies();
   const initialSidebarCollapsed = parseSidebarUiCookie(
     cookieStore.get(SIDEBAR_UI_COOKIE)?.value,
   );
@@ -39,7 +37,7 @@ export default async function AdminPanelLayout({
         userName={session.user.name ?? "Admin"}
         userEmail={session.user.email ?? ""}
         userRole={session.user.role}
-        unreadNotificationCount={unreadNotificationCount}
+        unreadNotificationCount={0}
         initialSidebarCollapsed={initialSidebarCollapsed}
         permissionRole={access.role ?? session.user.role}
         isAdmin={access.isAdmin}

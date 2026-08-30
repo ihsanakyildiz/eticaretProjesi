@@ -13,7 +13,7 @@ const assetCacheControl = `public, max-age=${assetMaxAge}, immutable${
 }`;
 
 const nextConfig: NextConfig = {
-  serverExternalPackages: ["imapflow", "mailparser"],
+  serverExternalPackages: ["imapflow", "mailparser", "exceljs", "sharp", "detect-libc"],
   turbopack: {
     resolveAlias: {
       "../build/polyfills/polyfill-module": emptyPolyfill,
@@ -32,7 +32,7 @@ const nextConfig: NextConfig = {
   experimental: {
     optimizePackageImports: ["lucide-react"],
     serverActions: {
-      bodySizeLimit: "16mb",
+      bodySizeLimit: "45mb",
       allowedOrigins: [
         "www.ihsanakyildiz.com.tr",
         "ihsanakyildiz.com.tr",

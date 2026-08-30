@@ -21,7 +21,10 @@ export type { CatalogCategoryCard, CatalogListingFilters, CatalogProductCard, Ca
 export {
   CATALOG_SORTS,
   catalogBrandHref,
+  catalogCardAvailability,
+  catalogCardAvailabilityLabel,
   catalogCardHoverImage,
+  catalogCardSchemaAvailability,
   catalogCardPrice,
   catalogCategoryHref,
   catalogProductHref,
@@ -47,6 +50,7 @@ const productCardSelect = {
   showPrice: true,
   onSale: true,
   availableForOrder: true,
+  outOfStockBehavior: true,
   saleUnit: true,
   createdAt: true,
   viewCount: true,
@@ -65,6 +69,7 @@ const productCardSelect = {
       stockQuantity: true,
       isDefault: true,
       trackInventory: true,
+      allowBackorder: true,
     },
   },
 } satisfies Prisma.ProductSelect;
@@ -88,7 +93,7 @@ export const getCachedCatalogListing = unstable_cache(
       orderBy: [{ sortOrder: "asc" }, { title: "asc" }],
       select: productCardSelect,
     }),
-  ["catalog-listing"],
+  ["catalog-listing-v2"],
   { tags: [CATALOG_CACHE_TAG, "site"], revalidate: CACHE_REVALIDATE },
 );
 
@@ -280,7 +285,7 @@ export function getCachedCatalogCategoryPage(slug: string) {
 
       return { category, products };
     },
-    ["catalog-category-page", slug],
+    ["catalog-category-page-v2", slug],
     { tags: [CATALOG_CACHE_TAG, "site"], revalidate: CACHE_REVALIDATE },
   )();
 }
@@ -313,7 +318,7 @@ export function getCachedCatalogBrandPage(slug: string) {
 
       return { brand, products };
     },
-    ["catalog-brand-page", slug],
+    ["catalog-brand-page-v2", slug],
     { tags: [CATALOG_CACHE_TAG, "site"], revalidate: CACHE_REVALIDATE },
   )();
 }
@@ -346,8 +351,30 @@ export function getCachedCatalogProduct(slug: string) {
             include: {
               selections: {
                 include: {
-                  attribute: { select: { id: true, name: true } },
-                  value: { select: { id: true, name: true, colorHex: true } },
+                  attribute: {
+                    select: {
+                      id: true,
+                      name: true,
+                      slug: true,
+                      sortOrder: true,
+                      displayType: true,
+                      values: {
+                        where: { isActive: true },
+                        orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+                        select: {
+                          id: true,
+                          name: true,
+                          slug: true,
+                          sortOrder: true,
+                          colorHex: true,
+                          image: true,
+                        },
+                      },
+                    },
+                  },
+                  value: {
+                    select: { id: true, name: true, slug: true, sortOrder: true, colorHex: true, image: true },
+                  },
                 },
               },
             },
@@ -373,7 +400,7 @@ export function getCachedCatalogProduct(slug: string) {
         related: product.relatedFrom.map((row) => row.related),
       };
     },
-    ["catalog-product", slug],
+    ["catalog-product-v5", slug],
     { tags: [CATALOG_CACHE_TAG, "site"], revalidate: CACHE_REVALIDATE },
   )();
 }

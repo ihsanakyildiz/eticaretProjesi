@@ -10,7 +10,9 @@ import { JsonLd } from "@/components/site/json-ld";
 import { SiteLink } from "@/components/site/site-link";
 import {
   catalogBrandHref,
+  catalogCardAvailability,
   catalogCardPrice,
+  catalogCardSchemaAvailability,
   catalogCategoryHref,
   catalogProductHref,
   getCachedCatalogProduct,
@@ -94,7 +96,8 @@ export async function CatalogProductScreen({
     seoTitle: product.seoTitle,
     seoDescription: product.seoDescription,
   });
-  const { priceMinor, stockQuantity } = catalogCardPrice(product);
+  const { priceMinor } = catalogCardPrice(product);
+  const cardAvailability = catalogCardAvailability(product);
   const content = prepareRichHtml(product.content, {
     lazyImages: perf.lazyImages,
     lazyIframes: perf.lazyIframes,
@@ -128,7 +131,7 @@ export async function CatalogProductScreen({
           priceMinor,
           sku: product.sku,
           brandName: product.brand?.name,
-          availability: stockQuantity > 0 ? "InStock" : "OutOfStock",
+          availability: catalogCardSchemaAvailability(cardAvailability),
           showPrice: product.showPrice,
         })}
       />
@@ -192,6 +195,27 @@ export async function CatalogProductScreen({
               isDefault: variant.isDefault,
               image: withCdnUrl(variant.image, perf.cdnUrl),
               selectionCount: variant.selections.length,
+              selections: variant.selections.map((selection) => ({
+                attributeId: selection.attributeId,
+                attributeName: selection.attribute.name,
+                attributeSlug: selection.attribute.slug,
+                attributeSortOrder: selection.attribute.sortOrder,
+                displayType: selection.attribute.displayType ?? "TEXT",
+                valueId: selection.valueId,
+                valueName: selection.value.name,
+                valueSlug: selection.value.slug,
+                valueSortOrder: selection.value.sortOrder,
+                colorHex: selection.value.colorHex,
+                image: selection.value.image,
+                attributeValues: selection.attribute.values.map((value) => ({
+                  id: value.id,
+                  name: value.name,
+                  slug: value.slug,
+                  sortOrder: value.sortOrder,
+                  colorHex: value.colorHex,
+                  image: value.image,
+                })),
+              })),
             }))}
             taxRatePercent={product.taxRatePercent}
             showPrice={product.showPrice}
@@ -201,6 +225,7 @@ export async function CatalogProductScreen({
             quantityStep={product.quantityStep}
             inStockLabel={product.inStockLabel}
             outOfStockLabel={product.outOfStockLabel}
+            outOfStockBehavior={product.outOfStockBehavior}
             deliveryLabel={
               product.estimatedDelivery
                 ? productEstimatedDeliveryLabel(product.estimatedDelivery)

@@ -159,7 +159,7 @@ export function ProductAttributeForm({
             <span className="mb-1.5 block text-sm font-medium text-slate-700">
               Vitrin görünümü *
             </span>
-            <div className="grid gap-2 sm:grid-cols-3">
+            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
               {PRODUCT_ATTRIBUTE_DISPLAY_TYPES.map((type) => {
                 const selected = displayType === type;
                 const radioId = `display-${type}`;

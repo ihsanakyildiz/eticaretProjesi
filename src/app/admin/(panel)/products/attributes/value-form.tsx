@@ -74,6 +74,7 @@ export function ProductAttributeValueForm({
   let extraFields: ReactNode = null;
   switch (displayType) {
     case "TEXT":
+    case "BUTTON":
       extraFields = null;
       break;
     case "COLOR":

@@ -29,6 +29,7 @@ import {
   Palette,
   Percent,
   Truck,
+  Upload,
   Users,
   UserCog,
   UserRoundCog,
@@ -85,6 +86,7 @@ export const adminNavSections: AdminNavSection[] = [
         icon: ShoppingBag,
         children: [
           { label: "Katalog", href: "/admin/products", icon: LayoutGrid },
+          { label: "Ürün yükle", href: "/admin/products/import", icon: Upload },
           { label: "Kategoriler", href: "/admin/products/categories", icon: Tags },
           { label: "Markalar", href: "/admin/products/brands", icon: Award },
           { label: "Varyantlar", href: "/admin/products/attributes", icon: SwatchBook },

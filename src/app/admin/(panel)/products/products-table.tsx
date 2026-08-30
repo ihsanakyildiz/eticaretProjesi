@@ -1,11 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
   Check,
+  ChevronLeft,
+  ChevronRight,
   Copy,
   Loader2,
   Pencil,
@@ -15,6 +17,7 @@ import {
   X,
 } from "lucide-react";
 import { Can, useCan } from "@/components/admin/admin-permissions";
+import type { ProductRow } from "@/lib/admin-product-list";
 import { formatMinorTry } from "@/lib/product-money";
 import {
   deleteProductAction,
@@ -22,26 +25,14 @@ import {
   toggleProductActiveAction,
 } from "./actions";
 
-export type ProductRow = {
-  id: string;
-  title: string;
-  slug: string;
-  sku: string | null;
-  image: string | null;
-  isActive: boolean;
-  basePriceMinor: number;
-  categoryName: string | null;
-  brandName: string | null;
-  stockQuantity: number;
-  variantCount: number;
-};
+export type { ProductRow };
 
-function normalizeSearch(value: string) {
-  return value
-    .toLocaleLowerCase("tr-TR")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .trim();
+function catalogHref(page: number, q: string) {
+  const params = new URLSearchParams();
+  if (q) params.set("q", q);
+  if (page > 1) params.set("page", String(page));
+  const query = params.toString();
+  return query ? `/admin/products?${query}` : "/admin/products";
 }
 
 function DeleteProductModal({
@@ -139,32 +130,30 @@ function DeleteProductModal({
   );
 }
 
-export function ProductsTable({ products }: { products: ProductRow[] }) {
+export function ProductsTable({
+  products,
+  q,
+  page,
+  pageCount,
+  total,
+  pageSize,
+}: {
+  products: ProductRow[];
+  q: string;
+  page: number;
+  pageCount: number;
+  total: number;
+  pageSize: number;
+}) {
   const canCreate = useCan("products", "create");
   const canUpdate = useCan("products", "update");
   const canDelete = useCan("products", "delete");
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
-  const [search, setSearch] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<ProductRow | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-
-  const filtered = useMemo(() => {
-    const q = normalizeSearch(search);
-    if (!q) return products;
-    return products.filter((product) => {
-      const haystack = normalizeSearch(
-        [
-          product.title,
-          product.slug,
-          product.sku ?? "",
-          product.categoryName ?? "",
-          product.brandName ?? "",
-        ].join(" "),
-      );
-      return haystack.includes(q);
-    });
-  }, [products, search]);
+  const from = total === 0 ? 0 : (page - 1) * pageSize + 1;
+  const to = Math.min(page * pageSize, total);
 
   const confirmDelete = () => {
     if (!deleteTarget) return;
@@ -214,21 +203,33 @@ export function ProductsTable({ products }: { products: ProductRow[] }) {
   return (
     <>
       <div className="rounded-lg border border-[#e9ebec] bg-white shadow-sm">
-        <div className="flex flex-col gap-3 border-b border-[#e9ebec] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+        <form
+          action="/admin/products"
+          method="get"
+          className="flex flex-col gap-3 border-b border-[#e9ebec] px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+        >
           <div className="relative max-w-md flex-1">
             <Search className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <input
               type="search"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Ürün, SKU veya kategori ara…"
+              name="q"
+              defaultValue={q}
+              placeholder="Ürün, SKU, barkod veya kategori ara…"
               className="w-full rounded-md border border-[#e9ebec] bg-white py-2 pr-3 pl-9 text-sm text-slate-700 outline-none focus:border-[#0ab39c]"
             />
           </div>
-          <p className="text-xs text-slate-400">
-            {filtered.length} / {products.length} ürün
-          </p>
-        </div>
+          <div className="flex items-center gap-3">
+            <p className="text-xs text-slate-400">
+              {total === 0 ? "0 ürün" : `${from}–${to} / ${total} ürün`}
+            </p>
+            <button
+              type="submit"
+              className="rounded-md border border-[#e9ebec] bg-white px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50"
+            >
+              Ara
+            </button>
+          </div>
+        </form>
 
         {actionError ? (
           <div className="border-b border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700">
@@ -236,12 +237,12 @@ export function ProductsTable({ products }: { products: ProductRow[] }) {
           </div>
         ) : null}
 
-        {filtered.length === 0 ? (
+        {products.length === 0 ? (
           <div className="px-4 py-12 text-center">
             <p className="text-sm text-slate-500">
-              {products.length === 0 ? "Henüz ürün eklenmemiş." : "Aramanızla eşleşen ürün yok."}
+              {q ? "Aramanızla eşleşen ürün yok." : "Henüz ürün eklenmemiş."}
             </p>
-            {products.length === 0 && canCreate ? (
+            {!q && canCreate ? (
               <Link
                 href="/admin/products/new"
                 className="mt-4 inline-flex text-sm font-medium text-[#405189] hover:underline"
@@ -263,7 +264,7 @@ export function ProductsTable({ products }: { products: ProductRow[] }) {
                 <span className="text-right">İşlem</span>
               </div>
 
-              {filtered.map((product) => (
+              {products.map((product) => (
                 <div
                   key={product.id}
                   className="grid grid-cols-[minmax(0,2fr)_110px_minmax(0,1fr)_110px_90px_90px_190px] items-center gap-2 border-b border-[#e9ebec] px-4 py-3 text-sm last:border-0"
@@ -365,6 +366,44 @@ export function ProductsTable({ products }: { products: ProductRow[] }) {
             </div>
           </div>
         )}
+
+        {pageCount > 1 ? (
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#e9ebec] px-4 py-3">
+            <p className="text-xs text-slate-500">
+              Sayfa {page} / {pageCount}
+            </p>
+            <div className="flex gap-2">
+              {page <= 1 ? (
+                <span className="inline-flex items-center gap-1 rounded-md border border-[#e9ebec] px-3 py-1.5 text-sm text-slate-400">
+                  <ChevronLeft className="h-4 w-4" />
+                  Önceki
+                </span>
+              ) : (
+                <Link
+                  href={catalogHref(page - 1, q)}
+                  className="inline-flex items-center gap-1 rounded-md border border-[#e9ebec] px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                  Önceki
+                </Link>
+              )}
+              {page >= pageCount ? (
+                <span className="inline-flex items-center gap-1 rounded-md border border-[#e9ebec] px-3 py-1.5 text-sm text-slate-400">
+                  Sonraki
+                  <ChevronRight className="h-4 w-4" />
+                </span>
+              ) : (
+                <Link
+                  href={catalogHref(page + 1, q)}
+                  className="inline-flex items-center gap-1 rounded-md border border-[#e9ebec] px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+                >
+                  Sonraki
+                  <ChevronRight className="h-4 w-4" />
+                </Link>
+              )}
+            </div>
+          </div>
+        ) : null}
       </div>
 
       {deleteTarget ? (

@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { buildCategoryTree, toNamedTree } from "@/lib/category-tree";
 import { DEFAULT_VARIANT_COMBINATION_KEY } from "@/lib/product-variants";
 import { prisma } from "@/lib/prisma";
@@ -117,7 +118,7 @@ export async function loadProductEditorLookups(opts?: {
   };
 }
 
-export async function loadProductEditorInitial(
+export const loadProductEditorInitial = cache(async function loadProductEditorInitial(
   id: string,
 ): Promise<ProductEditorInitial | null> {
   const product = await prisma.product.findUnique({
@@ -218,4 +219,4 @@ export async function loadProductEditorInitial(
     })),
     variants,
   };
-}
+});

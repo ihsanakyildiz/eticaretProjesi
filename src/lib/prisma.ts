@@ -24,7 +24,8 @@ function hasCurrentDelegates(client: PrismaClient | undefined) {
       "mailMessage" in client &&
       "shippingCarrier" in client &&
       "pageSectionProduct" in client &&
-      "pageSectionProductCategory" in client,
+      "pageSectionProductCategory" in client &&
+      "productImportJob" in client,
   );
 }
 

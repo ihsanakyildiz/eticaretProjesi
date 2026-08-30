@@ -21,9 +21,25 @@ export default async function ProductAttributesPage() {
       displayType: true,
       isActive: true,
       sortOrder: true,
-      _count: { select: { values: true, selections: true } },
+      _count: { select: { values: true } },
     },
   });
+  const usedAttributeIds =
+    attributes.length === 0
+      ? []
+      : await prisma.productVariantSelection.findMany({
+          where: { attributeId: { in: attributes.map((attribute) => attribute.id) } },
+          distinct: ["attributeId"],
+          select: { attributeId: true },
+        });
+  const used = new Set(usedAttributeIds.map((row) => row.attributeId));
+  const rows = attributes.map((attribute) => ({
+    ...attribute,
+    _count: {
+      values: attribute._count.values,
+      selections: used.has(attribute.id) ? 1 : 0,
+    },
+  }));
 
   return (
     <div className="space-y-6">
@@ -54,7 +70,7 @@ export default async function ProductAttributesPage() {
         </div>
       </div>
 
-      <ProductAttributesTable attributes={attributes} />
+      <ProductAttributesTable attributes={rows} />
     </div>
   );
 }

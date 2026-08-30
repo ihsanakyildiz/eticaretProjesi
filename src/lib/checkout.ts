@@ -1,19 +1,22 @@
 import "server-only";
 
-import { Role } from "@prisma/client";
+import { ProductEstimatedDelivery, Role } from "@prisma/client";
 import { auth } from "@/auth";
 import { pricedLine } from "@/lib/order-server";
+import { taxIncludedMinor } from "@/lib/product-money";
 import { prisma } from "@/lib/prisma";
 import { publicProductHref } from "@/lib/public-urls";
 import { getSettingsMap } from "@/lib/settings";
 import { parseUrlStructure } from "@/lib/url-structure";
 import { normalizeCartLines, type CartLine } from "@/lib/cart";
 import type {
+  CartDeliveryCode,
   CheckoutAddress,
   CheckoutCarrier,
   HydratedCart,
   HydratedCartLine,
 } from "@/lib/checkout-types";
+import { allowsOrderWhenOutOfStock, isVariantPurchasable } from "@/lib/product-stock";
 
 export type {
   CheckoutAddress,
@@ -32,6 +35,25 @@ export async function requireCheckoutUser() {
     return null;
   }
   return session;
+}
+
+function toCartDelivery(value: ProductEstimatedDelivery | null): CartDeliveryCode | null {
+  switch (value) {
+    case ProductEstimatedDelivery.SAME_DAY:
+      return "SAME_DAY";
+    case ProductEstimatedDelivery.DAYS_1_3:
+      return "DAYS_1_3";
+    case ProductEstimatedDelivery.DAYS_3_5:
+      return "DAYS_3_5";
+    case ProductEstimatedDelivery.DAYS_5_10:
+      return "DAYS_5_10";
+    case null:
+      return null;
+    default: {
+      const _exhaustive: never = value;
+      return _exhaustive;
+    }
+  }
 }
 
 export async function hydrateCart(raw: CartLine[]): Promise<HydratedCart> {
@@ -55,7 +77,13 @@ export async function hydrateCart(raw: CartLine[]): Promise<HydratedCart> {
             isActive: true,
             visibility: true,
             availableForOrder: true,
+            outOfStockBehavior: true,
             extraShippingMinor: true,
+            compareAtMinor: true,
+            minOrderQty: true,
+            quantityStep: true,
+            estimatedDelivery: true,
+            brand: { select: { name: true } },
           },
         },
       },
@@ -73,8 +101,16 @@ export async function hydrateCart(raw: CartLine[]): Promise<HydratedCart> {
   for (const line of lines) {
     const variant = byId.get(line.variantId);
     const product = variant?.product;
-    const inStock =
-      !variant?.trackInventory || variant.stockQuantity >= line.quantity || variant.allowBackorder;
+    const inStock = Boolean(
+      variant &&
+        isVariantPurchasable({
+          trackInventory: variant.trackInventory,
+          stockQuantity: variant.stockQuantity,
+          neededQuantity: line.quantity,
+          allowBackorder: variant.allowBackorder,
+          outOfStockBehavior: product?.outOfStockBehavior,
+        }),
+    );
     const available = Boolean(
       variant &&
         product?.isActive &&
@@ -93,19 +129,41 @@ export async function hydrateCart(raw: CartLine[]): Promise<HydratedCart> {
     taxMinor += priced.taxMinor;
     extraShippingMinor += product.extraShippingMinor * line.quantity;
 
+    const compareAtExcl = variant.compareAtMinor ?? product.compareAtMinor;
+    const compareAtMinor =
+      compareAtExcl != null && compareAtExcl > 0
+        ? taxIncludedMinor(compareAtExcl, product.taxRatePercent)
+        : null;
+    const savingsMinor =
+      compareAtMinor && compareAtMinor > priced.unitPriceMinor
+        ? (compareAtMinor - priced.unitPriceMinor) * line.quantity
+        : 0;
+    const maxQuantity =
+      variant.trackInventory &&
+      !allowsOrderWhenOutOfStock(product.outOfStockBehavior, variant.allowBackorder)
+        ? Math.max(variant.stockQuantity, line.quantity)
+        : null;
+
     hydrated.push({
       variantId: variant.id,
       productId: product.id,
       title: product.title,
+      brandName: product.brand?.name ?? null,
       variantTitle: variant.isDefault ? null : variant.title,
       href: publicProductHref(product.slug, urls, product.urlId),
       sku: variant.sku,
       image: variant.image || product.image,
       quantity: line.quantity,
       unitPriceMinor: priced.unitPriceMinor,
+      compareAtMinor,
+      savingsMinor,
       taxRatePercent: product.taxRatePercent,
       totalMinor: priced.totalMinor,
       extraShippingMinor: product.extraShippingMinor * line.quantity,
+      maxQuantity,
+      minOrderQty: Math.max(1, product.minOrderQty),
+      quantityStep: Math.max(1, product.quantityStep),
+      estimatedDelivery: toCartDelivery(product.estimatedDelivery),
       available: true,
     });
   }

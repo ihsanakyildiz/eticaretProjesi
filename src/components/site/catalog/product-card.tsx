@@ -1,10 +1,12 @@
 "use client";
 
-import { SiteImage } from "@/components/site/site-image";
+import { SiteImage, SiteImageFallback } from "@/components/site/site-image";
 import { SiteLink } from "@/components/site/site-link";
 import { useCatalogUrls } from "@/components/site/site-url-provider";
 import { recordProductClickAction } from "@/app/(site)/urunler/actions";
 import {
+  catalogCardAvailability,
+  catalogCardAvailabilityLabel,
   catalogCardHoverImage,
   catalogCardPrice,
   type CatalogProductCard,
@@ -18,7 +20,7 @@ export function ProductCard({
   product: CatalogProductCard;
   imagePriority?: boolean;
 }) {
-  const { priceMinor, stockQuantity } = catalogCardPrice(product);
+  const { priceMinor } = catalogCardPrice(product);
   const displayPrice = taxIncludedMinor(priceMinor, product.taxRatePercent);
   const compareAt = product.compareAtMinor
     ? taxIncludedMinor(product.compareAtMinor, product.taxRatePercent)
@@ -28,7 +30,7 @@ export function ProductCard({
       ? Math.round(((compareAt - displayPrice) / compareAt) * 100)
       : null;
   const hoverImage = catalogCardHoverImage(product);
-  const inStock = stockQuantity > 0;
+  const availability = catalogCardAvailability(product);
   const { productHref } = useCatalogUrls();
 
   return (
@@ -61,7 +63,7 @@ export function ProductCard({
             ) : null}
           </>
         ) : (
-          <div className="absolute inset-0 bg-site-surface" />
+          <SiteImageFallback fill />
         )}
         {discount ? (
           <span className="absolute top-2 left-2 rounded bg-rose-600 px-1.5 py-0.5 text-[11px] font-bold text-white">
@@ -95,8 +97,12 @@ export function ProductCard({
           ) : (
             <p className="text-xs text-site-muted">Fiyat için iletişime geçin</p>
           )}
-          <p className={`mt-1 text-[11px] ${inStock ? "text-emerald-600" : "text-site-muted"}`}>
-            {inStock ? "Stokta" : "Tükendi"}
+          <p
+            className={`mt-1 text-[11px] ${
+              availability === "out_of_stock" ? "text-site-muted" : "text-emerald-600"
+            }`}
+          >
+            {catalogCardAvailabilityLabel(availability)}
           </p>
         </div>
       </div>

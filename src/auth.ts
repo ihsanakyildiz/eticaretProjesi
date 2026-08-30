@@ -227,10 +227,14 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       return true;
     },
     async jwt({ token, user, trigger, session }) {
+      const now = Date.now();
+      const refreshAfterMs = 5 * 60 * 1000;
+
       if (user) {
         token.id = user.id as string;
         token.sub = user.id as string;
         token.role = user.role ?? Role.MEMBER;
+        token.roleCheckedAt = now;
       }
 
       // Eski JWT’lerde id yoksa sub’dan al
@@ -243,12 +247,17 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         if (typeof session.user.image === "string") token.picture = session.user.image;
       }
 
-      if (token.id) {
+      const checkedAt = typeof token.roleCheckedAt === "number" ? token.roleCheckedAt : 0;
+      const shouldRefreshUser =
+        Boolean(token.id) && (trigger === "update" || !checkedAt || now - checkedAt >= refreshAfterMs);
+
+      if (shouldRefreshUser) {
         try {
           const dbUser = await prisma.user.findUnique({
             where: { id: String(token.id) },
             select: { role: true, isActive: true, name: true, image: true, email: true },
           });
+          token.roleCheckedAt = now;
           if (!dbUser || !dbUser.isActive) {
             return {
               ...token,

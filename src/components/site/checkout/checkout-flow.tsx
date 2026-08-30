@@ -7,6 +7,7 @@ import { resolveCartAction } from "@/app/(site)/sepet/actions";
 import { useCart } from "@/components/site/cart/cart-provider";
 import { CheckoutAddressForm } from "@/components/site/checkout/checkout-address-form";
 import { SiteLink } from "@/components/site/site-link";
+import { loadHydratedCart } from "@/lib/cart-hydrate-cache";
 import type { CheckoutAddress, CheckoutCarrier, HydratedCart } from "@/lib/checkout-types";
 import {
   CHECKOUT_STEPS,
@@ -47,7 +48,11 @@ export function CheckoutFlow({
   query: CheckoutQuery;
 }) {
   const router = useRouter();
-  const { lines } = useCart();
+  const { ready, lines, selectedIds } = useCart();
+  const checkoutLines = useMemo(
+    () => lines.filter((line) => selectedIds.includes(line.variantId)),
+    [lines, selectedIds],
+  );
   const [cart, setCart] = useState<HydratedCart | null>(null);
   const carriers = useMemo<CheckoutCarrier[]>(
     () =>
@@ -86,15 +91,16 @@ export function CheckoutFlow({
   }, [query, queryKey, router, step]);
 
   useEffect(() => {
+    if (!ready) return;
     let cancelled = false;
-    void resolveCartAction(lines).then((next) => {
+    void loadHydratedCart(checkoutLines, resolveCartAction).then((next) => {
       if (cancelled) return;
       setCart(next);
     });
     return () => {
       cancelled = true;
     };
-  }, [lines]);
+  }, [checkoutLines, ready]);
 
   useEffect(() => {
     if (orderState.redirectUrl) {
@@ -134,10 +140,20 @@ export function CheckoutFlow({
     }
   }
 
-  if (lines.length === 0 && !orderState.redirectUrl) {
+  if (!ready && !orderState.redirectUrl) {
     return (
       <div className="rounded-lg border border-site-border bg-site-card px-6 py-16 text-center">
-        <p className="font-display text-xl font-semibold text-site-fg">Sepetiniz boş</p>
+        <p className="text-sm text-site-muted">Sepet hazırlanıyor...</p>
+      </div>
+    );
+  }
+
+  if (checkoutLines.length === 0 && !orderState.redirectUrl) {
+    return (
+      <div className="rounded-lg border border-site-border bg-site-card px-6 py-16 text-center">
+        <p className="font-display text-xl font-semibold text-site-fg">
+          {lines.length === 0 ? "Sepetiniz boş" : "Ödeme için ürün seçilmedi"}
+        </p>
         <SiteLink href="/sepet" className="mt-4 inline-flex text-sm font-semibold text-site-primary">
           Sepete dön
         </SiteLink>
@@ -354,7 +370,7 @@ export function CheckoutFlow({
             </ul>
 
             <form action={formAction} className="mt-6">
-              <input type="hidden" name="cartJson" value={JSON.stringify(lines)} />
+              <input type="hidden" name="cartJson" value={JSON.stringify(checkoutLines)} />
               <input type="hidden" name="shippingAddressId" value={shippingId} />
               <input type="hidden" name="billingAddressId" value={sameBilling ? shippingId : billingId} />
               <input type="hidden" name="carrierId" value={carrierId} />

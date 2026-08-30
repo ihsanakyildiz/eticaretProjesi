@@ -843,6 +843,7 @@ export function ProductEditor({
         </div>
 
       <div className={tab === "variants" ? "space-y-6" : "hidden"}>
+        {tab === "variants" ? (
         <VariantCombinationsPanel
           hidden={false}
           variants={variants}
@@ -860,6 +861,7 @@ export function ProductEditor({
           onVariantsChange={setVariants}
           onOpenGenerator={() => setGeneratorOpen(true)}
         />
+        ) : null}
         <section className="rounded-lg border border-[#e9ebec] bg-white shadow-sm">
           <div className="px-5 py-4">
             <p className="mb-2 text-sm font-medium text-slate-700">Stokta kalmadığında</p>

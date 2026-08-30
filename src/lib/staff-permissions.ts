@@ -1,6 +1,7 @@
+import { cache } from "react";
 import { Role } from "@prisma/client";
 import { redirect } from "next/navigation";
-import { auth } from "@/auth";
+import { getAdminSession } from "@/lib/admin-session";
 import {
   ADMIN_NO_ACCESS_HREF,
   ADMIN_PERMISSION_RESOURCES,
@@ -38,8 +39,8 @@ export async function getStaffPermissionMap(userId: string): Promise<StaffPermis
   return map;
 }
 
-export async function getPanelAccess() {
-  const session = await auth();
+export const getPanelAccess = cache(async () => {
+  const session = await getAdminSession();
   const role = session?.user?.role;
   const userId = session?.user?.id;
   if (!userId || !isPanelRole(role)) {
@@ -50,7 +51,7 @@ export async function getPanelAccess() {
   }
   const map = await getStaffPermissionMap(userId);
   return { session, role, map, isAdmin: false };
-}
+});
 
 export async function requirePermission(resource: string, action: PermissionAction) {
   const access = await getPanelAccess();

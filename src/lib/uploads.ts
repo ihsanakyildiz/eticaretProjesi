@@ -223,6 +223,8 @@ export async function saveOptimizedImage(
     /** Varsayılan: cover. Uzun ekran görüntüleri için inside kullanın. */
     fit?: "cover" | "inside" | "contain" | "fill" | "outside";
     quality?: number;
+    /** WebP sıkıştırma emeği. Düşük değer içe aktarmada daha hızlıdır. */
+    effort?: number;
     previousPath?: string;
   } = {},
 ): Promise<SavedUpload> {
@@ -336,7 +338,7 @@ export async function saveOptimizedImage(
       .webp({
         quality: options.quality ?? 82,
         alphaQuality: 90,
-        effort: 6,
+        effort: options.effort ?? 6,
         smartSubsample: true,
       })
       .toFile(absolutePath);
