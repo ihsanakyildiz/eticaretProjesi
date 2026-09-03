@@ -10,8 +10,17 @@ import {
   parseOrderPaymentMethod,
   parseOrderStatus,
 } from "@/lib/orders";
+import {
+  orderPaymentProviderLabel,
+  parseOrderPaymentProvider,
+} from "@/lib/checkout-payment-choice";
 import { formatMinorTry } from "@/lib/product-money";
+import { canOpenOrderReviews } from "@/lib/reviews";
 import { ensureMemberPortalAccess } from "../../actions";
+import { toOrderCaseView } from "@/lib/order-case-workflow";
+import { loadOrderShipmentTracking } from "@/lib/shipment-tracking";
+import { MemberOrderCasePanel } from "./member-order-case-panel";
+import { MemberShipmentTracking } from "./member-shipment-tracking";
 
 type PageProps = {
   params: Promise<{ reference: string }>;
@@ -60,6 +69,13 @@ export default async function MemberOrderDetailPage({ params }: PageProps) {
       items: true,
       addresses: true,
       statusHistory: { orderBy: { createdAt: "desc" } },
+      cases: {
+        orderBy: { createdAt: "desc" },
+        include: {
+          items: { include: { orderItem: { select: { title: true, variantTitle: true } } } },
+          events: { orderBy: { createdAt: "asc" } },
+        },
+      },
     },
   });
   if (!order) notFound();
@@ -67,6 +83,16 @@ export default async function MemberOrderDetailPage({ params }: PageProps) {
   const status = parseOrderStatus(order.status);
   const shipping = order.addresses.find((row) => row.kind === "SHIPPING");
   const billing = order.addresses.find((row) => row.kind === "BILLING");
+  const paymentProvider = parseOrderPaymentProvider(order.paymentProvider);
+  const paymentLabel = paymentProvider
+    ? `${orderPaymentMethodLabel(parseOrderPaymentMethod(order.paymentMethod))} (${orderPaymentProviderLabel(paymentProvider)})`
+    : orderPaymentMethodLabel(parseOrderPaymentMethod(order.paymentMethod));
+  const shipmentTracking = await loadOrderShipmentTracking({
+    id: order.id,
+    status: order.status,
+    carrierName: order.carrierName,
+    trackingNumber: order.trackingNumber,
+  });
 
   return (
     <div className="space-y-6">
@@ -84,19 +110,27 @@ export default async function MemberOrderDetailPage({ params }: PageProps) {
               {formatOrderDateTime(order.createdAt.toISOString())}
             </p>
           </div>
-          <span
-            className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${orderStatusBadgeClass(status)}`}
-          >
-            {orderStatusLabel(status)}
-          </span>
+          <div className="flex flex-col items-end gap-2">
+            <span
+              className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${orderStatusBadgeClass(status)}`}
+            >
+              {orderStatusLabel(status)}
+            </span>
+            {canOpenOrderReviews(status) ? (
+              <Link
+                href={`/uye/siparisler/${order.reference}/degerlendir`}
+                className="rounded-lg bg-site-primary px-3 py-2 text-sm font-medium text-white"
+              >
+                Değerlendir
+              </Link>
+            ) : null}
+          </div>
         </div>
 
         <dl className="mt-6 grid gap-3 text-sm sm:grid-cols-2">
           <div>
             <dt className="text-site-muted">Ödeme</dt>
-            <dd className="mt-0.5 font-medium text-site-fg">
-              {orderPaymentMethodLabel(parseOrderPaymentMethod(order.paymentMethod))}
-            </dd>
+            <dd className="mt-0.5 font-medium text-site-fg">{paymentLabel}</dd>
           </div>
           <div>
             <dt className="text-site-muted">Kargo</dt>
@@ -107,6 +141,8 @@ export default async function MemberOrderDetailPage({ params }: PageProps) {
           </div>
         </dl>
       </section>
+
+      {shipmentTracking ? <MemberShipmentTracking tracking={shipmentTracking} /> : null}
 
       <section className="rounded-2xl border border-site-border bg-site-card p-5 sm:p-6">
         <h3 className="text-base font-semibold text-site-fg">Ürünler</h3>
@@ -136,6 +172,18 @@ export default async function MemberOrderDetailPage({ params }: PageProps) {
           </div>
         </div>
       </section>
+
+      <MemberOrderCasePanel
+        reference={order.reference}
+        status={status}
+        items={order.items.map((item) => ({
+          id: item.id,
+          title: item.title,
+          variantTitle: item.variantTitle,
+          quantity: item.quantity,
+        }))}
+        cases={order.cases.map(toOrderCaseView)}
+      />
 
       <section className="rounded-2xl border border-site-border bg-site-card p-5 sm:p-6">
         <h3 className="text-base font-semibold text-site-fg">Adresler</h3>

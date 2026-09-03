@@ -42,6 +42,11 @@ function isNavHrefActive(pathname: string, href: string, allHrefs: string[] = ad
   return !hasMoreSpecificMatch;
 }
 
+function navItemTreeActive(pathname: string, item: AdminNavItem): boolean {
+  if (item.href && isNavHrefActive(pathname, item.href)) return true;
+  return Boolean(item.children?.some((child) => navItemTreeActive(pathname, child)));
+}
+
 function useFlyoutPosition(open: boolean, anchorRef: RefObject<HTMLElement | null>) {
   const [coords, setCoords] = useState({ top: 0, left: 80 });
 
@@ -172,23 +177,25 @@ function CollapsedIconItem({
       </p>
       {hasChildren ? (
         <div className="space-y-0.5 p-1.5">
-          {subItems!.map((child) => {
-            if (!child.href) return null;
-            return (
-              <Link
-                key={child.label}
-                href={child.href}
-                role="menuitem"
-                onClick={() => {
-                  setOpen(false);
-                  close();
-                }}
-                className="flex items-center gap-2.5 rounded-md px-3 py-2 text-sm text-white/80 transition hover:bg-white/10 hover:text-white"
-              >
-                <child.icon className="h-4 w-4 shrink-0 opacity-90" />
-                <span>{child.label}</span>
-              </Link>
-            );
+          {subItems!.flatMap((child) => {
+            const leaves = child.children?.length ? child.children : [child];
+            return leaves
+              .filter((leaf): leaf is AdminNavItem & { href: string } => Boolean(leaf.href))
+              .map((leaf) => (
+                <Link
+                  key={leaf.label}
+                  href={leaf.href}
+                  role="menuitem"
+                  onClick={() => {
+                    setOpen(false);
+                    close();
+                  }}
+                  className="flex items-center gap-2.5 rounded-md px-3 py-2 text-sm text-white/80 transition hover:bg-white/10 hover:text-white"
+                >
+                  <leaf.icon className="h-4 w-4 shrink-0 opacity-90" />
+                  <span>{leaf.label}</span>
+                </Link>
+              ));
           })}
         </div>
       ) : null}
@@ -217,6 +224,7 @@ function CollapsedIconItem({
           aria-label={label}
           aria-expanded={open}
           aria-controls={menuId}
+          onClick={() => setOpen((current) => !current)}
           className={iconButtonClass}
         >
           <Icon className="h-[18px] w-[18px] shrink-0" />
@@ -261,9 +269,7 @@ function NavLink({
   const pathname = usePathname();
   const { close } = useSidebar();
   const hasChildren = !!item.children?.length;
-  const isChildActive = item.children?.some(
-    (child) => child.href && isNavHrefActive(pathname, child.href),
-  );
+  const isChildActive = item.children?.some((child) => navItemTreeActive(pathname, child));
   const isActive =
     (item.href ? isNavHrefActive(pathname, item.href) : false) || Boolean(isChildActive);
 
@@ -290,11 +296,15 @@ function NavLink({
 
   if (hasChildren) {
     return (
-      <div>
-        <button
-          type="button"
-          onClick={() => setExpanded((v) => !v)}
-          className={`flex w-full items-center justify-between rounded-md px-3 py-2.5 text-sm transition ${
+      <details
+        className="group"
+        open={expanded}
+        onToggle={(event) => {
+          setExpanded(event.currentTarget.open);
+        }}
+      >
+        <summary
+          className={`flex w-full cursor-pointer list-none items-center justify-between rounded-md px-3 py-2.5 text-sm transition [&::-webkit-details-marker]:hidden ${
             isActive
               ? "bg-white/10 text-white"
               : "text-white/70 hover:bg-white/5 hover:text-white"
@@ -305,22 +315,20 @@ function NavLink({
             {item.label}
           </span>
           <ChevronDown
-            className={`h-4 w-4 shrink-0 transition ${expanded ? "rotate-180" : ""}`}
+            className={`h-4 w-4 shrink-0 transition group-open:rotate-180 ${expanded ? "rotate-180" : ""}`}
           />
-        </button>
-        {expanded ? (
-          <div className="mt-1 ml-5 space-y-0.5 border-l border-white/10 pl-3">
-            {item.children!.map((child) => (
-              <NavLink
-                key={child.label}
-                item={child}
-                depth={depth + 1}
-                collapsed={false}
-              />
-            ))}
-          </div>
-        ) : null}
-      </div>
+        </summary>
+        <div className="mt-1 ml-5 space-y-0.5 border-l border-white/10 pl-3">
+          {item.children!.map((child) => (
+            <NavLink
+              key={child.label}
+              item={child}
+              depth={depth + 1}
+              collapsed={false}
+            />
+          ))}
+        </div>
+      </details>
     );
   }
 
@@ -354,11 +362,11 @@ function NavLink({
 }
 
 export function AdminSidebar() {
-  const { role, map } = usePermissions();
+  const { role, map, advancedInventory } = usePermissions();
   const visibleSections = adminNavSections
     .map((section) => ({
       ...section,
-      items: filterNavByView(section.items, role, map),
+      items: filterNavByView(section.items, role, map, { advancedInventory }),
     }))
     .filter((section) => section.items.length > 0);
   const { isOpen, close, isCollapsed, isDesktop, allowTransition, toggleCollapsed } =
@@ -381,7 +389,7 @@ export function AdminSidebar() {
       ) : null}
 
       <aside
-        className={`admin-sidebar fixed inset-y-0 left-0 z-50 flex w-[min(260px,85vw)] flex-col overflow-hidden bg-[#405189] text-white lg:translate-x-0 ${widthTransition} ${
+        className={`admin-sidebar pointer-events-auto fixed inset-y-0 left-0 z-50 flex w-[min(260px,85vw)] flex-col overflow-hidden bg-[#405189] text-white print:hidden lg:translate-x-0 ${widthTransition} ${
           iconMode ? "lg:w-[72px]" : "lg:w-[260px]"
         } ${isOpen ? "translate-x-0" : "-translate-x-full"}`}
         suppressHydrationWarning

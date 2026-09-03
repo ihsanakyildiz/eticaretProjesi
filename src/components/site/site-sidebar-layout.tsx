@@ -11,11 +11,13 @@ export function SiteSidebarLayout({
   sidebar,
   children,
   className = "",
+  compactSidebar = false,
 }: {
   placement?: SidebarPlacement;
   sidebar: ReactNode;
   children: ReactNode;
   className?: string;
+  compactSidebar?: boolean;
 }) {
   if (!sidebar) {
     return (
@@ -28,13 +30,18 @@ export function SiteSidebarLayout({
   }
 
   const isRight = placement === "RIGHT";
-  const gridCols = isRight
-    ? "lg:grid-cols-[minmax(0,1fr)_280px]"
-    : "lg:grid-cols-[280px_minmax(0,1fr)]";
+  const gridCols = compactSidebar
+    ? isRight
+      ? "lg:grid-cols-[minmax(0,1fr)_13.5rem]"
+      : "lg:grid-cols-[13.5rem_minmax(0,1fr)]"
+    : isRight
+      ? "lg:grid-cols-[minmax(0,1fr)_280px]"
+      : "lg:grid-cols-[280px_minmax(0,1fr)]";
+  const gap = compactSidebar ? "gap-6 lg:gap-8" : "gap-10 lg:gap-12";
 
   return (
     <div
-      className={`mx-auto grid max-w-7xl gap-10 px-4 sm:px-6 ${gridCols} lg:gap-12 lg:px-8 ${className}`.trim()}
+      className={`mx-auto grid max-w-7xl px-4 sm:px-6 lg:px-8 ${gap} ${gridCols} ${className}`.trim()}
     >
       {isRight ? (
         <>

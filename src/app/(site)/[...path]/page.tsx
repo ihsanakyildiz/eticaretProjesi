@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import type { CatalogSearchParams } from "@/components/site/catalog/catalog-listing-screen";
 import { catalogCatchAllMetadata, renderCatalogCatchAll } from "@/lib/catalog-path-page";
 
+export const revalidate = 60;
+
 type PageProps = {
   params: Promise<{ path: string[] }>;
   searchParams: Promise<CatalogSearchParams>;

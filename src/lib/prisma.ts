@@ -8,7 +8,7 @@ function withPoolParams(url: string | undefined) {
   if (!url) return url;
   if (/[?&]connection_limit=/.test(url)) return url;
   const sep = url.includes("?") ? "&" : "?";
-  return `${url}${sep}connection_limit=8&pool_timeout=20`;
+  return `${url}${sep}connection_limit=20&pool_timeout=60&connect_timeout=20`;
 }
 
 function createPrismaClient() {
@@ -25,7 +25,16 @@ function hasCurrentDelegates(client: PrismaClient | undefined) {
       "shippingCarrier" in client &&
       "pageSectionProduct" in client &&
       "pageSectionProductCategory" in client &&
-      "productImportJob" in client,
+      "productImportJob" in client &&
+      "xmlProductFeed" in client &&
+      "apiProductFeed" in client &&
+      "apiProductFeedRun" in client &&
+      "orderRefund" in client &&
+      "orderCase" in client &&
+      "stockWarehouse" in client &&
+      "warehouseStock" in client &&
+      "stockDocument" in client &&
+      "stockLocation" in client,
   );
 }
 

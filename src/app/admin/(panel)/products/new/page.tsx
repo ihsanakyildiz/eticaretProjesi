@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { ProductEditor } from "../product-editor";
 import { loadProductEditorLookups } from "../editor-options";
+import { isAdvancedInventoryEnabledInMap } from "@/lib/advanced-inventory";
 import { getSettingsMap } from "@/lib/settings";
 import { parseUrlStructure } from "@/lib/url-structure";
 
@@ -23,7 +24,12 @@ export default async function NewProductPage() {
         </p>
       </div>
 
-      <ProductEditor mode="create" urlStructure={parseUrlStructure(settings)} {...lookups} />
+      <ProductEditor
+        mode="create"
+        urlStructure={parseUrlStructure(settings)}
+        advancedInventory={isAdvancedInventoryEnabledInMap(settings)}
+        {...lookups}
+      />
     </div>
   );
 }

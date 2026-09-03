@@ -13,7 +13,7 @@ const assetCacheControl = `public, max-age=${assetMaxAge}, immutable${
 }`;
 
 const nextConfig: NextConfig = {
-  serverExternalPackages: ["imapflow", "mailparser", "exceljs", "sharp", "detect-libc"],
+  serverExternalPackages: ["imapflow", "mailparser", "exceljs", "sharp", "detect-libc", "fast-xml-parser"],
   turbopack: {
     resolveAlias: {
       "../build/polyfills/polyfill-module": emptyPolyfill,
@@ -44,7 +44,7 @@ const nextConfig: NextConfig = {
     },
   },
   images: {
-    formats: ["image/avif", "image/webp"],
+    formats: ["image/webp"],
     minimumCacheTTL: 60 * 60 * 24 * 30,
     deviceSizes: [640, 750, 828, 1080, 1200, 1920],
     imageSizes: [16, 32, 48, 64, 96, 128, 256, 384],
@@ -56,23 +56,35 @@ const nextConfig: NextConfig = {
     ],
   },
   async headers() {
+    const htmlCacheValue = `public, s-maxage=${htmlCacheSeconds}${
+      staleWhileRevalidate
+        ? `, stale-while-revalidate=${Math.max(htmlCacheSeconds, 60)}`
+        : ""
+    }`;
+    const htmlSources = [
+      "/",
+      "/c",
+      "/c/:path*",
+      "/katalog",
+      "/katalog/:path*",
+      "/kategori",
+      "/kategori/:path*",
+      "/marka",
+      "/marka/:path*",
+      "/urunler",
+      "/urunler/:path*",
+      "/urun/:path*",
+      "/magaza",
+      "/magaza/:path*",
+      "/arama",
+      "/arama/:path*",
+    ];
     const htmlHeaders =
       htmlCacheSeconds > 0
-        ? [
-            {
-              source: "/",
-              headers: [
-                {
-                  key: "Cache-Control",
-                  value: `public, s-maxage=${htmlCacheSeconds}${
-                    staleWhileRevalidate
-                      ? `, stale-while-revalidate=${Math.max(htmlCacheSeconds, 60)}`
-                      : ""
-                  }`,
-                },
-              ],
-            },
-          ]
+        ? htmlSources.map((source) => ({
+            source,
+            headers: [{ key: "Cache-Control", value: htmlCacheValue }],
+          }))
         : [];
 
     return [

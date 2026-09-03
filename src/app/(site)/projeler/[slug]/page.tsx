@@ -31,9 +31,6 @@ import { getSettingsMap } from "@/lib/settings";
 import { getSidebarByLocation } from "@/lib/site-sidebars";
 import { getSiteOrigin } from "@/lib/site-origin";
 
-const HomeCta = dynamic(() =>
-  import("@/components/site/home/home-cta").then((mod) => mod.HomeCta),
-);
 const ProjectFaqAccordion = dynamic(() =>
   import("@/components/site/project/project-faq-accordion").then(
     (mod) => mod.ProjectFaqAccordion,
@@ -550,7 +547,6 @@ export default async function ProjectDetailPage({
         </SiteSidebarLayout>
       </section>
 
-      <HomeCta />
     </>
   );
 }

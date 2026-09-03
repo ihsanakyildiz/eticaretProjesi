@@ -285,7 +285,7 @@ export async function saveOptimizedImage(
     const webpName = pngName.replace(/\.png$/i, ".webp");
     absolutePath = path.join(targetDir, pngName);
 
-    const base = sharp(inputBuffer, { failOn: "none" }).rotate().resize({
+    const base = sharp(inputBuffer, { failOn: "none" }).rotate().toColourspace("srgb").resize({
       width: options.width,
       height: options.height,
       fit: "cover",
@@ -315,7 +315,7 @@ export async function saveOptimizedImage(
     fileName = `${baseName}.webp`;
     absolutePath = path.join(targetDir, fileName);
 
-    let webpPipeline = sharp(inputBuffer, { failOn: "none" }).rotate();
+    let webpPipeline = sharp(inputBuffer, { failOn: "none" }).rotate().toColourspace("srgb");
 
     if (options.width || options.height) {
       webpPipeline = webpPipeline.resize({

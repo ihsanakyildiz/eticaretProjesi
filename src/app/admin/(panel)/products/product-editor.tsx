@@ -39,6 +39,7 @@ import {
   PRODUCT_SALE_UNITS,
   PRODUCT_VISIBILITIES,
   productEditorTabLabel,
+  isProductEditorTabId,
   productEstimatedDeliveryLabel,
   productSaleUnitLabel,
   productVisibilityLabel,
@@ -49,11 +50,13 @@ import {
 } from "@/lib/product-editor";
 import {
   formatMinorToMajorInput,
+  fromChargeAndListPrice,
   marginMinor,
   marginRatePercent,
   parseMajorToMinor,
   taxExcludedMinor,
   taxIncludedMinor,
+  toChargeAndListPrice,
 } from "@/lib/product-money";
 import { isRealCombination } from "@/lib/product-combination-filters";
 import { DEFAULT_VARIANT_COMBINATION_KEY } from "@/lib/product-variants";
@@ -71,6 +74,7 @@ import {
 } from "./generate-combinations-modal";
 import { ProductGalleryEditor, type ProductGalleryItem } from "./product-gallery-editor";
 import { VariantCombinationsPanel } from "./variant-combinations-panel";
+import { CatalogStockHint, catalogStockInputClass } from "./catalog-stock-field";
 
 const initialState: ProductFormState = {};
 
@@ -195,6 +199,7 @@ export function ProductEditor({
   taxRates,
   relatedCandidates = [],
   urlStructure = DEFAULT_URL_STRUCTURE,
+  advancedInventory = false,
 }: {
   mode: "create" | "edit";
   initial?: ProductEditorInitial;
@@ -207,6 +212,7 @@ export function ProductEditor({
   taxRates: ProductEditorTaxRate[];
   relatedCandidates: ProductEditorRelatedCandidate[];
   urlStructure?: UrlStructure;
+  advancedInventory?: boolean;
 }) {
   const router = useRouter();
   const action = mode === "create" ? createProductAction : updateProductAction;
@@ -221,11 +227,17 @@ export function ProductEditor({
   const [brandId, setBrandId] = useState(initial?.brandId ?? "");
   const [supplierId, setSupplierId] = useState(initial?.supplierId ?? "");
   const [sku, setSku] = useState(initial?.sku ?? "");
-  const [salePriceMajor, setSalePriceMajor] = useState(
-    formatMinorToMajorInput(initial?.basePriceMinor ?? 0),
+  const initialListPrice = fromChargeAndListPrice(
+    initial?.basePriceMinor ?? 0,
+    initial?.compareAtMinor,
   );
-  const [compareAtMajor, setCompareAtMajor] = useState(
-    initial?.compareAtMinor != null ? formatMinorToMajorInput(initial.compareAtMinor) : "",
+  const [salePriceMajor, setSalePriceMajor] = useState(
+    formatMinorToMajorInput(initialListPrice.saleMinor),
+  );
+  const [discountPriceMajor, setDiscountPriceMajor] = useState(
+    initialListPrice.discountMinor != null
+      ? formatMinorToMajorInput(initialListPrice.discountMinor)
+      : "",
   );
   const [costMajor, setCostMajor] = useState(
     initial?.costMinor != null ? formatMinorToMajorInput(initial.costMinor) : "",
@@ -272,6 +284,11 @@ export function ProductEditor({
   const [duplicating, setDuplicating] = useState(false);
   const attachmentFileRef = useRef<HTMLInputElement>(null);
 
+  useEffect(() => {
+    const requested = new URLSearchParams(window.location.search).get("tab");
+    if (requested && isProductEditorTabId(requested)) setTab(requested);
+  }, []);
+
   const hasCombinations = variants.some(
     (item) => item.combinationKey !== DEFAULT_VARIANT_COMBINATION_KEY,
   );
@@ -281,12 +298,21 @@ export function ProductEditor({
   const totalStock = variants.reduce((sum, item) => sum + (item.stockQuantity || 0), 0);
   const taxPercent = Number.parseInt(taxRatePercent, 10) || 0;
   const typedPriceMinor = parseMajorToMinor(salePriceMajor) ?? 0;
-  const basePriceMinor = priceIncludesTax
+  const saleExclMinor = priceIncludesTax
     ? taxExcludedMinor(typedPriceMinor, taxPercent)
     : typedPriceMinor;
-  const priceIncl = priceIncludesTax
-    ? typedPriceMinor
-    : taxIncludedMinor(basePriceMinor, taxPercent);
+  const typedDiscountMinor = parseMajorToMinor(discountPriceMajor);
+  const discountExclMinor =
+    typedDiscountMinor == null
+      ? null
+      : priceIncludesTax
+        ? taxExcludedMinor(typedDiscountMinor, taxPercent)
+        : typedDiscountMinor;
+  const storedPrice = toChargeAndListPrice(saleExclMinor, discountExclMinor);
+  const basePriceMinor = storedPrice.chargeMinor;
+  const compareAtMinor = storedPrice.listMinor;
+  const priceIncl = taxIncludedMinor(basePriceMinor, taxPercent);
+  const saleIncl = priceIncludesTax ? typedPriceMinor : taxIncludedMinor(saleExclMinor, taxPercent);
   const costMinor = parseMajorToMinor(costMajor) ?? 0;
   const cover = gallery.find((item) => item.isCover) ?? gallery[0];
   const taxRateOptions = useMemo(() => {
@@ -323,6 +349,7 @@ export function ProductEditor({
                 ...item,
                 sku: sku.trim() || item.sku,
                 priceMinor: basePriceMinor,
+                compareAtMinor: compareAtMinor,
                 isDefault: true,
               }
             : item,
@@ -334,6 +361,7 @@ export function ProductEditor({
       }
     }
     formData.set("basePriceMajor", formatMinorToMajorInput(basePriceMinor));
+    formData.set("compareAtMajor", compareAtMinor != null ? formatMinorToMajorInput(compareAtMinor) : "");
     formData.set("relatedIdsJson", JSON.stringify(relatedIds));
     formAction(formData);
   };
@@ -376,12 +404,40 @@ export function ProductEditor({
     "w-full rounded-md border border-[#e9ebec] bg-white px-3 py-2.5 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-[#0ab39c] focus:ring-2 focus:ring-[#0ab39c]/20";
 
   const setSimpleStock = (raw: string) => {
+    if (advancedInventory) return;
     const stockQuantity = Math.max(0, Math.round(Number(raw) || 0));
     setVariants((prev) =>
       prev.map((item) =>
         item.combinationKey === DEFAULT_VARIANT_COMBINATION_KEY ? { ...item, stockQuantity } : item,
       ),
     );
+  };
+
+  const syncSimpleVariantPrice = (saleExcl: number, discountExcl: number | null) => {
+    if (hasCombinations) return;
+    const next = toChargeAndListPrice(saleExcl, discountExcl);
+    setVariants((prev) =>
+      prev.map((item) =>
+        item.combinationKey === DEFAULT_VARIANT_COMBINATION_KEY
+          ? { ...item, priceMinor: next.chargeMinor, compareAtMinor: next.listMinor }
+          : item,
+      ),
+    );
+  };
+
+  const saleTypedToExcl = (typedMinor: number, includesTax: boolean, tax: number) =>
+    includesTax ? taxExcludedMinor(typedMinor, tax) : typedMinor;
+
+  const applyTypedPrices = (
+    saleTypedMinor: number,
+    discountTypedMinor: number | null,
+    includesTax: boolean,
+    tax: number,
+  ) => {
+    const saleExcl = saleTypedToExcl(saleTypedMinor, includesTax, tax);
+    const discountExcl =
+      discountTypedMinor == null ? null : saleTypedToExcl(discountTypedMinor, includesTax, tax);
+    syncSimpleVariantPrice(saleExcl, discountExcl);
   };
 
   const applyGenerated = (groups: CombinationValue[][]) => {
@@ -402,6 +458,7 @@ export function ProductEditor({
           sku: makeSkuCandidate(sku || slugPreview(title) || "SKU", suffix),
           title: row.title,
           priceMinor: basePriceMinor,
+          compareAtMinor,
           stockQuantity: 0,
           isDefault: false,
           isActive: true,
@@ -577,7 +634,9 @@ export function ProductEditor({
               <div className="border-b border-[#e9ebec] px-5 py-4">
                 <h2 className="text-base font-semibold text-slate-800">Stok</h2>
                 <p className="mt-1 text-sm text-slate-500">
-                  Kombinasyonu olmayan ürünlerde stok varsayılan SKU üzerindedir.
+                  {advancedInventory
+                    ? "Gelişmiş stok sistemi açık. Adet, ürün kartından değiştirilemez."
+                    : "Kombinasyonu olmayan ürünlerde stok varsayılan SKU üzerindedir."}
                 </p>
               </div>
               <div className="p-5">
@@ -585,10 +644,12 @@ export function ProductEditor({
                 <input
                   type="number"
                   min={0}
+                  readOnly={advancedInventory}
                   value={defaultVariant?.stockQuantity ?? 0}
                   onChange={(event) => setSimpleStock(event.target.value)}
-                  className={`${inputClass} max-w-xs`}
+                  className={catalogStockInputClass(`${inputClass} max-w-xs`, advancedInventory)}
                 />
+                <CatalogStockHint locked={advancedInventory} />
               </div>
             </section>
           ) : null}
@@ -855,6 +916,7 @@ export function ProductEditor({
           }))}
           taxRatePercent={taxPercent}
           defaultStock={defaultVariant?.stockQuantity ?? 0}
+          lockStock={advancedInventory}
           basePriceMinor={basePriceMinor}
           sku={sku}
           inputClass={inputClass}
@@ -978,13 +1040,16 @@ export function ProductEditor({
 
       <section className={`rounded-lg border border-[#e9ebec] bg-white shadow-sm ${tab === "pricing" ? "" : "hidden"}`}>
           <div className="border-b border-[#e9ebec] px-5 py-4">
-            <h2 className="text-base font-semibold text-slate-800">Perakende satış fiyatı</h2>
+            <h2 className="text-base font-semibold text-slate-800">Alış, satış ve indirimli fiyat</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              İndirimli satış doluysa vitrinde satış fiyatı üstü çizili, müşteri indirimli tutarı öder.
+            </p>
           </div>
           <div className="space-y-5 p-5">
             <div className="flex flex-col gap-4 xl:flex-row xl:items-start">
               <div className="min-w-0 flex-1">
                 <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                  {priceIncludesTax ? "Satış fiyatı (KDV dahil)" : "Satış fiyatı (KDV Hariç)"}
+                  {priceIncludesTax ? "Satış fiyatı (KDV dahil)" : "Satış fiyatı (KDV hariç)"}
                 </label>
                 <div className="relative">
                   <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-slate-400">
@@ -994,26 +1059,22 @@ export function ProductEditor({
                     value={salePriceMajor}
                     onChange={(e) => {
                       setSalePriceMajor(e.target.value);
-                      const typed = parseMajorToMinor(e.target.value) ?? 0;
-                      const excl = priceIncludesTax
-                        ? taxExcludedMinor(typed, taxPercent)
-                        : typed;
-                      if (!hasCombinations) {
-                        setVariants((prev) =>
-                          prev.map((item) =>
-                            item.combinationKey === DEFAULT_VARIANT_COMBINATION_KEY
-                              ? { ...item, priceMinor: excl }
-                              : item,
-                          ),
-                        );
-                      }
+                      applyTypedPrices(
+                        parseMajorToMinor(e.target.value) ?? 0,
+                        parseMajorToMinor(discountPriceMajor),
+                        priceIncludesTax,
+                        taxPercent,
+                      );
                     }}
                     className={`${inputClass} pl-8`}
                   />
                 </div>
+                <p className="mt-1.5 text-xs text-slate-400">
+                  {priceIncludesTax
+                    ? `${formatMinorToMajorInput(saleExclMinor)} ₺ KDV hariç`
+                    : `${formatMinorToMajorInput(saleIncl)} ₺ KDV dahil`}
+                </p>
               </div>
-
-              <p className="mt-[1.875rem] hidden text-lg font-medium text-slate-400 xl:block">+</p>
 
               <div className="w-full xl:w-56">
                 <label className="mb-1.5 block text-sm font-medium text-slate-700">KDV</label>
@@ -1023,16 +1084,26 @@ export function ProductEditor({
                   onChange={(e) => {
                     const next = e.target.value;
                     const tax = Number.parseInt(next, 10) || 0;
-                    setTaxRatePercent(next);
-                    if (!priceIncludesTax || hasCombinations) return;
-                    const excl = taxExcludedMinor(parseMajorToMinor(salePriceMajor) ?? 0, tax);
-                    setVariants((prev) =>
-                      prev.map((item) =>
-                        item.combinationKey === DEFAULT_VARIANT_COMBINATION_KEY
-                          ? { ...item, priceMinor: excl }
-                          : item,
-                      ),
+                    const saleExcl = saleTypedToExcl(
+                      parseMajorToMinor(salePriceMajor) ?? 0,
+                      priceIncludesTax,
+                      taxPercent,
                     );
+                    const discountTyped = parseMajorToMinor(discountPriceMajor);
+                    const discountExcl =
+                      discountTyped == null
+                        ? null
+                        : saleTypedToExcl(discountTyped, priceIncludesTax, taxPercent);
+                    setTaxRatePercent(next);
+                    if (priceIncludesTax) {
+                      setSalePriceMajor(formatMinorToMajorInput(taxIncludedMinor(saleExcl, tax)));
+                      if (discountExcl != null) {
+                        setDiscountPriceMajor(
+                          formatMinorToMajorInput(taxIncludedMinor(discountExcl, tax)),
+                        );
+                      }
+                    }
+                    syncSimpleVariantPrice(saleExcl, discountExcl);
                   }}
                   className={inputClass}
                 >
@@ -1067,40 +1138,26 @@ export function ProductEditor({
                     checked={priceIncludesTax}
                     onChange={(e) => {
                       const checked = e.target.checked;
+                      const saleExcl = saleExclMinor;
+                      const discountExcl = discountExclMinor;
                       setPriceIncludesTax(checked);
-                      const typed = parseMajorToMinor(salePriceMajor) ?? 0;
-                      const excl = checked ? taxExcludedMinor(typed, taxPercent) : typed;
-                      if (!hasCombinations) {
-                        setVariants((prev) =>
-                          prev.map((item) =>
-                            item.combinationKey === DEFAULT_VARIANT_COMBINATION_KEY
-                              ? { ...item, priceMinor: excl }
-                              : item,
+                      setSalePriceMajor(
+                        formatMinorToMajorInput(
+                          checked ? taxIncludedMinor(saleExcl, taxPercent) : saleExcl,
+                        ),
+                      );
+                      if (discountExcl != null) {
+                        setDiscountPriceMajor(
+                          formatMinorToMajorInput(
+                            checked ? taxIncludedMinor(discountExcl, taxPercent) : discountExcl,
                           ),
                         );
                       }
+                      syncSimpleVariantPrice(saleExcl, discountExcl);
                     }}
                   />
                   KDV dahil
                 </label>
-              </div>
-
-              <p className="mt-[1.875rem] hidden text-lg font-medium text-slate-400 xl:block">=</p>
-
-              <div className="min-w-0 flex-1">
-                <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                  {priceIncludesTax ? "Satış fiyatı (KDV Hariç)" : "Satış fiyatı (KDV dahil)"}
-                </label>
-                <div className="relative">
-                  <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-slate-400">
-                    ₺
-                  </span>
-                  <input
-                    readOnly
-                    value={formatMinorToMajorInput(priceIncludesTax ? basePriceMinor : priceIncl)}
-                    className={`${inputClass} bg-[#f8f9fa] pl-8`}
-                  />
-                </div>
               </div>
             </div>
 
@@ -1110,31 +1167,46 @@ export function ProductEditor({
                 <input
                   type="number"
                   min={0}
+                  readOnly={advancedInventory}
                   value={defaultVariant?.stockQuantity ?? 0}
                   onChange={(event) => setSimpleStock(event.target.value)}
-                  className={inputClass}
+                  className={catalogStockInputClass(inputClass, advancedInventory)}
                 />
+                <CatalogStockHint locked={advancedInventory} />
               </div>
             ) : null}
 
-            <div className="grid gap-5 md:grid-cols-3">
+            <div className="grid gap-5 md:grid-cols-2">
               <div>
                 <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                  Karşılaştırma fiyatı (KDV hariç)
+                  Alış fiyatı (KDV hariç)
                 </label>
-                <input
-                  name="compareAtMajor"
-                  value={compareAtMajor}
-                  onChange={(e) => setCompareAtMajor(e.target.value)}
-                  className={inputClass}
-                />
-              </div>
-              <div>
-                <label className="mb-1.5 block text-sm font-medium text-slate-700">Maliyet (KDV hariç)</label>
                 <input
                   name="costMajor"
                   value={costMajor}
                   onChange={(e) => setCostMajor(e.target.value)}
+                  placeholder="Maliyet"
+                  className={inputClass}
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                  {priceIncludesTax
+                    ? "İndirimli satış fiyatı (KDV dahil)"
+                    : "İndirimli satış fiyatı (KDV hariç)"}
+                </label>
+                <input
+                  value={discountPriceMajor}
+                  onChange={(e) => {
+                    setDiscountPriceMajor(e.target.value);
+                    applyTypedPrices(
+                      parseMajorToMinor(salePriceMajor) ?? 0,
+                      parseMajorToMinor(e.target.value),
+                      priceIncludesTax,
+                      taxPercent,
+                    );
+                  }}
+                  placeholder="Boş = indirim yok"
                   className={inputClass}
                 />
               </div>
@@ -1142,15 +1214,24 @@ export function ProductEditor({
           </div>
           <div className="grid gap-3 px-5 pb-5 md:grid-cols-2">
             <div className="rounded-md bg-[#f3f6f9] px-4 py-3 text-sm text-slate-700">
-              {formatMinorToMajorInput(basePriceMinor)} ₺ KDV hariç · {formatMinorToMajorInput(priceIncl)} ₺
-              KDV dahil
+              {compareAtMinor != null ? (
+                <>
+                  Vitrin: {formatMinorToMajorInput(taxIncludedMinor(compareAtMinor, taxPercent))} ₺
+                  üstü çizili · {formatMinorToMajorInput(priceIncl)} ₺ indirimli (KDV dahil)
+                </>
+              ) : (
+                <>
+                  {formatMinorToMajorInput(saleExclMinor)} ₺ KDV hariç · {formatMinorToMajorInput(saleIncl)}{" "}
+                  ₺ KDV dahil
+                </>
+              )}
             </div>
             <div className="rounded-md bg-[#f3f6f9] px-4 py-3 text-sm text-slate-700">
               {formatMinorToMajorInput(marginMinor(basePriceMinor, costMinor))} ₺ marj
               {marginRatePercent(basePriceMinor, costMinor) != null
                 ? ` · %${marginRatePercent(basePriceMinor, costMinor)?.toFixed(1)}`
                 : ""}
-              {costMinor ? ` · maliyet ${formatMinorToMajorInput(costMinor)} ₺` : ""}
+              {costMinor ? ` · alış ${formatMinorToMajorInput(costMinor)} ₺` : ""}
             </div>
           </div>
           <div className="border-t border-[#e9ebec] px-5 py-4">
@@ -1160,10 +1241,16 @@ export function ProductEditor({
                 type="button"
                 className="mt-3 text-sm font-medium text-[#405189] hover:underline"
                 onClick={() =>
-                  setVariants((prev) => prev.map((item) => ({ ...item, priceMinor: basePriceMinor })))
+                  setVariants((prev) =>
+                    prev.map((item) => ({
+                      ...item,
+                      priceMinor: basePriceMinor,
+                      compareAtMinor,
+                    })),
+                  )
                 }
               >
-                Taban fiyatı tüm kombinasyonlara uygula
+                Satış ve indirimli fiyatı tüm kombinasyonlara uygula
               </button>
             ) : null}
           </div>
@@ -1186,7 +1273,15 @@ export function ProductEditor({
                 className={inputClass}
               />
               <p className="mt-1.5 text-xs text-slate-400">
-                Ön yüz: {publicProductHref(slug || "ornek-urun", urlStructure, initial?.urlId ?? 1)}
+                Ön yüz:{" "}
+                <a
+                  href={publicProductHref(slug || "ornek-urun", urlStructure, initial?.urlId ?? 1)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="font-medium text-[#405189] hover:underline"
+                >
+                  {publicProductHref(slug || "ornek-urun", urlStructure, initial?.urlId ?? 1)}
+                </a>
               </p>
             </div>
             <div>

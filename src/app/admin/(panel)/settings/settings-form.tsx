@@ -243,12 +243,12 @@ function FieldInput({
           placeholder={
             hasStored
               ? "Kayıtlı şifre korunuyor — değiştirmek için yazın"
-              : field.placeholder || "SMTP şifresi"
+              : field.placeholder || "Şifre"
           }
           className={baseClass}
         />
         {hasStored ? (
-          <p className="text-xs text-emerald-600">Kayıtlı bir SMTP şifresi var.</p>
+          <p className="text-xs text-emerald-600">Kayıtlı bir şifre var.</p>
         ) : null}
       </div>
     );
@@ -300,6 +300,8 @@ function settingsResourceFromScope(scope: SettingsScope): string {
       return "settings";
     case "membership":
       return "settings_membership";
+    case "payments":
+      return "settings_payments";
     case "performance":
       return "settings_performance";
     case "theme":

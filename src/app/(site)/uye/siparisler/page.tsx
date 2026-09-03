@@ -11,6 +11,7 @@ import {
   parseOrderStatus,
 } from "@/lib/orders";
 import { formatMinorTry } from "@/lib/product-money";
+import { canOpenOrderReviews } from "@/lib/reviews";
 import { ensureMemberPortalAccess } from "../actions";
 
 export const metadata: Metadata = {
@@ -46,38 +47,48 @@ export default async function MemberOrdersPage() {
             const status = parseOrderStatus(order.status);
             return (
               <li key={order.id} className="py-4 first:pt-0">
-                <Link
-                  href={`/uye/siparisler/${order.reference}`}
-                  className="block rounded-xl p-1 transition hover:bg-site-surface"
-                >
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <p className="font-semibold text-site-fg">#{order.reference}</p>
-                      <p className="mt-1 text-sm text-site-muted">
-                        {formatOrderDateTime(order.createdAt.toISOString())}
-                        {order.carrierName ? ` · ${order.carrierName}` : ""}
-                      </p>
-                      <p className="mt-1 text-sm text-site-muted">
-                        {order.items
-                          .map((item) => `${item.title} × ${item.quantity}`)
-                          .join(", ")}
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <span
-                        className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${orderStatusBadgeClass(status)}`}
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <Link
+                    href={`/uye/siparisler/${order.reference}`}
+                    className="min-w-0 flex-1 rounded-xl p-1 transition hover:bg-site-surface"
+                  >
+                    <p className="font-semibold text-site-fg">#{order.reference}</p>
+                    <p className="mt-1 text-sm text-site-muted">
+                      {formatOrderDateTime(order.createdAt.toISOString())}
+                      {order.carrierName ? ` · ${order.carrierName}` : ""}
+                      {order.trackingNumber &&
+                      (status === "SHIPPED" || status === "DELIVERED")
+                        ? " · Kargo takibi"
+                        : ""}
+                    </p>
+                    <p className="mt-1 text-sm text-site-muted">
+                      {order.items
+                        .map((item) => `${item.title} × ${item.quantity}`)
+                        .join(", ")}
+                    </p>
+                  </Link>
+                  <div className="flex shrink-0 flex-col items-end gap-2">
+                    <span
+                      className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${orderStatusBadgeClass(status)}`}
+                    >
+                      {orderStatusLabel(status)}
+                    </span>
+                    <p className="text-sm font-semibold text-site-fg">
+                      {formatMinorTry(order.totalMinor)}
+                    </p>
+                    <p className="text-xs text-site-muted">
+                      {orderPaymentMethodLabel(parseOrderPaymentMethod(order.paymentMethod))}
+                    </p>
+                    {canOpenOrderReviews(status) ? (
+                      <Link
+                        href={`/uye/siparisler/${order.reference}/degerlendir`}
+                        className="rounded-lg bg-site-primary px-3 py-1.5 text-xs font-medium text-white"
                       >
-                        {orderStatusLabel(status)}
-                      </span>
-                      <p className="mt-2 text-sm font-semibold text-site-fg">
-                        {formatMinorTry(order.totalMinor)}
-                      </p>
-                      <p className="text-xs text-site-muted">
-                        {orderPaymentMethodLabel(parseOrderPaymentMethod(order.paymentMethod))}
-                      </p>
-                    </div>
+                        Değerlendir
+                      </Link>
+                    ) : null}
                   </div>
-                </Link>
+                </div>
               </li>
             );
           })}

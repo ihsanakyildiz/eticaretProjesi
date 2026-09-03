@@ -2,12 +2,15 @@ import "server-only";
 
 import type { ProductImportRowKind } from "@prisma/client";
 import { parseProductImportWorkbook } from "@/lib/product-import-excel";
+import { parseProductUpdateWorkbook } from "@/lib/product-import-update-excel";
+import { loadUpdatePreviewContext, previewUpdateRows } from "@/lib/product-import-update";
 import {
   PRODUCT_IMPORT_MAX_BYTES,
   PRODUCT_IMPORT_MAX_ROWS,
   PRODUCT_IMPORT_PAGE_SIZE,
   groupImportRawRows,
   loadProductImportLookups,
+  loadProductImportUniques,
   parseJobRowMeta,
   previewImportRows,
   type ProductImportFilter,
@@ -139,8 +142,9 @@ export async function createImportJobFromWorkbook(file: File) {
   }
 
   const lookups = await loadProductImportLookups();
+  const uniques = await loadProductImportUniques();
   const groups = groupImportRawRows(rawRows);
-  const preview = previewImportRows(rawRows, lookups);
+  const preview = previewImportRows(rawRows, lookups, uniques);
 
   const job = await prisma.productImportJob.create({
     data: {
@@ -185,6 +189,81 @@ export async function createImportJobFromWorkbook(file: File) {
 
   const created = await prisma.productImportJob.findUniqueOrThrow({ where: { id: job.id } });
   return { job: toSummary(created) };
+}
+
+function updateJobDbError(error: unknown) {
+  const text = error instanceof Error ? error.message : "";
+  if (text.includes("Can't reach database") || text.includes("P1001") || text.includes("P1002")) {
+    return "Veritabanı kısa süre yanıt vermedi. MySQL çalışıyor olsa bile 50 bin satırlık tek sorgu onu kilitleyebilir. Birkaç saniye bekleyip tekrar deneyin.";
+  }
+  return error instanceof Error ? error.message : "Excel dosyası okunamadı.";
+}
+
+export async function createUpdateJobFromWorkbook(file: File) {
+  if (file.size === 0) return { error: "Excel dosyası seçin." };
+  const name = file.name.toLowerCase();
+  if (!name.endsWith(".xlsx") && !file.type.includes("spreadsheet")) {
+    return { error: "Yalnızca .xlsx dosyası yükleyebilirsiniz." };
+  }
+  if (file.size > PRODUCT_IMPORT_MAX_BYTES) {
+    return { error: "Dosya 40 MB sınırını aşıyor." };
+  }
+
+  try {
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const parsed = await parseProductUpdateWorkbook(buffer);
+    if (parsed.rows.length === 0) return { error: "Dosyada güncellenecek satır yok." };
+    if (parsed.rows.length > PRODUCT_IMPORT_MAX_ROWS) {
+      return { error: `En fazla ${PRODUCT_IMPORT_MAX_ROWS} satır yükleyebilirsiniz.` };
+    }
+
+    await prisma.productImportJob.deleteMany({
+      where: { status: { in: ["PREVIEW", "COMPLETED", "FAILED"] } },
+    });
+
+    const urlIds = parsed.rows.map((row) => Number.parseInt(row.productUrlId, 10));
+    const context = await loadUpdatePreviewContext(urlIds, parsed.mode);
+    const previewed = previewUpdateRows(parsed.rows, parsed.mode, context.products, context.uniques);
+
+    const job = await prisma.productImportJob.create({
+      data: {
+        fileName: file.name.slice(0, 255),
+        fileSize: file.size,
+        status: "PREVIEW",
+        rowCount: previewed.length,
+        readyCount: previewed.filter((row) => row.preview.status === "ready").length,
+        zeroPriceCount: 0,
+        errorCount: previewed.filter((row) => row.preview.status === "error").length,
+      },
+    });
+
+    const chunkSize = 400;
+  for (let index = 0; index < previewed.length; index += chunkSize) {
+    const slice = previewed.slice(index, index + chunkSize);
+    await prisma.productImportJobRow.createMany({
+      data: slice.map((item) => ({
+        jobId: job.id,
+        rowNumber: item.preview.rowNumber,
+        title: item.preview.title.slice(0, 191),
+        category: item.preview.category.slice(0, 191),
+        sku: item.preview.sku.slice(0, 80),
+        barcode: item.preview.barcode.slice(0, 64),
+        price: item.preview.price.slice(0, 40),
+        stock: item.preview.stock.slice(0, 20),
+        kind: kindFromStatus(item.preview.status),
+        work: "PENDING" as const,
+        errors: item.preview.errors.join(" ").slice(0, 1000),
+        rawJson: JSON.stringify(item.payload ?? { kind: "update", skipped: true }),
+      })),
+    });
+  }
+
+    const created = await prisma.productImportJob.findUniqueOrThrow({ where: { id: job.id } });
+    return { job: toSummary(created) };
+  } catch (error) {
+    console.error(error);
+    return { error: updateJobDbError(error) };
+  }
 }
 
 export async function getImportJobSummary(jobId: string) {
@@ -270,6 +349,7 @@ export async function listImportJobRows(
         sku: row.sku,
         barcode: row.barcode,
         price: row.price,
+        discount: meta.discount,
         stock: row.stock,
         variantSummary: meta.variantSummary,
         rowLabel: meta.rowLabel || String(row.rowNumber),

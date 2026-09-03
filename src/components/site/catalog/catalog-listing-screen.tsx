@@ -1,20 +1,21 @@
 import type { Metadata } from "next";
-import dynamic from "next/dynamic";
+import { CatalogBreadcrumb } from "@/components/site/catalog/catalog-breadcrumb";
 import { CatalogFacetSidebar } from "@/components/site/catalog/catalog-facet-sidebar";
 import { CatalogToolbar } from "@/components/site/catalog/catalog-toolbar";
 import { ProductCard } from "@/components/site/catalog/product-card";
 import { JsonLd } from "@/components/site/json-ld";
-import { SiteLink } from "@/components/site/site-link";
 import { SiteSidebarLayout } from "@/components/site/site-sidebar-layout";
 import { SitePagination } from "@/components/site/site-pagination";
 import { catalogListingHref, parseCatalogSearchQuery } from "@/lib/catalog-listing-params";
 import {
   CATALOG_GRID_PAGE_SIZE,
-  getCachedCatalogBrandsForFacets,
   getCachedCatalogCategoryIndex,
-  getCachedCatalogFilterFacets,
-  getFilteredCatalogListing,
+  getCachedFilteredCatalogListing,
 } from "@/lib/catalog-products";
+import {
+  getCachedCatalogListingFacets,
+  redirectIfUnavailableFilters,
+} from "@/lib/catalog-facets";
 import { resolveUrlStructure } from "@/lib/catalog-routes";
 import { buildCollectionJsonLd } from "@/lib/json-ld";
 import { catalogPublicHubs, buildPublicMetadata } from "@/lib/seo";
@@ -25,9 +26,6 @@ import {
   type UrlStructure,
 } from "@/lib/url-structure";
 
-const HomeCta = dynamic(() =>
-  import("@/components/site/home/home-cta").then((mod) => mod.HomeCta),
-);
 
 export type CatalogSearchParams = {
   sayfa?: string;
@@ -62,13 +60,13 @@ export async function CatalogListingScreen({
   const catalogPath = publicCatalogPath(urls);
   const hubTitle = catalogHubTitle(urls);
 
-  const [listing, categories, brands, filterGroups, settings] = await Promise.all([
-    getFilteredCatalogListing(filters, currentPage),
+  const [listing, categories, facets, settings] = await Promise.all([
+    getCachedFilteredCatalogListing(filters, currentPage),
     getCachedCatalogCategoryIndex().catch(() => []),
-    getCachedCatalogBrandsForFacets().catch(() => []),
-    getCachedCatalogFilterFacets().catch(() => []),
+    getCachedCatalogListingFacets(filters),
     getSettingsMap().catch(() => ({}) as Record<string, string>),
   ]);
+  redirectIfUnavailableFilters(catalogPath, filters, facets);
 
   const totalPages = Math.max(1, Math.ceil(listing.total / CATALOG_GRID_PAGE_SIZE));
   const page = Math.min(currentPage, totalPages);
@@ -82,39 +80,40 @@ export async function CatalogListingScreen({
           description: hub.description,
           path: hub.path,
           crumbs: [
-            { name: "Ana Sayfa", path: "/" },
+            { name: settings.site_name?.trim() || "Ana Sayfa", path: "/" },
             { name: hub.title, path: hub.path },
           ],
         })}
       />
-      <section className="border-b border-site-border bg-site-surface py-6">
+      <section className="py-5 sm:py-6">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <nav className="text-sm text-site-muted">
-            <SiteLink href="/" className="hover:text-site-primary">
-              Ana Sayfa
-            </SiteLink>
-            <span className="mx-2">/</span>
-            <span className="text-site-fg">{hubTitle}</span>
-          </nav>
-          <h1 className="mt-2 font-display text-2xl font-bold text-site-fg sm:text-3xl">
-            {filters.query ? `Arama: ${filters.query}` : hubTitle}
-          </h1>
+          <CatalogBreadcrumb
+            items={[
+              { name: settings.site_name?.trim() || "Ana Sayfa", href: "/" },
+              {
+                name: filters.query ? `Arama: ${filters.query}` : hubTitle,
+              },
+            ]}
+          />
         </div>
-      </section>
-
-      <section className="py-8 sm:py-10">
         <SiteSidebarLayout
+          compactSidebar
           sidebar={
             <CatalogFacetSidebar
               basePath={catalogPath}
               categories={categories}
-              brands={brands}
+              brands={facets.brands}
               filters={filters}
-              filterGroups={filterGroups}
+              filterGroups={facets.filterGroups}
             />
           }
         >
-          <CatalogToolbar basePath={catalogPath} filters={filters} total={listing.total} />
+          <CatalogToolbar
+            basePath={catalogPath}
+            filters={filters}
+            total={listing.total}
+            heading={filters.query ? `Arama: ${filters.query}` : hubTitle}
+          />
           {listing.products.length === 0 ? (
             <p className="py-10 text-sm text-site-muted">Bu filtrelere uygun ürün yok.</p>
           ) : (
@@ -143,7 +142,6 @@ export async function CatalogListingScreen({
           )}
         </SiteSidebarLayout>
       </section>
-      <HomeCta />
     </>
   );
 }

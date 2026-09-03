@@ -1,3 +1,13 @@
+export class StockShortageError extends Error {
+  readonly productTitle: string;
+
+  constructor(productTitle: string) {
+    super(`Yetersiz stok: ${productTitle}`);
+    this.name = "StockShortageError";
+    this.productTitle = productTitle;
+  }
+}
+
 export type OutOfStockBehavior = "DENY" | "ALLOW" | "DEFAULT";
 
 export function allowsOrderWhenOutOfStock(

@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import dynamic from "next/dynamic";
 import { JsonLd } from "@/components/site/json-ld";
 import { SiteImage } from "@/components/site/site-image";
 import { SiteLink } from "@/components/site/site-link";
@@ -22,9 +21,6 @@ export async function generateMetadata(): Promise<Metadata> {
   });
 }
 
-const HomeCta = dynamic(() =>
-  import("@/components/site/home/home-cta").then((mod) => mod.HomeCta),
-);
 
 export default async function ProjectCategoriesIndexPage() {
   const [categories, settings] = await Promise.all([
@@ -133,7 +129,6 @@ export default async function ProjectCategoriesIndexPage() {
         </div>
       </section>
 
-      <HomeCta />
     </>
   );
 }

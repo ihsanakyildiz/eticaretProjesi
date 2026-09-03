@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { publicPageHref, publicProductBrandHref, publicProductCategoryHref, publicProductHref } from "@/lib/public-urls";
 import { getSettingsMap } from "@/lib/settings";
 import { getSiteOrigin } from "@/lib/site-origin";
+import { storefrontPublicProductWhere } from "@/lib/storefront-product-where";
 import { parseUrlStructure, publicBrandIndexPath, publicCatalogPath, publicCategoryIndexPath } from "@/lib/url-structure";
 
 function entry(
@@ -88,7 +89,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
           select: { slug: true, updatedAt: true },
         }),
         prisma.product.findMany({
-          where: { isActive: true, visibility: { not: "NONE" } },
+          where: storefrontPublicProductWhere(),
           select: { slug: true, urlId: true, updatedAt: true },
         }),
         prisma.productCategory.findMany({

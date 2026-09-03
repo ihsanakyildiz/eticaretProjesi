@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import dynamic from "next/dynamic";
 import { notFound } from "next/navigation";
 import { preload } from "react-dom";
 import { JsonLd } from "@/components/site/json-ld";
@@ -23,9 +22,6 @@ import { getSettingsMap } from "@/lib/settings";
 export const revalidate = 60;
 export const dynamicParams = true;
 
-const HomeCta = dynamic(() =>
-  import("@/components/site/home/home-cta").then((mod) => mod.HomeCta),
-);
 
 type BlogCategoryPageProps = {
   params: Promise<{ slug: string }>;
@@ -245,7 +241,6 @@ export default async function BlogCategoryPage({
         </div>
       </section>
 
-      <HomeCta />
     </>
   );
 }

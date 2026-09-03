@@ -54,6 +54,11 @@ model User {
   addresses        CustomerAddress[]
   orders           Order[]
   staffPermissions StaffPermission[]
+  stockDocumentsCreated   StockDocument[] @relation("StockDocumentCreatedBy")
+  stockDocumentsConfirmed StockDocument[] @relation("StockDocumentConfirmedBy")
+  stockMovements          StockMovement[]
+  productReviews          ProductReview[]
+  orderFeedbacks          OrderFeedback[]
 
   @@index([role, isActive])
   @@index([customerGroup])
@@ -134,6 +139,46 @@ enum OrderDocumentKind {
   DELIVERY_SLIP
 }
 
+enum OrderCaseKind {
+  CANCEL
+  RETURN
+}
+
+enum OrderCaseStatus {
+  REQUESTED
+  REJECTED
+  APPROVED
+  AWAITING_RETURN
+  RECEIVED
+  COMPLETED
+}
+
+enum OrderCaseReason {
+  CHANGED_MIND
+  DEFECTIVE
+  WRONG_ITEM
+  DAMAGED
+  NOT_DELIVERED
+  OTHER
+}
+
+enum OrderReturnCondition {
+  PENDING
+  SELLABLE
+  UNSALEABLE
+}
+
+enum ReviewStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum OrderFeedbackKind {
+  ORDER
+  SHIPMENT
+}
+
 model Order {
   id              String             @id @default(cuid())
   orderNo         Int                @unique
@@ -142,6 +187,9 @@ model Order {
   user            User               @relation(fields: [userId], references: [id], onDelete: Restrict)
   status          OrderStatus        @default(AWAITING_PAYMENT)
   paymentMethod   OrderPaymentMethod @default(BANK_WIRE)
+  paymentProvider String?            @db.VarChar(32)
+  paymentToken    String?            @db.VarChar(191)
+  stockReserved   Boolean            @default(false)
   currency        String             @default("TRY") @db.VarChar(3)
   productsMinor   Int                @default(0)
   shippingMinor   Int                @default(0)
@@ -159,9 +207,16 @@ model Order {
   payments        OrderPayment[]
   messages        OrderMessage[]
   documents       OrderDocument[]
+  refunds         OrderRefund[]
+  cases           OrderCase[]
+  stockDocuments  StockDocument[]
+  stockMovements  StockMovement[]
+  productReviews  ProductReview[]
+  feedbacks       OrderFeedback[]
 
   @@index([userId, createdAt])
   @@index([status, createdAt])
+  @@index([paymentToken])
   @@map("orders")
 }
 
@@ -177,14 +232,74 @@ model OrderItem {
   variantTitle    String?         @db.VarChar(191)
   sku             String?         @db.VarChar(191)
   quantity        Int
+  packedQuantity  Int             @default(0)
   unitPriceMinor  Int
   taxRatePercent  Int             @default(20)
   totalMinor      Int
   image           String?         @db.VarChar(500)
   createdAt       DateTime        @default(now())
+  caseItems       OrderCaseItem[]
+  productReviews  ProductReview[]
 
   @@index([orderId])
   @@map("order_items")
+}
+
+model ProductReview {
+  id            String       @id @default(cuid())
+  productId     String
+  product       Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  orderId       String
+  order         Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderItemId   String
+  orderItem     OrderItem    @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  userId        String
+  user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rating        Int
+  comment       String?      @db.Text
+  displayName   Boolean      @default(true)
+  status        ReviewStatus @default(PENDING)
+  moderatedAt   DateTime?
+  moderatorNote String?      @db.VarChar(500)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  images        ProductReviewImage[]
+
+  @@unique([userId, productId])
+  @@index([productId, status])
+  @@index([status, createdAt])
+  @@index([orderId])
+  @@index([orderItemId])
+  @@map("product_reviews")
+}
+
+model ProductReviewImage {
+  id        String        @id @default(cuid())
+  reviewId  String
+  review    ProductReview @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  url       String        @db.VarChar(500)
+  sortOrder Int           @default(0)
+  createdAt DateTime      @default(now())
+
+  @@index([reviewId, sortOrder])
+  @@map("product_review_images")
+}
+
+model OrderFeedback {
+  id        String            @id @default(cuid())
+  orderId   String
+  order     Order             @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind      OrderFeedbackKind
+  rating    Int
+  comment   String?           @db.VarChar(500)
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+
+  @@unique([orderId, kind])
+  @@index([userId, createdAt])
+  @@map("order_feedbacks")
 }
 
 model OrderAddress {
@@ -235,6 +350,79 @@ model OrderPayment {
 
   @@index([orderId, paidAt])
   @@map("order_payments")
+}
+
+model OrderRefund {
+  id            String     @id @default(cuid())
+  orderId       String
+  order         Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  caseId        String?
+  case          OrderCase? @relation(fields: [caseId], references: [id], onDelete: SetNull)
+  amountMinor   Int
+  provider      String?    @db.VarChar(32)
+  transactionId String?    @db.VarChar(191)
+  note          String?    @db.VarChar(500)
+  createdAt     DateTime   @default(now())
+
+  @@index([orderId, createdAt])
+  @@index([caseId])
+  @@map("order_refunds")
+}
+
+model OrderCase {
+  id                   String           @id @default(cuid())
+  code                 String           @unique @db.VarChar(20)
+  orderId              String
+  order                Order            @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  kind                 OrderCaseKind
+  status               OrderCaseStatus
+  reason               OrderCaseReason
+  source               String           @default("STAFF") @db.VarChar(16)
+  customerNote         String?          @db.VarChar(500)
+  staffNote            String?          @db.VarChar(500)
+  rejectReason         String?          @db.VarChar(500)
+  refundAmountMinor    Int?
+  returnless           Boolean          @default(false)
+  returnCarrierName    String?          @db.VarChar(191)
+  returnTrackingNumber String?          @db.VarChar(100)
+  receivedAt           DateTime?
+  completedAt          DateTime?
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+  items                OrderCaseItem[]
+  events               OrderCaseEvent[]
+  refunds              OrderRefund[]
+
+  @@index([orderId, createdAt])
+  @@index([status, createdAt])
+  @@map("order_cases")
+}
+
+model OrderCaseItem {
+  id              String               @id @default(cuid())
+  caseId          String
+  case            OrderCase            @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  orderItemId     String
+  orderItem       OrderItem            @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  quantity        Int
+  condition       OrderReturnCondition @default(PENDING)
+  restockQuantity Int                  @default(0)
+
+  @@unique([caseId, orderItemId])
+  @@index([orderItemId])
+  @@map("order_case_items")
+}
+
+model OrderCaseEvent {
+  id        String          @id @default(cuid())
+  caseId    String
+  case      OrderCase       @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  status    OrderCaseStatus
+  note      String?         @db.VarChar(500)
+  createdAt DateTime        @default(now())
+
+  @@index([caseId, createdAt])
+  @@map("order_case_events")
 }
 
 model OrderMessage {
@@ -1107,6 +1295,9 @@ model Supplier {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   products    Product[]
+  xmlFeeds    XmlProductFeed[]
+  apiFeeds    ApiProductFeed[]
+  stockDocuments StockDocument[]
 
   @@index([isActive, sortOrder])
   @@index([name])
@@ -1361,6 +1552,8 @@ model Product {
   image               String?                    @db.VarChar(500)
   /// Katalog referansı (varsayılan SKU ile senkron)
   sku                 String?                    @unique @db.VarChar(191)
+  /// Tedarikçi / XML ürün kimliği (product_Id)
+  externalId          String?                    @db.VarChar(191)
   mpn                 String?                    @db.VarChar(64)
   upc                 String?                    @db.VarChar(64)
   gtin                String?                    @db.VarChar(64)
@@ -1368,6 +1561,8 @@ model Product {
   /// KDV hariç taban satış (kuruş) — yeni kombinasyonlar bundan türer
   basePriceMinor      Int                        @default(0)
   compareAtMinor      Int?
+  saleStartsAt        DateTime?
+  saleEndsAt          DateTime?
   costMinor           Int?
   taxRatePercent      Int                        @default(20)
   widthCm             Decimal?                   @db.Decimal(8, 2)
@@ -1402,14 +1597,19 @@ model Product {
   relatedFrom         ProductRelated[]           @relation("ProductRelatedFrom")
   relatedTo           ProductRelated[]           @relation("ProductRelatedTo")
   orderItems          OrderItem[]
+  reviews             ProductReview[]
   sectionLinks        PageSectionProduct[]
 
   @@index([categoryId])
   @@index([supplierId])
   @@index([brandId])
+  @@index([externalId])
+  @@index([supplierId, externalId])
   @@index([isActive, sortOrder])
   @@index([viewCount])
   @@index([clickCount])
+  @@index([saleEndsAt])
+  @@index([createdAt, id])
   @@map("products")
 }
 
@@ -1460,12 +1660,14 @@ model ProductVariant {
   productId      String
   product        Product                   @relation(fields: [productId], references: [id], onDelete: Cascade)
   sku            String                    @unique @db.VarChar(191)
-  barcode        String?                   @db.VarChar(64)
+  barcode        String?                   @unique @db.VarChar(64)
   /// Örn. Siyah / 42 — seçimlerden üretilir
   title          String                    @db.VarChar(191)
   /// Satış fiyatı kuruş
   priceMinor     Int
   compareAtMinor Int?
+  saleStartsAt   DateTime?
+  saleEndsAt     DateTime?
   stockQuantity  Int                       @default(0)
   trackInventory Boolean                   @default(true)
   allowBackorder Boolean                   @default(false)
@@ -1480,10 +1682,14 @@ model ProductVariant {
   updatedAt      DateTime                  @updatedAt
   selections     ProductVariantSelection[]
   orderItems     OrderItem[]
+  warehouseStocks     WarehouseStock[]
+  stockDocumentLines  StockDocumentLine[]
+  stockMovements      StockMovement[]
 
   @@unique([productId, combinationKey])
   @@index([productId, isActive])
   @@index([productId, isDefault])
+  @@index([saleEndsAt])
   @@map("product_variants")
 }
 
@@ -1827,4 +2033,360 @@ model ProductImportJobRow {
   @@index([jobId, kind, rowNumber])
   @@index([jobId, work, rowNumber])
   @@map("product_import_job_rows")
+}
+
+enum XmlFeedMatchBy {
+  BARCODE
+  SKU
+  PRODUCT_CODE
+  PRODUCT_ID
+}
+
+enum XmlFeedPriceRound {
+  NONE
+  INTEGER
+  NINETY_NINE
+}
+
+enum XmlFeedRunStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+/// Tedarikçi XML ürün beslemesi — her firma ayrı kaynak ve eşleme
+model XmlProductFeed {
+  id                 String            @id @default(cuid())
+  name               String            @db.VarChar(191)
+  url                String            @db.VarChar(1000)
+  isActive           Boolean           @default(true)
+  supplierId         String?
+  supplier           Supplier?         @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  defaultCategoryId  String?           @db.VarChar(191)
+  defaultBrandId     String?           @db.VarChar(191)
+  itemPath           String            @default("") @db.VarChar(500)
+  mappingJson        String            @db.LongText
+  categoryMapJson    String            @db.LongText
+  matchBy            XmlFeedMatchBy    @default(BARCODE)
+  skuPrefix          String            @default("") @db.VarChar(40)
+  httpUser           String?           @db.VarChar(191)
+  httpPass           String?           @db.VarChar(191)
+  createNew          Boolean           @default(true)
+  updatePrice        Boolean           @default(true)
+  updateStock        Boolean           @default(true)
+  updateImages       Boolean           @default(false)
+  updateContent      Boolean           @default(false)
+  updateTitle        Boolean           @default(false)
+  deactivateMissing  Boolean           @default(false)
+  priceIncludesTax   Boolean           @default(true)
+  priceMarkupPercent Decimal           @default(0) @db.Decimal(8, 2)
+  priceRound         XmlFeedPriceRound @default(NONE)
+  intervalMinutes    Int               @default(60)
+  lastRunAt          DateTime?
+  nextRunAt          DateTime?
+  lastStatus         String?           @db.VarChar(40)
+  lastMessage        String?           @db.VarChar(500)
+  lastCreatedCount   Int               @default(0)
+  lastUpdatedCount   Int               @default(0)
+  lastSkippedCount   Int               @default(0)
+  lastFailedCount    Int               @default(0)
+  sortOrder          Int               @default(0)
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+  runs               XmlProductFeedRun[]
+
+  @@index([isActive, nextRunAt])
+  @@index([supplierId])
+  @@map("xml_product_feeds")
+}
+
+model XmlProductFeedRun {
+  id                 String           @id @default(cuid())
+  feedId             String
+  feed               XmlProductFeed   @relation(fields: [feedId], references: [id], onDelete: Cascade)
+  status             XmlFeedRunStatus @default(QUEUED)
+  itemCount          Int              @default(0)
+  createdCount       Int              @default(0)
+  updatedCount       Int              @default(0)
+  skippedCount       Int              @default(0)
+  failedCount        Int              @default(0)
+  deactivatedCount   Int              @default(0)
+  cursor             Int              @default(0)
+  seenIdsJson        String           @default("[]") @db.Text
+  message            String?          @db.Text
+  startedAt          DateTime?
+  finishedAt         DateTime?
+  createdAt          DateTime         @default(now())
+
+  @@index([feedId, createdAt])
+  @@index([status, createdAt])
+  @@map("xml_product_feed_runs")
+}
+
+enum ApiFeedHttpMethod {
+  GET
+  POST
+}
+
+enum ApiFeedAuthType {
+  NONE
+  BEARER
+  BASIC
+  HEADER
+  QUERY
+}
+
+/// Tedarikçi JSON API ürün beslemesi — XML kaynaklarıyla aynı katalog kuralları
+model ApiProductFeed {
+  id                 String            @id @default(cuid())
+  name               String            @db.VarChar(191)
+  url                String            @db.VarChar(1000)
+  isActive           Boolean           @default(true)
+  supplierId         String?
+  supplier           Supplier?         @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  defaultCategoryId  String?           @db.VarChar(191)
+  defaultBrandId     String?           @db.VarChar(191)
+  itemPath           String            @default("") @db.VarChar(500)
+  mappingJson        String            @db.LongText
+  categoryMapJson    String            @db.LongText
+  requestJson        String            @db.LongText
+  matchBy            XmlFeedMatchBy    @default(BARCODE)
+  skuPrefix          String            @default("") @db.VarChar(40)
+  httpUser           String?           @db.VarChar(191)
+  httpPass           String?           @db.Text
+  httpMethod         ApiFeedHttpMethod @default(GET)
+  authType           ApiFeedAuthType   @default(NONE)
+  createNew          Boolean           @default(true)
+  updatePrice        Boolean           @default(true)
+  updateStock        Boolean           @default(true)
+  updateImages       Boolean           @default(false)
+  updateContent      Boolean           @default(false)
+  updateTitle        Boolean           @default(false)
+  deactivateMissing  Boolean           @default(false)
+  priceIncludesTax   Boolean           @default(true)
+  priceMarkupPercent Decimal           @default(0) @db.Decimal(8, 2)
+  priceRound         XmlFeedPriceRound @default(NONE)
+  intervalMinutes    Int               @default(60)
+  lastRunAt          DateTime?
+  nextRunAt          DateTime?
+  lastStatus         String?           @db.VarChar(40)
+  lastMessage        String?           @db.VarChar(500)
+  lastCreatedCount   Int               @default(0)
+  lastUpdatedCount   Int               @default(0)
+  lastSkippedCount   Int               @default(0)
+  lastFailedCount    Int               @default(0)
+  sortOrder          Int               @default(0)
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+  runs               ApiProductFeedRun[]
+
+  @@index([isActive, nextRunAt])
+  @@index([supplierId])
+  @@map("api_product_feeds")
+}
+
+model ApiProductFeedRun {
+  id                 String           @id @default(cuid())
+  feedId             String
+  feed               ApiProductFeed   @relation(fields: [feedId], references: [id], onDelete: Cascade)
+  status             XmlFeedRunStatus @default(QUEUED)
+  itemCount          Int              @default(0)
+  createdCount       Int              @default(0)
+  updatedCount       Int              @default(0)
+  skippedCount       Int              @default(0)
+  failedCount        Int              @default(0)
+  deactivatedCount   Int              @default(0)
+  cursor             Int              @default(0)
+  seenIdsJson        String           @default("[]") @db.Text
+  message            String?          @db.Text
+  startedAt          DateTime?
+  finishedAt         DateTime?
+  createdAt          DateTime         @default(now())
+
+  @@index([feedId, createdAt])
+  @@index([status, createdAt])
+  @@map("api_product_feed_runs")
+}
+
+enum StockDocumentKind {
+  GOODS_RECEIPT
+  PURCHASE_INVOICE
+  GOODS_ISSUE
+  TRANSFER
+  ADJUSTMENT
+  COUNT
+  SUPPLIER_RETURN
+  CUSTOMER_RETURN
+}
+
+enum StockDocumentStatus {
+  DRAFT
+  CONFIRMED
+  CANCELED
+}
+
+enum StockMovementKind {
+  OPENING
+  RECEIPT
+  ISSUE
+  TRANSFER_OUT
+  TRANSFER_IN
+  ADJUSTMENT
+  COUNT
+  SALE
+  CUSTOMER_RETURN
+  SUPPLIER_RETURN
+  CATALOG
+}
+
+/// Fiziksel depo (İstanbul, İzmir, Adana…). İstendiği kadar açılır.
+model StockWarehouse {
+  id         String   @id @default(cuid())
+  code       String   @unique @db.VarChar(32)
+  name       String   @db.VarChar(191)
+  city       String?  @db.VarChar(100)
+  district   String?  @db.VarChar(100)
+  address    String?  @db.Text
+  phone      String?  @db.VarChar(50)
+  isActive   Boolean  @default(true)
+  isDefault  Boolean  @default(false)
+  sortOrder  Int      @default(0)
+  notes      String?  @db.Text
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  stocks     WarehouseStock[]
+  locations  StockLocation[]
+  documents  StockDocument[]  @relation("StockDocumentWarehouse")
+  transfersIn StockDocument[] @relation("StockDocumentTargetWarehouse")
+  movements  StockMovement[]
+
+  @@index([isActive, sortOrder])
+  @@index([isDefault])
+  @@map("stock_warehouses")
+}
+
+/// Bir varyantın belirli depodaki fiili adedi. Katalog `stockQuantity` depoların toplamıdır.
+model WarehouseStock {
+  id               String         @id @default(cuid())
+  warehouseId      String
+  warehouse        StockWarehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  variantId        String
+  variant          ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  quantity         Int            @default(0)
+  reservedQuantity Int            @default(0)
+  locationId       String?
+  location         StockLocation? @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  updatedAt        DateTime       @updatedAt
+
+  @@unique([warehouseId, variantId])
+  @@index([variantId])
+  @@index([warehouseId, quantity])
+  @@index([locationId])
+  @@map("warehouse_stocks")
+}
+
+/// Depo içi adres: koridor / raf / göz. Sipariş toplamada ürün buradan bulunur.
+model StockLocation {
+  id          String         @id @default(cuid())
+  warehouseId String
+  warehouse   StockWarehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  code        String         @db.VarChar(32)
+  aisle       String?        @db.VarChar(16)
+  rack        String?        @db.VarChar(16)
+  shelf       String?        @db.VarChar(16)
+  notes       String?        @db.VarChar(255)
+  sortOrder   Int            @default(0)
+  isActive    Boolean        @default(true)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  stocks      WarehouseStock[]
+
+  @@unique([warehouseId, code])
+  @@index([warehouseId, sortOrder])
+  @@index([warehouseId, isActive])
+  @@map("stock_locations")
+}
+
+model StockDocument {
+  id                 String              @id @default(cuid())
+  kind               StockDocumentKind
+  status             StockDocumentStatus @default(DRAFT)
+  number             String              @unique @db.VarChar(32)
+  warehouseId        String
+  warehouse          StockWarehouse      @relation("StockDocumentWarehouse", fields: [warehouseId], references: [id], onDelete: Restrict)
+  targetWarehouseId  String?
+  targetWarehouse    StockWarehouse?     @relation("StockDocumentTargetWarehouse", fields: [targetWarehouseId], references: [id], onDelete: Restrict)
+  supplierId         String?
+  supplier           Supplier?           @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  orderId            String?
+  order              Order?              @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  relatedDocumentId  String?
+  relatedDocument    StockDocument?      @relation("StockDocumentLink", fields: [relatedDocumentId], references: [id], onDelete: SetNull)
+  relatedDocuments   StockDocument[]     @relation("StockDocumentLink")
+  externalNumber     String?             @db.VarChar(64)
+  documentDate       DateTime            @default(now())
+  dueDate            DateTime?
+  notes              String?             @db.Text
+  createdById        String?
+  createdBy          User?               @relation("StockDocumentCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  confirmedAt        DateTime?
+  confirmedById      String?
+  confirmedBy        User?               @relation("StockDocumentConfirmedBy", fields: [confirmedById], references: [id], onDelete: SetNull)
+  canceledAt         DateTime?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  lines              StockDocumentLine[]
+  movements          StockMovement[]
+
+  @@index([kind, status, documentDate])
+  @@index([warehouseId, status])
+  @@index([supplierId])
+  @@index([orderId])
+  @@index([relatedDocumentId])
+  @@map("stock_documents")
+}
+
+model StockDocumentLine {
+  id            String         @id @default(cuid())
+  documentId    String
+  document      StockDocument  @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  variantId     String
+  variant       ProductVariant @relation(fields: [variantId], references: [id], onDelete: Restrict)
+  quantity      Int
+  unitCostMinor Int?
+  notes         String?        @db.VarChar(255)
+  sortOrder     Int            @default(0)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  @@index([documentId, sortOrder])
+  @@index([variantId])
+  @@map("stock_document_lines")
+}
+
+model StockMovement {
+  id            String            @id @default(cuid())
+  warehouseId   String
+  warehouse     StockWarehouse    @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  variantId     String
+  variant       ProductVariant    @relation(fields: [variantId], references: [id], onDelete: Restrict)
+  documentId    String?
+  document      StockDocument?    @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  orderId       String?
+  order         Order?            @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  kind          StockMovementKind
+  quantity      Int
+  balanceAfter  Int
+  note          String?           @db.VarChar(255)
+  createdById   String?
+  createdBy     User?             @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt     DateTime          @default(now())
+
+  @@index([warehouseId, createdAt])
+  @@index([variantId, createdAt])
+  @@index([documentId])
+  @@index([orderId])
+  @@index([kind, createdAt])
+  @@map("stock_movements")
 }

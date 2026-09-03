@@ -44,9 +44,6 @@ function homeSeoCopy(
   };
 }
 
-const HomeCta = dynamic(() =>
-  import("@/components/site/home/home-cta").then((mod) => mod.HomeCta),
-);
 const HomeFaq = dynamic(() =>
   import("@/components/site/home/home-faq").then((mod) => mod.HomeFaq),
 );
@@ -385,7 +382,6 @@ export default async function HomePage() {
         />
       </div>
 
-      <HomeCta />
     </>
   );
 }

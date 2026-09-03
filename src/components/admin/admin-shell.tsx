@@ -18,6 +18,7 @@ type AdminShellProps = {
   permissionRole: string;
   isAdmin: boolean;
   permissionMap: StaffPermissionMap;
+  advancedInventory: boolean;
 };
 
 function AdminShellLayout({
@@ -28,7 +29,11 @@ function AdminShellLayout({
   unreadNotificationCount,
 }: Omit<
     AdminShellProps,
-    "initialSidebarCollapsed" | "permissionRole" | "isAdmin" | "permissionMap"
+    | "initialSidebarCollapsed"
+    | "permissionRole"
+    | "isAdmin"
+    | "permissionMap"
+    | "advancedInventory"
   >) {
   const { isCollapsed, isDesktop, allowTransition } = useSidebar();
   const iconMode = isDesktop && isCollapsed;
@@ -40,7 +45,7 @@ function AdminShellLayout({
     >
       <AdminSidebar />
       <div
-        className={`admin-shell-main ${
+        className={`admin-shell-main print:pl-0 ${
           allowTransition
             ? "transition-[padding] duration-300 ease-out"
             : "transition-none"
@@ -53,7 +58,7 @@ function AdminShellLayout({
           userRole={userRole}
           unreadNotificationCount={unreadNotificationCount}
         />
-        <main className="p-4 lg:p-6">{children}</main>
+        <main className="p-4 print:p-0 lg:p-6">{children}</main>
       </div>
     </div>
   );
@@ -64,11 +69,17 @@ export function AdminShell({
   permissionRole,
   isAdmin,
   permissionMap,
+  advancedInventory,
   ...props
 }: AdminShellProps) {
   return (
     <AdminThemeProvider>
-      <AdminPermissionsProvider role={permissionRole} isAdmin={isAdmin} map={permissionMap}>
+      <AdminPermissionsProvider
+        role={permissionRole}
+        isAdmin={isAdmin}
+        map={permissionMap}
+        advancedInventory={advancedInventory}
+      >
         <SidebarProvider initialCollapsed={initialSidebarCollapsed}>
           <AdminShellLayout {...props} />
         </SidebarProvider>

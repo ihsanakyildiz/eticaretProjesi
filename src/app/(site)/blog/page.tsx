@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import dynamic from "next/dynamic";
 import { ArrowRight } from "lucide-react";
 import { BlogCategorySidebar } from "@/components/site/blog/blog-category-sidebar";
 import { BlogPostCard } from "@/components/site/blog/blog-post-card";
@@ -30,9 +29,6 @@ export async function generateMetadata(): Promise<Metadata> {
   });
 }
 
-const HomeCta = dynamic(() =>
-  import("@/components/site/home/home-cta").then((mod) => mod.HomeCta),
-);
 
 const GRID_PAGE_SIZE = BLOG_GRID_PAGE_SIZE;
 
@@ -191,7 +187,6 @@ export default async function BlogIndexPage({ searchParams }: BlogIndexPageProps
         </SiteSidebarPageLayout>
       </section>
 
-      <HomeCta />
     </>
   );
 }

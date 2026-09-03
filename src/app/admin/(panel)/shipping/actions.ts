@@ -8,6 +8,19 @@ import { prisma } from "@/lib/prisma";
 import { slugify } from "@/lib/slug";
 import { requirePermission } from "@/lib/staff-permissions";
 import { deletePublicAsset, saveOptimizedImage, uploadLimits } from "@/lib/uploads";
+import {
+  parseArasApiSettings,
+  parseArasEnvironment,
+  serializeArasApiSettings,
+  testArasConnection,
+} from "@/lib/aras-kargo";
+import {
+  parseYurticiApiSettings,
+  parseYurticiEnvironment,
+  parseYurticiLanguage,
+  serializeYurticiApiSettings,
+  testYurticiConnection,
+} from "@/lib/yurtici-kargo";
 
 export type ShippingCarrierFormState = {
   success?: boolean;
@@ -111,6 +124,11 @@ function parseCarrierPayload(formData: FormData) {
     formData.get("isActive") === "on" || formData.get("isActive") === "true";
   const existingLogo = String(formData.get("logo") ?? "").trim();
   const logoFile = formData.get("logo_file");
+  const apiUsername = String(formData.get("apiUsername") ?? "").trim().slice(0, 100);
+  const apiPassword = String(formData.get("apiPassword") ?? "");
+  const apiCustomerCode = String(formData.get("apiCustomerCode") ?? "").trim().slice(0, 50);
+  const apiEnvironment = parseYurticiEnvironment(String(formData.get("apiEnvironment") ?? "test"));
+  const apiLanguage = parseYurticiLanguage(String(formData.get("apiLanguage") ?? "TR"));
 
   return {
     name,
@@ -126,7 +144,43 @@ function parseCarrierPayload(formData: FormData) {
     isActive,
     existingLogo,
     logoFile,
+    apiUsername,
+    apiPassword,
+    apiCustomerCode,
+    apiEnvironment,
+    apiLanguage,
   };
+}
+
+function nextApiSettings(
+  payload: ReturnType<typeof parseCarrierPayload>,
+  previousRaw: string | null,
+) {
+  if (payload.provider === ShippingCarrierProvider.YURTICI) {
+    const previous = parseYurticiApiSettings(previousRaw);
+    const password = payload.apiPassword || previous?.password || "";
+    if (!payload.apiUsername && !password) return previousRaw;
+    return serializeYurticiApiSettings({
+      provider: "YURTICI",
+      environment: payload.apiEnvironment,
+      username: payload.apiUsername || previous?.username || "",
+      password,
+      language: payload.apiLanguage,
+    });
+  }
+  if (payload.provider === ShippingCarrierProvider.ARAS) {
+    const previous = parseArasApiSettings(previousRaw);
+    const password = payload.apiPassword || previous?.password || "";
+    if (!payload.apiUsername && !password && !payload.apiCustomerCode) return previousRaw;
+    return serializeArasApiSettings({
+      provider: "ARAS",
+      environment: parseArasEnvironment(payload.apiEnvironment),
+      username: payload.apiUsername || previous?.username || "",
+      password,
+      customerCode: payload.apiCustomerCode || previous?.customerCode || "",
+    });
+  }
+  return previousRaw;
 }
 
 function validatePayload(payload: ReturnType<typeof parseCarrierPayload>) {
@@ -194,6 +248,7 @@ export async function createShippingCarrierAction(
         email: payload.email,
         logo: logo || null,
         notes: payload.notes,
+        apiSettings: nextApiSettings(payload, null),
         sortOrder,
         isActive: payload.isActive,
       },
@@ -253,6 +308,7 @@ export async function updateShippingCarrierAction(
         email: payload.email,
         logo: logo || null,
         notes: payload.notes,
+        apiSettings: nextApiSettings(payload, existing.apiSettings),
         sortOrder,
         isActive: payload.isActive,
       },
@@ -313,4 +369,76 @@ export async function toggleShippingCarrierActiveAction(input: {
     success: true,
     message: input.isActive ? "Kargo firması aktif edildi." : "Kargo firması pasife alındı.",
   };
+}
+
+export async function testArasConnectionAction(input: {
+  carrierId?: string;
+  username?: string;
+  password?: string;
+  customerCode?: string;
+  environment?: string;
+}): Promise<{ ok?: boolean; error?: string; message?: string }> {
+  const gate = await requirePermission("shipping", "update");
+  if (!gate.ok) return { error: gate.error };
+
+  let username = String(input.username ?? "").trim();
+  let password = String(input.password ?? "");
+  let customerCode = String(input.customerCode ?? "").trim();
+  let environment = parseArasEnvironment(String(input.environment ?? "test"));
+
+  const carrierId = String(input.carrierId ?? "").trim();
+  if (carrierId && (!username || !password || !customerCode)) {
+    const carrier = await prisma.shippingCarrier.findUnique({
+      where: { id: carrierId },
+      select: { apiSettings: true, provider: true },
+    });
+    if (!carrier || carrier.provider !== ShippingCarrierProvider.ARAS) {
+      return { error: "Aras Kargo kaydı bulunamadı." };
+    }
+    const stored = parseArasApiSettings(carrier.apiSettings);
+    username = username || stored?.username || "";
+    password = password || stored?.password || "";
+    customerCode = customerCode || stored?.customerCode || "";
+    if (!input.environment && stored) environment = stored.environment;
+  }
+
+  const result = await testArasConnection({ username, password, environment, customerCode });
+  if (!result.ok) return { error: result.error };
+  return { ok: true, message: result.message };
+}
+
+export async function testYurticiConnectionAction(input: {
+  carrierId?: string;
+  username?: string;
+  password?: string;
+  environment?: string;
+  language?: string;
+}): Promise<{ ok?: boolean; error?: string; message?: string }> {
+  const gate = await requirePermission("shipping", "update");
+  if (!gate.ok) return { error: gate.error };
+
+  let username = String(input.username ?? "").trim();
+  let password = String(input.password ?? "");
+  let environment = parseYurticiEnvironment(String(input.environment ?? "test"));
+  let language = parseYurticiLanguage(String(input.language ?? "TR"));
+
+  const carrierId = String(input.carrierId ?? "").trim();
+  if (carrierId && (!username || !password)) {
+    const carrier = await prisma.shippingCarrier.findUnique({
+      where: { id: carrierId },
+      select: { apiSettings: true, provider: true },
+    });
+    if (!carrier || carrier.provider !== ShippingCarrierProvider.YURTICI) {
+      return { error: "Yurtiçi Kargo kaydı bulunamadı." };
+    }
+    const stored = parseYurticiApiSettings(carrier.apiSettings);
+    username = username || stored?.username || "";
+    password = password || stored?.password || "";
+    if (!input.environment && stored) environment = stored.environment;
+    if (!input.language && stored) language = stored.language;
+  }
+
+  const result = await testYurticiConnection({ username, password, environment, language });
+  if (!result.ok) return { error: result.error };
+  return { ok: true, message: result.message };
 }

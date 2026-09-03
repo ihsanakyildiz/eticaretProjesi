@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import dynamic from "next/dynamic";
 import { notFound } from "next/navigation";
 import { preload } from "react-dom";
 import { BlogPostDetailView } from "@/components/site/blog/blog-post-detail";
@@ -12,10 +11,6 @@ import { parsePerformance, withCdnUrl } from "@/lib/performance";
 import { buildPublicMetadata, resolveBlogSeo } from "@/lib/seo";
 import { getSettingsMap } from "@/lib/settings";
 import { getSidebarByLocation } from "@/lib/site-sidebars";
-
-const HomeCta = dynamic(() =>
-  import("@/components/site/home/home-cta").then((mod) => mod.HomeCta),
-);
 
 export const revalidate = 60;
 export const dynamicParams = true;
@@ -142,7 +137,6 @@ export default async function BlogPostPage({ params }: BlogPostPageProps) {
         }
         sidebarPlacement={cmsSidebar?.placement ?? "RIGHT"}
       />
-      <HomeCta />
     </>
   );
 }

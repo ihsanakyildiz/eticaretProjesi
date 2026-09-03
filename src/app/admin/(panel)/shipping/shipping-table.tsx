@@ -30,6 +30,7 @@ export type ShippingCarrierRow = {
   logo: string | null;
   isActive: boolean;
   sortOrder: number;
+  apiConfigured?: boolean;
 };
 
 function normalizeSearch(value: string) {
@@ -264,7 +265,14 @@ export function ShippingCarriersTable({ carriers }: { carriers: ShippingCarrierR
                       <p className="truncate text-xs text-slate-400">{carrier.slug}</p>
                     </div>
                   </div>
-                  <span className="truncate text-slate-500">{providerLabel(carrier.provider)}</span>
+                  <div className="min-w-0">
+                    <p className="truncate text-slate-500">{providerLabel(carrier.provider)}</p>
+                    {carrier.apiConfigured ? (
+                      <p className="text-[11px] font-medium text-[#0ab39c]">API bağlı</p>
+                    ) : carrier.provider === "YURTICI" || carrier.provider === "ARAS" ? (
+                      <p className="text-[11px] text-amber-600">API bilgisi eksik</p>
+                    ) : null}
+                  </div>
                   <span className="truncate text-slate-500">{carrier.phone || "—"}</span>
                   <span className="text-slate-500">{carrier.sortOrder}</span>
                   <span>

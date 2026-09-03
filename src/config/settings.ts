@@ -1,4 +1,5 @@
 import { membershipSettingGroups } from "@/config/membership-settings";
+import { paymentSettingGroups } from "@/config/payment-settings";
 import { pricingSettingGroups } from "@/config/pricing-settings";
 import { themeSettingGroups } from "@/config/theme-settings";
 
@@ -361,6 +362,21 @@ export const settingGroups: SettingGroupDef[] = [
         type: "text",
         placeholder: "GTM-XXXXXXX",
         defaultValue: "",
+      },
+    ],
+  },
+  {
+    id: "inventory",
+    title: "Gelişmiş stok sistemi",
+    description:
+      "Depo, raf, sayım, irsaliye ve el terminali. Kapalıyken stok ürün kartından girilir; açıkken yalnızca stok belgelerinden değişir.",
+    fields: [
+      {
+        key: "advanced_inventory",
+        label: "Gelişmiş stok sistemini kullan",
+        type: "boolean",
+        defaultValue: "false",
+        hint: "Açıkken Mağaza menüsünde Stok ve depolar görünür (depo, raf, sayım, irsaliye, el terminali). Ürün kartındaki stok ekleme ve değiştirme kapanır; stok yalnızca gelişmiş stok ekranlarından yönetilir. Kapalıyken sipariş paketleme (Depo kargo transfer) çalışmaya devam eder.",
       },
     ],
   },
@@ -739,7 +755,7 @@ export const performanceSettingGroups: SettingGroupDef[] = [
         label: "HTML Cache (saniye)",
         type: "text",
         placeholder: "0",
-        hint: "0 = dinamik HTML cache yok. CDN kullanıyorsanız 60–300 deneyebilirsiniz",
+        hint: "0 = dinamik HTML. 60–300, katalog / kategori / ürün sayfalarını da önbelleğe alır",
         defaultValue: "0",
       },
       {
@@ -789,6 +805,89 @@ export const performanceSettingGroups: SettingGroupDef[] = [
     ],
   },
   {
+    id: "perf_products",
+    title: "Ürün sayfası",
+    description: "Ürün detayının açılış hızı, galeri ve ilgili ürün yükü",
+    fields: [
+      {
+        key: "perf_product_cache_seconds",
+        label: "Ürün sayfası cache (saniye)",
+        type: "text",
+        placeholder: "180",
+        hint: "Ürün detay verisini önbellekte tutar. 0 = genel HTML cache / 60 sn. Önerilen: 120–300",
+        defaultValue: "180",
+      },
+      {
+        key: "perf_product_related_limit",
+        label: "İlgili ürün sayısı",
+        type: "text",
+        placeholder: "8",
+        hint: "Detayda gösterilecek ilgili ürün üst sınırı (0 = ilgili ürünleri gizle)",
+        defaultValue: "8",
+      },
+      {
+        key: "perf_product_gallery_limit",
+        label: "Galeri görsel limiti",
+        type: "text",
+        placeholder: "16",
+        hint: "Ürün galerisinde yüklenecek en fazla görsel. Küçük değer = daha hızlı ilk açılış",
+        defaultValue: "16",
+      },
+      {
+        key: "perf_product_gallery_eager",
+        label: "Öncelikli galeri görseli",
+        type: "text",
+        placeholder: "1",
+        hint: "Kaç galeri görseli hemen yüklensin (LCP). Diğerleri lazy load olur",
+        defaultValue: "1",
+      },
+      {
+        key: "perf_product_preload_image",
+        label: "Kapak görselini preload et",
+        type: "boolean",
+        hint: "İlk ürün görselini kritik kaynak olarak erken ister; LCP’yi düşürür",
+        defaultValue: "true",
+      },
+      {
+        key: "perf_product_track_views",
+        label: "Ürün görüntülenmesini say",
+        type: "boolean",
+        hint: "Her ziyarette veritabanına yazılır. Yüksek trafikte kapatmak açılışı hızlandırır",
+        defaultValue: "true",
+      },
+    ],
+  },
+  {
+    id: "perf_checkout",
+    title: "Sepet & Ödeme",
+    description: "Sepet ve ödeme adımlarının hızı. Sayfa HTML’i kişiye özeldir, önbelleğe alınmaz",
+    fields: [
+      {
+        key: "perf_checkout_cache_seconds",
+        label: "Sepet / kargo veri cache (saniye)",
+        type: "text",
+        placeholder: "60",
+        hint: "Sepet satırları ve kargo listesi için kısa önbellek. 0 = her seferinde taze stok/fiyat. Önerilen: 30–90",
+        defaultValue: "60",
+      },
+      {
+        key: "perf_checkout_image_eager",
+        label: "Öncelikli sepet görseli",
+        type: "text",
+        placeholder: "2",
+        hint: "Sepette kaç ürün görseli hemen yüklensin. Diğerleri lazy load (görsel ayarlarına uyar)",
+        defaultValue: "2",
+      },
+      {
+        key: "perf_checkout_prefetch",
+        label: "Ödeme / sepet link prefetch",
+        type: "boolean",
+        hint: "Açıkken “Ödemeye geç” ve sepet linkleri önceden çekilir. Kapalı daha az sunucu yükü",
+        defaultValue: "false",
+      },
+    ],
+  },
+  {
     id: "perf_ux",
     title: "UX & Erişilebilirlik Performansı",
     description: "Algılanan hız ve kullanıcı deneyimi",
@@ -823,6 +922,7 @@ export type SettingsScope =
   | "performance"
   | "theme"
   | "membership"
+  | "payments"
   | "pricing"
   | "all";
 
@@ -847,7 +947,7 @@ export const GENERAL_SETTING_TABS: {
   { id: "contact", label: "İletişim", groupIds: ["contact", "social"] },
   { id: "seo", label: "SEO & Linkler", groupIds: ["seo", "urls"] },
   { id: "mail", label: "E-posta", groupIds: ["mail"] },
-  { id: "advanced", label: "Gelişmiş", groupIds: ["custom_code"] },
+  { id: "advanced", label: "Gelişmiş", groupIds: ["inventory", "custom_code"] },
 ];
 
 export function isGeneralSettingTabId(value: string): value is GeneralSettingTabId {
@@ -869,6 +969,8 @@ export function getSettingGroupsByScope(scope: SettingsScope): SettingGroupDef[]
       return themeSettingGroups;
     case "membership":
       return membershipSettingGroups;
+    case "payments":
+      return paymentSettingGroups;
     case "pricing":
       return pricingSettingGroups;
     case "all":
@@ -877,6 +979,7 @@ export function getSettingGroupsByScope(scope: SettingsScope): SettingGroupDef[]
         ...performanceSettingGroups,
         ...themeSettingGroups,
         ...membershipSettingGroups,
+        ...paymentSettingGroups,
         ...pricingSettingGroups,
       ];
     default: {

@@ -13,6 +13,7 @@ import {
   type StaffPermissionFlags,
   type StaffPermissionMap,
 } from "@/config/admin-permissions";
+import { isAdvancedInventoryEnabled } from "@/lib/advanced-inventory";
 import { prisma } from "@/lib/prisma";
 
 export type { PermissionAction, StaffPermissionFlags, StaffPermissionMap };
@@ -58,10 +59,27 @@ export async function requirePermission(resource: string, action: PermissionActi
   if (!access.session) {
     return { ok: false as const, error: "Oturum bulunamadı." };
   }
+  if (resource === "inventory" && !(await isAdvancedInventoryEnabled())) {
+    return {
+      ok: false as const,
+      error: "Gelişmiş stok sistemi kapalı. Ayarlar → Gelişmiş içinden açabilirsiniz.",
+    };
+  }
   if (!can(access.role, access.map, resource, action)) {
     return { ok: false as const, error: "Bu işlem için yetkiniz yok." };
   }
-  return { ok: true as const, session: access.session };
+  return { ok: true as const, session: access.session, isAdmin: access.isAdmin };
+}
+
+export async function requireAdmin() {
+  const access = await getPanelAccess();
+  if (!access.session) {
+    return { ok: false as const, error: "Oturum bulunamadı." };
+  }
+  if (!access.isAdmin) {
+    return { ok: false as const, error: "Bu işlem yalnızca tam yöneticiye aittir." };
+  }
+  return { ok: true as const, session: access.session, isAdmin: true };
 }
 
 export async function requirePermissionOrThrow(resource: string, action: PermissionAction) {
@@ -75,10 +93,19 @@ export async function requirePageView(pathname: string) {
   if (!access.session) {
     redirect("/admin/login");
   }
+  const advancedInventory = await isAdvancedInventoryEnabled();
+  const withFeatures = { ...access, advancedInventory };
   const resource = resourceFromPath(pathname);
-  if (!resource) return access;
-  if (can(access.role, access.map, resource, "view")) return access;
-  const destination = firstViewableHref(access.map, access.isAdmin);
+  if (resource === "inventory" && !advancedInventory) {
+    redirect(firstViewableHref(access.map, access.isAdmin, new Set(["inventory"])));
+  }
+  if (!resource) return withFeatures;
+  if (can(access.role, access.map, resource, "view")) return withFeatures;
+  const destination = firstViewableHref(
+    access.map,
+    access.isAdmin,
+    advancedInventory ? undefined : new Set(["inventory"]),
+  );
   if (destination === pathname) {
     redirect(ADMIN_NO_ACCESS_HREF);
   }

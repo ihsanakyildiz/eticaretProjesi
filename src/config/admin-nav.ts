@@ -2,11 +2,15 @@ import {
   BookOpen,
   Briefcase,
   Building2,
+  CreditCard,
   CircleDollarSign,
   CircleHelp,
   Columns3,
   Award,
   Factory,
+  FileSpreadsheet,
+  FileInput,
+  FileOutput,
   FileText,
   FolderKanban,
   Gauge,
@@ -17,10 +21,16 @@ import {
   LayoutGrid,
   Layers,
   Mail,
+  MapPin,
   Menu,
+  ArrowLeftRight,
+  ClipboardList,
+  Boxes,
   PenLine,
+  Rss,
   Settings,
   ShoppingBag,
+  ScanBarcode,
   SlidersHorizontal,
   Sparkles,
   SwatchBook,
@@ -33,6 +43,9 @@ import {
   Users,
   UserCog,
   UserRoundCog,
+  Warehouse,
+  Webhook,
+  Star,
   type LucideIcon,
 } from "lucide-react";
 
@@ -86,7 +99,17 @@ export const adminNavSections: AdminNavSection[] = [
         icon: ShoppingBag,
         children: [
           { label: "Katalog", href: "/admin/products", icon: LayoutGrid },
-          { label: "Ürün yükle", href: "/admin/products/import", icon: Upload },
+          { label: "Tekrarlayan barkodlar", href: "/admin/products/duplicate-barcodes", icon: ScanBarcode },
+          {
+            label: "Ürün yükle",
+            icon: Upload,
+            children: [
+              { label: "Genel bakış", href: "/admin/products/import", icon: Upload },
+              { label: "Excel", href: "/admin/products/import/excel", icon: FileSpreadsheet },
+              { label: "XML kaynakları", href: "/admin/products/import/xml", icon: Rss },
+              { label: "API kaynakları", href: "/admin/products/import/api", icon: Webhook },
+            ],
+          },
           { label: "Kategoriler", href: "/admin/products/categories", icon: Tags },
           { label: "Markalar", href: "/admin/products/brands", icon: Award },
           { label: "Varyantlar", href: "/admin/products/attributes", icon: SwatchBook },
@@ -104,6 +127,35 @@ export const adminNavSections: AdminNavSection[] = [
         label: "Siparişler",
         href: "/admin/orders",
         icon: ShoppingBag,
+      },
+      {
+        label: "Ürün yorumları",
+        href: "/admin/reviews",
+        icon: Star,
+      },
+      {
+        label: "Depo kargo transfer",
+        href: "/admin/warehouse",
+        icon: Warehouse,
+      },
+      {
+        label: "Stok ve depolar",
+        icon: Boxes,
+        children: [
+          { label: "Stok durumu", href: "/admin/inventory", icon: ClipboardList },
+          { label: "Depolar", href: "/admin/inventory/warehouses", icon: Warehouse },
+          { label: "Raflar", href: "/admin/inventory/locations", icon: MapPin },
+          { label: "El terminali", href: "/admin/inventory/scan", icon: ScanBarcode },
+          { label: "Giriş irsaliyesi", href: "/admin/inventory/receipts", icon: FileInput },
+          { label: "Alış faturası", href: "/admin/inventory/invoices", icon: FileText },
+          { label: "Çıkış irsaliyesi", href: "/admin/inventory/issues", icon: FileOutput },
+          { label: "Transfer", href: "/admin/inventory/transfers", icon: ArrowLeftRight },
+          { label: "Sayım", href: "/admin/inventory/counts", icon: ClipboardList },
+          { label: "Düzeltme", href: "/admin/inventory/adjustments", icon: SlidersHorizontal },
+          { label: "Tedarikçi iadesi", href: "/admin/inventory/supplier-returns", icon: FileOutput },
+          { label: "Müşteri iadesi", href: "/admin/inventory/customer-returns", icon: FileInput },
+          { label: "Hareketler", href: "/admin/inventory/movements", icon: Layers },
+        ],
       },
       {
         label: "Kargo firmaları",
@@ -166,6 +218,11 @@ export const adminNavSections: AdminNavSection[] = [
             icon: UserCog,
           },
           {
+            label: "Ödeme",
+            href: "/admin/settings/payments",
+            icon: CreditCard,
+          },
+          {
             label: "Performans",
             href: "/admin/settings/performance",
             icon: Gauge,
@@ -196,12 +253,13 @@ export const adminNavSections: AdminNavSection[] = [
   },
 ];
 
-export const adminNavFlatLinks = adminNavSections.flatMap((section) =>
-  section.items.flatMap((item) => {
-    const childLinks = (item.children ?? [])
-      .map((child) => child.href)
-      .filter((href): href is string => Boolean(href));
+function collectNavHrefs(items: AdminNavItem[]): string[] {
+  return items.flatMap((item) => [
+    ...(item.href ? [item.href] : []),
+    ...collectNavHrefs(item.children ?? []),
+  ]);
+}
 
-    return [...(item.href ? [item.href] : []), ...childLinks];
-  }),
+export const adminNavFlatLinks = collectNavHrefs(
+  adminNavSections.flatMap((section) => section.items),
 );

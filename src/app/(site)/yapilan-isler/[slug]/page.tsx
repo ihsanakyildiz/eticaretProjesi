@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import dynamic from "next/dynamic";
 import { notFound } from "next/navigation";
 import { preload } from "react-dom";
 import { WorkDetailView } from "@/components/site/work/work-detail-view";
@@ -17,9 +16,6 @@ import {
   workCategoryHref,
 } from "@/lib/works";
 
-const HomeCta = dynamic(() =>
-  import("@/components/site/home/home-cta").then((mod) => mod.HomeCta),
-);
 
 export const revalidate = 60;
 export const dynamicParams = true;
@@ -173,7 +169,6 @@ export default async function WorkDetailPage({ params }: WorkDetailPageProps) {
         }
         sidebarPlacement={cmsSidebar?.placement ?? "RIGHT"}
       />
-      <HomeCta />
     </>
   );
 }

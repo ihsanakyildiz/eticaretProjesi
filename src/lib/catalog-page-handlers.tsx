@@ -48,16 +48,21 @@ export function categoryIndexPage(routeKey: UrlCategoryPath) {
   };
 }
 
+function parseRouteUrlId(urlId?: string) {
+  if (!urlId || !/^\d+$/.test(urlId)) return undefined;
+  return Number(urlId);
+}
+
 export function categoryDetailPage(routeKey: UrlCategoryPath) {
   return async function CategoryDetailRoute({
     params,
     searchParams,
   }: {
-    params: Promise<{ slug: string }>;
+    params: Promise<{ slug: string; urlId?: string }>;
     searchParams: Promise<CatalogSearchParams>;
   }) {
-    const [{ slug }, search] = await Promise.all([params, searchParams]);
-    const urls = await enforceCategoryPage(routeKey, slug, search);
+    const [{ slug, urlId }, search] = await Promise.all([params, searchParams]);
+    const urls = await enforceCategoryPage(routeKey, slug, search, parseRouteUrlId(urlId));
     return <CatalogCategoryScreen slug={slug} search={search} urls={urls} />;
   };
 }
@@ -74,11 +79,11 @@ export function brandDetailPage(routeKey: UrlBrandPath) {
     params,
     searchParams,
   }: {
-    params: Promise<{ slug: string }>;
+    params: Promise<{ slug: string; urlId?: string }>;
     searchParams: Promise<CatalogSearchParams>;
   }) {
-    const [{ slug }, search] = await Promise.all([params, searchParams]);
-    const urls = await enforceBrandPage(routeKey, slug, search);
+    const [{ slug, urlId }, search] = await Promise.all([params, searchParams]);
+    const urls = await enforceBrandPage(routeKey, slug, search, parseRouteUrlId(urlId));
     return <CatalogBrandScreen slug={slug} search={search} urls={urls} />;
   };
 }
@@ -87,10 +92,10 @@ export function productDetailPage(routeKey: UrlProductPath) {
   return async function ProductDetailRoute({
     params,
   }: {
-    params: Promise<{ slug: string }>;
+    params: Promise<{ slug: string; urlId?: string }>;
   }) {
-    const { slug } = await params;
-    const urls = await enforceProductPage(routeKey, slug);
+    const { slug, urlId } = await params;
+    const urls = await enforceProductPage(routeKey, slug, parseRouteUrlId(urlId));
     return <CatalogProductScreen slug={slug} urls={urls} />;
   };
 }

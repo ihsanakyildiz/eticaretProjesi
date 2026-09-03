@@ -62,7 +62,7 @@ html.site-dark {
   --color-site-surface: var(--site-surface);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-  --font-display: var(--font-plus-jakarta);
+  --font-display: var(--site-font, var(--font-inter));
 }
 
 body {
@@ -74,7 +74,26 @@ body {
 .site-shell {
   background: var(--site-bg);
   color: var(--site-fg);
-  font-family: var(--site-font, var(--font-plus-jakarta)), var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--site-font, var(--font-inter)), ui-sans-serif, system-ui, sans-serif;
+  font-weight: 400;
+  letter-spacing: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.site-shell .font-display {
+  font-family: inherit;
+  letter-spacing: -0.02em;
+}
+
+.site-shell .font-medium,
+.site-shell .font-semibold {
+  font-weight: 500;
+}
+
+.site-shell .font-bold,
+.site-shell .font-extrabold {
+  font-weight: 600;
 }
 
 .site-shell :where(.rounded-md) {
@@ -198,9 +217,9 @@ body {
 .site-rich-content h2 {
   display: block;
   margin: 1.5em 0 0.6em;
-  font-family: var(--font-display), var(--font-plus-jakarta), sans-serif;
+  font-family: inherit;
   font-size: clamp(1.35rem, 2vw, 1.75rem);
-  font-weight: 700;
+  font-weight: 600;
   line-height: 1.3;
   color: var(--site-fg);
 }
@@ -208,9 +227,9 @@ body {
 .site-rich-content h3 {
   display: block;
   margin: 1.25em 0 0.5em;
-  font-family: var(--font-display), var(--font-plus-jakarta), sans-serif;
+  font-family: inherit;
   font-size: clamp(1.15rem, 1.6vw, 1.35rem);
-  font-weight: 700;
+  font-weight: 600;
   line-height: 1.35;
   color: var(--site-fg);
 }
@@ -537,6 +556,14 @@ html.perf-font-swap {
 }
 
 /* İkon modunda kaydırma çubuğu hiç görünmesin (hover'da da) */
+.admin-sidebar summary {
+  list-style: none;
+}
+
+.admin-sidebar summary::-webkit-details-marker {
+  display: none;
+}
+
 .admin-sidebar-icons {
   scrollbar-width: none;
   -ms-overflow-style: none;
@@ -892,4 +919,14 @@ html.admin-dark .rich-text-editor .ProseMirror img {
 
 html.admin-dark .rich-text-editor .ProseMirror p.is-editor-empty:first-child::before {
   color: #6c757d;
+}
+
+@media print {
+  .admin-shell {
+    background: #fff !important;
+  }
+
+  .warehouse-print-only {
+    position: static !important;
+  }
 }

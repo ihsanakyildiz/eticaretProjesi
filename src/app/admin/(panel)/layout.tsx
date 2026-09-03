@@ -2,6 +2,7 @@ import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { AdminSidebarBootScript } from "@/components/admin/admin-sidebar-boot-script";
+import { BackgroundJobBoot } from "@/components/admin/background-job-boot";
 import { getAdminSession } from "@/lib/admin-session";
 import {
   parseSidebarUiCookie,
@@ -33,6 +34,7 @@ export default async function AdminPanelLayout({
   return (
     <>
       <AdminSidebarBootScript />
+      <BackgroundJobBoot />
       <AdminShell
         userName={session.user.name ?? "Admin"}
         userEmail={session.user.email ?? ""}
@@ -42,6 +44,7 @@ export default async function AdminPanelLayout({
         permissionRole={access.role ?? session.user.role}
         isAdmin={access.isAdmin}
         permissionMap={access.map}
+        advancedInventory={access.advancedInventory}
       >
         {children}
       </AdminShell>

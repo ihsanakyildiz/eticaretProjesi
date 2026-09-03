@@ -277,7 +277,14 @@ function GroupRows({
         const rowAll = flags.view && flags.create && flags.update && flags.delete;
         return (
           <tr key={resource.id} className="border-t border-[#e9ebec]">
-            <td className="px-4 py-2 font-medium text-slate-800">{resource.label}</td>
+            <td className="px-4 py-2 font-medium text-slate-800">
+              {resource.label}
+              {resource.hint ? (
+                <span className="mt-0.5 block text-[11px] font-normal leading-snug text-slate-500">
+                  {resource.hint}
+                </span>
+              ) : null}
+            </td>
             {PERMISSION_ACTIONS.map((actionName) => (
               <td key={actionName} className="px-3 py-2 text-center">
                 <input

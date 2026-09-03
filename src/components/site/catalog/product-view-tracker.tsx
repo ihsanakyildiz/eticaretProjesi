@@ -1,12 +1,20 @@
 "use client";
 
 import { useEffect } from "react";
-import { recordProductViewAction } from "@/app/(site)/urunler/actions";
+import { trackProductEvent } from "@/components/site/catalog/catalog-client-api";
 import { RECENTLY_VIEWED_KEY, RECENTLY_VIEWED_MAX } from "@/lib/recently-viewed";
 
-export function ProductViewTracker({ productId }: { productId: string }) {
+export function ProductViewTracker({
+  productId,
+  recordView = true,
+}: {
+  productId: string;
+  recordView?: boolean;
+}) {
   useEffect(() => {
-    void recordProductViewAction(productId);
+    if (recordView) {
+      trackProductEvent(productId, "view");
+    }
     try {
       const raw = window.localStorage.getItem(RECENTLY_VIEWED_KEY);
       const parsed = raw ? (JSON.parse(raw) as unknown) : [];
@@ -21,7 +29,7 @@ export function ProductViewTracker({ productId }: { productId: string }) {
     } catch {
       window.localStorage.setItem(RECENTLY_VIEWED_KEY, JSON.stringify([productId]));
     }
-  }, [productId]);
+  }, [productId, recordView]);
 
   return null;
 }

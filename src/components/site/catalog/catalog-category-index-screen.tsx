@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import dynamic from "next/dynamic";
 import { JsonLd } from "@/components/site/json-ld";
 import { SiteLink } from "@/components/site/site-link";
 import { catalogCategoryHref, getCachedCatalogCategoryIndex } from "@/lib/catalog-products";
@@ -13,9 +12,6 @@ import {
   type UrlStructure,
 } from "@/lib/url-structure";
 
-const HomeCta = dynamic(() =>
-  import("@/components/site/home/home-cta").then((mod) => mod.HomeCta),
-);
 
 export async function catalogCategoryIndexMetadata(): Promise<Metadata> {
   const [settings, urls] = await Promise.all([
@@ -91,7 +87,6 @@ export async function CatalogCategoryIndexScreen({ urls }: { urls: UrlStructure 
           )}
         </div>
       </section>
-      <HomeCta />
     </>
   );
 }

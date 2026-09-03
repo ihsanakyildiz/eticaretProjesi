@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono, Plus_Jakarta_Sans } from "next/font/google";
+import { Geist, Geist_Mono, Inter, Plus_Jakarta_Sans } from "next/font/google";
 import { DeferredAnalytics } from "@/components/site/deferred-analytics";
 import { PerformanceHead } from "@/components/site/performance-head";
 import { PerformanceProvider } from "@/components/site/performance-provider";
@@ -29,11 +29,18 @@ const geistMono = Geist_Mono({
   preload: false,
 });
 
+const inter = Inter({
+  variable: "--font-inter",
+  subsets: ["latin", "latin-ext"],
+  display: "swap",
+  preload: true,
+});
+
 const plusJakarta = Plus_Jakarta_Sans({
   variable: "--font-plus-jakarta",
   subsets: ["latin", "latin-ext"],
   display: "swap",
-  preload: true,
+  preload: false,
 });
 
 function iconEntries(pngPath: string, sizes: string) {
@@ -185,7 +192,7 @@ export default async function RootLayout({
         {isAdmin ? null : <SiteCustomHeadTags code={settings.custom_code_head} />}
       </head>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} ${plusJakarta.variable} antialiased`}
+        className={`${geistSans.variable} ${geistMono.variable} ${inter.variable} ${plusJakarta.variable} antialiased`}
       >
         <PerformanceProvider value={perf}>
           <RouteLoadingIndicator enabled={isAdmin || perf.showLoadingIndicator} />

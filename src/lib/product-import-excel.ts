@@ -47,7 +47,7 @@ function valueToText(value: ExcelJS.CellValue): string {
   return "";
 }
 
-function cellText(cell: ExcelJS.Cell | ExcelJS.CellValue): string {
+export function cellText(cell: ExcelJS.Cell | ExcelJS.CellValue): string {
   if (cell && typeof cell === "object" && "value" in cell) {
     const fromValue = valueToText(cell.value).trim();
     const display = typeof cell.text === "string" ? cell.text.trim() : "";
@@ -59,9 +59,14 @@ function cellText(cell: ExcelJS.Cell | ExcelJS.CellValue): string {
   return valueToText(cell as ExcelJS.CellValue).trim();
 }
 
+function visibleImportColumns() {
+  return PRODUCT_IMPORT_COLUMNS.filter((column) => !("template" in column && column.template === false));
+}
+
 function applyHeaderRow(sheet: ExcelJS.Worksheet) {
   const row = sheet.getRow(1);
-  PRODUCT_IMPORT_COLUMNS.forEach((column, index) => {
+  const columns = visibleImportColumns();
+  columns.forEach((column, index) => {
     const cell = row.getCell(index + 1);
     cell.value = column.header;
     cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
@@ -71,7 +76,7 @@ function applyHeaderRow(sheet: ExcelJS.Worksheet) {
       fgColor: { argb: column.required ? "FF0AB39C" : "FF405189" },
     };
     cell.alignment = { vertical: "middle", wrapText: true };
-    sheet.getColumn(index + 1).width = Math.min(32, Math.max(16, column.header.length + 4));
+    sheet.getColumn(index + 1).width = Math.min(36, Math.max(16, column.header.length + 4));
     if (column.hint) {
       cell.note = column.hint;
     }
@@ -80,7 +85,7 @@ function applyHeaderRow(sheet: ExcelJS.Worksheet) {
   sheet.views = [{ state: "frozen", ySplit: 1 }];
   sheet.autoFilter = {
     from: { row: 1, column: 1 },
-    to: { row: 1, column: PRODUCT_IMPORT_COLUMNS.length },
+    to: { row: 1, column: columns.length },
   };
 }
 
@@ -102,7 +107,7 @@ function addListValidation(
 }
 
 function columnIndex(key: ProductImportColumnKey) {
-  return PRODUCT_IMPORT_COLUMNS.findIndex((column) => column.key === key) + 1;
+  return visibleImportColumns().findIndex((column) => column.key === key) + 1;
 }
 
 function fillLookupSheet(
@@ -155,20 +160,21 @@ export async function buildProductImportTemplate(lookups?: ProductImportLookups)
   help.getColumn(3).width = 72;
   help.getRow(1).values = ["Kolon", "Zorunlu", "Açıklama"];
   help.getRow(1).font = { bold: true };
-  PRODUCT_IMPORT_COLUMNS.forEach((column, index) => {
+  const helpColumns = visibleImportColumns();
+  helpColumns.forEach((column, index) => {
     help.getRow(index + 2).values = [
       column.header,
       column.required ? "Evet" : "Hayır",
       column.hint || "İsteğe bağlı",
     ];
   });
-  const start = PRODUCT_IMPORT_COLUMNS.length + 4;
+  const start = helpColumns.length + 4;
   help.getRow(start).values = ["Notlar"];
   help.getRow(start).font = { bold: true };
   help.getRow(start + 1).values = [
     "",
     "",
-    "Bu kalıp yalnızca yeni ürün eklemek içindir. Zorunlu alanları eksik veya hatalı olan ürün hiçbir satırıyla yüklenmez.",
+    "Bu kalıp yalnızca yeni ürün eklemek içindir. Zorunlu alanları eksik veya hatalı olan ürün hiçbir satırıyla yüklenmez. Aynı barkod veya aynı ürün kodu başka üründe varsa yüklenmez.",
   ];
   help.getRow(start + 2).values = [
     "",
@@ -198,7 +204,7 @@ export async function buildProductImportTemplate(lookups?: ProductImportLookups)
   help.getRow(start + 7).values = [
     "",
     "",
-    `En fazla ${PRODUCT_IMPORT_MAX_ROWS.toLocaleString("tr-TR")} satır yükleyebilirsiniz. Her SKU satırında barkod zorunludur. Fiyat boş veya 0 ise ürün yüklenir ama satışa kapanır.`,
+    `En fazla ${PRODUCT_IMPORT_MAX_ROWS.toLocaleString("tr-TR")} satır yükleyebilirsiniz. Her SKU satırında barkod zorunludur. Satış fiyatı boş veya 0 ise ürün yüklenir ama satışa kapanır. İndirimli satış doluysa sitede satış üstü çizili, müşteri indirimli tutarı öder.`,
   ];
   help.getRow(start + 8).values = [
     "",

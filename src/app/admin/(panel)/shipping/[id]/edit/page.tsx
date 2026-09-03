@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import type { ShippingCarrierProviderId } from "@/config/shipping-carriers";
 import { prisma } from "@/lib/prisma";
+import { arasApiPublicView } from "@/lib/aras-kargo";
+import { yurticiApiPublicView } from "@/lib/yurtici-kargo";
 import { ShippingCarrierForm } from "../../shipping-form";
 
 type EditShippingCarrierPageProps = {
@@ -27,6 +29,24 @@ export default async function EditShippingCarrierPage({
   const { id } = await params;
   const carrier = await prisma.shippingCarrier.findUnique({ where: { id } });
   if (!carrier) notFound();
+  const yurticiApi = yurticiApiPublicView(carrier.apiSettings);
+  const arasApi = arasApiPublicView(carrier.apiSettings);
+  const api =
+    carrier.provider === "ARAS"
+      ? {
+          username: arasApi.username,
+          environment: arasApi.environment,
+          language: "TR" as const,
+          customerCode: arasApi.customerCode,
+          hasPassword: arasApi.hasPassword,
+        }
+      : {
+          username: yurticiApi.username,
+          environment: yurticiApi.environment,
+          language: yurticiApi.language,
+          customerCode: "",
+          hasPassword: yurticiApi.hasPassword,
+        };
 
   return (
     <div className="space-y-6">
@@ -53,6 +73,11 @@ export default async function EditShippingCarrierPage({
           notes: carrier.notes ?? undefined,
           sortOrder: carrier.sortOrder,
           isActive: carrier.isActive,
+          apiUsername: api.username,
+          apiEnvironment: api.environment,
+          apiLanguage: api.language,
+          apiCustomerCode: api.customerCode,
+          apiHasPassword: api.hasPassword,
         }}
       />
     </div>

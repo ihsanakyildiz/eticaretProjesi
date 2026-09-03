@@ -25,9 +25,6 @@ export type PageSectionsContactInfo = {
   mapEmbed?: string;
 };
 
-const HomeCta = dynamic(() =>
-  import("@/components/site/home/home-cta").then((mod) => mod.HomeCta),
-);
 const HomeFaq = dynamic(() =>
   import("@/components/site/home/home-faq").then((mod) => mod.HomeFaq),
 );
@@ -157,7 +154,7 @@ function CtaSection({
       </section>
     );
   }
-  return <HomeCta />;
+  return null;
 }
 
 export function PageSectionsRenderer({

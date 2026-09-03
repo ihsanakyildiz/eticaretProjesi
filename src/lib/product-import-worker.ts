@@ -10,13 +10,17 @@ import {
   loadProductImportLookups,
   parseJobRowRawJson,
   prepareImportedProduct,
+  uniquesFromUsed,
   type PreparedImportedProduct,
   type ProductImportDraft,
 } from "@/lib/product-import";
 import {
   createImportImageCache,
+  localizeImportImageUrl,
   localizeImportedProductImagesBatch,
+  type ImportImageCache,
 } from "@/lib/product-import-images";
+import { applyProductUpdate, parseJobUpdatePayload } from "@/lib/product-import-update";
 import { discardImportJob, discardSettledImportJobs } from "@/lib/product-import-job";
 import { prisma } from "@/lib/prisma";
 
@@ -88,6 +92,12 @@ async function processImportJob(jobId: string) {
         },
       });
 
+      if (parseJobUpdatePayload(rows[0].rawJson)) {
+        const updated = await processUpdateBatch(jobId, rows, imageCache);
+        if (updated) importedAny = true;
+        continue;
+      }
+
       const failed: Array<{ id: string; errors: string }> = [];
       const ready: Array<{
         rowId: string;
@@ -105,7 +115,7 @@ async function processImportJob(jobId: string) {
           continue;
         }
 
-        const { draft, errors } = buildImportGroup(rawRows, catalog.lookups);
+        const { draft, errors } = buildImportGroup(rawRows, catalog.lookups, uniquesFromUsed(used));
         if (!draft) {
           failed.push({ id: row.id, errors: errors.join(" ").slice(0, 1000) });
           continue;
@@ -211,6 +221,63 @@ async function processImportJob(jobId: string) {
       },
     });
   }
+}
+
+async function processUpdateBatch(
+  jobId: string,
+  rows: Array<{ id: string; rawJson: string; title: string; rowNumber: number }>,
+  imageCache: ImportImageCache,
+) {
+  const failed: Array<{ id: string; errors: string }> = [];
+  const imported: Array<{ id: string; productId: string }> = [];
+
+  for (const row of rows) {
+    const payload = parseJobUpdatePayload(row.rawJson);
+    if (!payload) {
+      failed.push({ id: row.id, errors: "Güncelleme satırı okunamadı." });
+      continue;
+    }
+    try {
+      await applyProductUpdate(payload, async (urls) => {
+        const localized: string[] = [];
+        for (const url of urls) {
+          localized.push(await localizeImportImageUrl(url, imageCache));
+        }
+        return { urls: localized };
+      });
+      imported.push({ id: row.id, productId: payload.productId });
+    } catch (error) {
+      failed.push({
+        id: row.id,
+        errors: error instanceof Error ? error.message.slice(0, 1000) : "Güncelleme başarısız.",
+      });
+    }
+  }
+
+  if (imported.length > 0) {
+    await prisma.$transaction(async (tx) => {
+      await Promise.all(
+        imported.map((item) =>
+          tx.productImportJobRow.update({
+            where: { id: item.id },
+            data: { work: "IMPORTED", productId: item.productId, rawJson: "{}" },
+          }),
+        ),
+      );
+      await tx.productImportJob.update({
+        where: { id: jobId },
+        data: {
+          importedCount: { increment: imported.length },
+          currentTitle: rows[rows.length - 1]?.title ?? "Güncelleme",
+          currentRow: rows[rows.length - 1]?.rowNumber ?? null,
+        },
+      });
+    });
+  }
+  if (failed.length > 0) {
+    await markRowsFailed(jobId, failed);
+  }
+  return imported.length > 0;
 }
 
 async function loadLookupsAndUsed() {

@@ -307,7 +307,7 @@ export function matchPublicCatalogPath(
     return { kind: "product", ...entity };
   }
 
-  if (!structure.product && path.length === 2 && path[0] && /^\d+$/.test(path[1] ?? "")) {
+  if (path.length === 2 && path[0] && /^\d+$/.test(path[1] ?? "")) {
     return { kind: "product", slug: path[0], urlId: Number(path[1]) };
   }
 

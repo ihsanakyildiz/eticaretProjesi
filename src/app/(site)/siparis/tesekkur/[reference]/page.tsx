@@ -1,25 +1,31 @@
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { CheckCircle2 } from "lucide-react";
 import { auth } from "@/auth";
 import { OrderThanksClearCart } from "@/components/site/checkout/order-thanks-clear-cart";
 import { SiteLink } from "@/components/site/site-link";
 import { OrderPaymentMethod } from "@prisma/client";
+import {
+  orderPaymentProviderLabel,
+  parseOrderPaymentProvider,
+} from "@/lib/checkout-payment-choice";
+import { finalizeIyzicoCheckout } from "@/lib/iyzico-complete";
 import { prisma } from "@/lib/prisma";
 import { formatMinorTry } from "@/lib/product-money";
+import { getSettingsMapUncached } from "@/lib/settings";
 
 type PageProps = {
   params: Promise<{ reference: string }>;
 };
 
-function paymentLabel(method: OrderPaymentMethod) {
+function paymentLabel(method: OrderPaymentMethod, providerName: string | null) {
   switch (method) {
     case OrderPaymentMethod.BANK_WIRE:
       return "Havale / EFT";
     case OrderPaymentMethod.CASH_ON_DELIVERY:
       return "Kapıda ödeme";
     case OrderPaymentMethod.CREDIT_CARD:
-      return "Kredi kartı";
+      return providerName ? `Kredi kartı (${providerName})` : "Kredi kartı";
     case OrderPaymentMethod.OTHER:
       return "Diğer";
     default: {
@@ -50,6 +56,22 @@ export default async function OrderThanksPage({ params }: PageProps) {
   }
 
   const shipping = order.addresses.find((row) => row.kind === "SHIPPING");
+  const provider = parseOrderPaymentProvider(order.paymentProvider);
+  const providerName = provider ? orderPaymentProviderLabel(provider) : null;
+  const awaitingCard =
+    order.paymentMethod === OrderPaymentMethod.CREDIT_CARD && order.status === "AWAITING_PAYMENT";
+
+  if (awaitingCard && provider === "iyzico") {
+    const settings = await getSettingsMapUncached();
+    const recovered = await finalizeIyzicoCheckout({
+      settings,
+      token: order.paymentToken,
+      conversationId: order.reference,
+    });
+    if (recovered.ok) {
+      redirect(`/siparis/tesekkur/${order.reference}?odeme=ok`);
+    }
+  }
 
   return (
     <section className="border-b border-site-border py-12 sm:py-16">
@@ -64,9 +86,14 @@ export default async function OrderThanksPage({ params }: PageProps) {
           Sipariş numaranız <span className="font-semibold text-site-fg">{order.reference}</span>
         </p>
         <p className="mt-1 text-sm text-site-muted">
-          Ödeme: {paymentLabel(order.paymentMethod)}
+          Ödeme: {paymentLabel(order.paymentMethod, providerName)}
           {order.carrierName ? ` · Kargo: ${order.carrierName}` : ""}
         </p>
+        {awaitingCard ? (
+          <p className="mt-3 text-sm text-site-muted">
+            Kart ödemeniz doğrulanınca sipariş hazırlanmaya başlar. Sayfayı yenileyebilirsiniz.
+          </p>
+        ) : null}
       </div>
 
       <div className="mx-auto mt-10 max-w-3xl rounded-lg border border-site-border bg-site-card p-5 sm:p-6">

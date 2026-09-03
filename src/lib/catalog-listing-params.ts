@@ -46,18 +46,33 @@ export function parseCatalogSearchQuery(query: CatalogSearchQuery): {
   };
 }
 
-export function catalogListingHref(
+export type CatalogListingHrefInput = {
+  page?: number;
+  sort?: CatalogSort;
+  brandSlugs?: string[];
+  minMajor?: number | null;
+  maxMajor?: number | null;
+  filterValueIds?: string[];
+  query?: string | null;
+};
+
+export function catalogFiltersHref(
   basePath: string,
-  next: {
-    page?: number;
-    sort?: CatalogSort;
-    brandSlugs?: string[];
-    minMajor?: number | null;
-    maxMajor?: number | null;
-    filterValueIds?: string[];
-    query?: string | null;
-  },
+  filters: Omit<CatalogListingFilters, "categoryIds">,
+  patch: CatalogListingHrefInput = {},
 ) {
+  return catalogListingHref(basePath, {
+    sort: patch.sort ?? filters.sort,
+    brandSlugs: patch.brandSlugs ?? filters.brandSlugs,
+    minMajor: "minMajor" in patch ? (patch.minMajor ?? null) : filters.minMajor,
+    maxMajor: "maxMajor" in patch ? (patch.maxMajor ?? null) : filters.maxMajor,
+    filterValueIds: patch.filterValueIds ?? filters.filterValueIds,
+    query: "query" in patch ? (patch.query ?? null) : filters.query,
+    page: patch.page,
+  });
+}
+
+export function catalogListingHref(basePath: string, next: CatalogListingHrefInput) {
   const params = new URLSearchParams();
   if (next.sort && next.sort !== "yeni") params.set("sira", next.sort);
   if (next.brandSlugs && next.brandSlugs.length > 0) {

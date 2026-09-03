@@ -14,13 +14,23 @@ export type CacheActionResult = {
 
 const REVALIDATE_PATHS: Array<{ path: string; type?: "page" | "layout" }> = [
   { path: "/", type: "layout" },
+  { path: "/c", type: "page" },
+  { path: "/katalog", type: "page" },
+  { path: "/kategori", type: "page" },
+  { path: "/marka", type: "page" },
+  { path: "/urunler", type: "page" },
+  { path: "/magaza", type: "page" },
+  { path: "/arama", type: "page" },
+  { path: "/sepet", type: "page" },
+  { path: "/odeme", type: "page" },
   { path: "/admin", type: "layout" },
+  { path: "/admin/products", type: "page" },
   { path: "/admin/settings", type: "layout" },
   { path: "/admin/settings/performance", type: "page" },
   { path: "/admin/login", type: "page" },
 ];
 
-const CACHE_TAGS = ["site", "settings", "pages", "blog", "projects", "works", "products"] as const;
+const CACHE_TAGS = ["site", "settings", "pages", "blog", "projects", "works", "products", "checkout"] as const;
 
 async function pathExists(target: string) {
   try {

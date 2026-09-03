@@ -8,7 +8,10 @@ import {
   parseCheckoutStep,
   type CheckoutQuery,
 } from "@/lib/checkout-steps";
-import { isStripeConfigured } from "@/lib/stripe";
+import { getCheckoutCardOptions } from "@/lib/checkout-payments";
+import { getSettingsMap } from "@/lib/settings";
+
+export const dynamic = "force-dynamic";
 
 type PageProps = {
   searchParams: Promise<CheckoutQuery>;
@@ -30,9 +33,10 @@ export default async function OdemePage({ searchParams }: PageProps) {
   }
 
   const search = await searchParams;
-  const [addresses, carriers] = await Promise.all([
+  const [addresses, carriers, settings] = await Promise.all([
     loadCheckoutAddresses(session.user.id),
     loadCheckoutCarriers(0),
+    getSettingsMap().catch(() => ({}) as Record<string, string>),
   ]);
 
   return (
@@ -44,7 +48,7 @@ export default async function OdemePage({ searchParams }: PageProps) {
           <CheckoutFlow
             initialAddresses={addresses}
             initialCarriers={carriers.map(({ id, name, logo }) => ({ id, name, logo }))}
-            cardEnabled={isStripeConfigured()}
+            cardOptions={getCheckoutCardOptions(settings)}
             canceled={firstSearchValue(search.iptal) === "1"}
             step={parseCheckoutStep(firstSearchValue(search.adim))}
             query={search}

@@ -15,6 +15,15 @@ export type SitePerformance = {
   preloadLogo: boolean;
   disableThirdParty: boolean;
   cdnUrl: string;
+  productCacheSeconds: number;
+  productRelatedLimit: number;
+  productGalleryLimit: number;
+  productGalleryEager: number;
+  productTrackViews: boolean;
+  productPreloadImage: boolean;
+  checkoutCacheSeconds: number;
+  checkoutImageEager: number;
+  checkoutPrefetch: boolean;
 };
 
 export const DEFAULT_SITE_PERFORMANCE: SitePerformance = {
@@ -32,6 +41,15 @@ export const DEFAULT_SITE_PERFORMANCE: SitePerformance = {
   preloadLogo: true,
   disableThirdParty: false,
   cdnUrl: "",
+  productCacheSeconds: 180,
+  productRelatedLimit: 8,
+  productGalleryLimit: 16,
+  productGalleryEager: 1,
+  productTrackViews: true,
+  productPreloadImage: true,
+  checkoutCacheSeconds: 60,
+  checkoutImageEager: 2,
+  checkoutPrefetch: false,
 };
 
 function clampInt(raw: string | undefined, fallback: number, min: number, max: number) {
@@ -70,7 +88,30 @@ export function parsePerformance(
       false,
     ),
     cdnUrl: (settings.perf_cdn_url || "").replace(/\/$/, ""),
+    productCacheSeconds: clampInt(settings.perf_product_cache_seconds, 180, 0, 86_400),
+    productRelatedLimit: clampInt(settings.perf_product_related_limit, 8, 0, 24),
+    productGalleryLimit: clampInt(settings.perf_product_gallery_limit, 16, 1, 40),
+    productGalleryEager: clampInt(settings.perf_product_gallery_eager, 1, 0, 8),
+    productTrackViews: isSettingEnabled(settings, "perf_product_track_views", true),
+    productPreloadImage: isSettingEnabled(settings, "perf_product_preload_image", true),
+    checkoutCacheSeconds: clampInt(settings.perf_checkout_cache_seconds, 60, 0, 600),
+    checkoutImageEager: clampInt(settings.perf_checkout_image_eager, 2, 0, 12),
+    checkoutPrefetch: isSettingEnabled(settings, "perf_checkout_prefetch", false),
   };
+}
+
+export function catalogDataCacheSeconds(perf: SitePerformance): number {
+  if (perf.htmlCacheSeconds > 0) return perf.htmlCacheSeconds;
+  return 60;
+}
+
+export function productDataCacheSeconds(perf: SitePerformance): number {
+  if (perf.productCacheSeconds > 0) return perf.productCacheSeconds;
+  return catalogDataCacheSeconds(perf);
+}
+
+export function checkoutDataCacheSeconds(perf: SitePerformance): number {
+  return perf.checkoutCacheSeconds;
 }
 
 export function buildHtmlCacheControl(perf: SitePerformance): string | null {

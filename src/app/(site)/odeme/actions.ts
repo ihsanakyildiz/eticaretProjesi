@@ -1,7 +1,7 @@
 "use server";
 
 import { OrderAddressKind, OrderPaymentMethod, OrderStatus } from "@prisma/client";
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 import {
   appendCustomerAddress,
   prepareAddressDrafts,
@@ -15,8 +15,13 @@ import {
   requireCheckoutUser,
   type CheckoutAddress,
 } from "@/lib/checkout";
+import {
+  checkoutChoiceToOrderPayment,
+  parseCheckoutPaymentChoice,
+} from "@/lib/checkout-payment-choice";
+import { isIyzicoConfigured, isPaytrConfigured } from "@/lib/checkout-payments";
 import { nextOrderNo, snapshotAddress, uniqueOrderReference } from "@/lib/order-server";
-import { parseOrderPaymentMethod } from "@/lib/orders";
+import { reserveOrderStock, StockShortageError } from "@/lib/order-stock";
 import { prisma } from "@/lib/prisma";
 import { getSettingsMap } from "@/lib/settings";
 import { getSiteOrigin } from "@/lib/site-origin";
@@ -95,12 +100,25 @@ export async function placeOrderAction(
   }
 
   const cart = await hydrateCart(cartLines);
-  if (cart.lines.length === 0) return { error: "Sepetiniz boş veya ürünler satılamıyor." };
+  const sellable = cart.lines.filter((line) => line.available);
+  if (sellable.length === 0) return { error: "Sepetiniz boş veya ürünler satılamıyor." };
 
   const shippingAddressId = read(formData, "shippingAddressId", 64);
   const billingAddressId = read(formData, "billingAddressId", 64) || shippingAddressId;
   const carrierId = read(formData, "carrierId", 64);
-  const paymentMethod = parseOrderPaymentMethod(String(formData.get("paymentMethod") ?? "BANK_WIRE"));
+  const choice = parseCheckoutPaymentChoice(String(formData.get("paymentMethod") ?? "BANK_WIRE"));
+  const { method: paymentMethod, provider } = checkoutChoiceToOrderPayment(choice);
+  const settings = await getSettingsMap().catch(() => ({}) as Record<string, string>);
+
+  if (provider === "stripe" && !isStripeConfigured()) {
+    return { error: "Stripe kart ödemesi şu an kullanılamıyor." };
+  }
+  if (provider === "iyzico" && !isIyzicoConfigured(settings)) {
+    return { error: "iyzico kart ödemesi şu an kullanılamıyor." };
+  }
+  if (provider === "paytr" && !isPaytrConfigured(settings)) {
+    return { error: "PayTR kart ödemesi şu an kullanılamıyor." };
+  }
 
   const addresses = await loadCheckoutAddresses(session.user.id);
   const shipping = addresses.find((row) => row.id === shippingAddressId && row.isDelivery) ??
@@ -123,7 +141,7 @@ export async function placeOrderAction(
 
   try {
     const created = await prisma.$transaction(async (tx) => {
-      const items = cart.lines.map((line) => ({
+      const items = sellable.map((line) => ({
         productId: line.productId,
         variantId: line.variantId,
         title: line.title,
@@ -150,6 +168,7 @@ export async function placeOrderAction(
               : paymentMethod === "CASH_ON_DELIVERY"
                 ? OrderPaymentMethod.CASH_ON_DELIVERY
                 : OrderPaymentMethod.BANK_WIRE,
+          paymentProvider: provider,
           productsMinor: productsTotal,
           shippingMinor,
           taxMinor: taxTotal,
@@ -167,13 +186,14 @@ export async function placeOrderAction(
           },
         },
       });
+      await reserveOrderStock(tx, order.id);
       return order;
     });
 
     revalidatePath("/admin/orders");
+    revalidateTag("products");
 
-    if (paymentMethod === "CREDIT_CARD" && isStripeConfigured()) {
-      const settings = await getSettingsMap().catch(() => ({}) as Record<string, string>);
+    if (provider === "stripe") {
       const origin = getSiteOrigin(settings);
       const stripe = getStripe();
       const checkout = await stripe.checkout.sessions.create({
@@ -201,8 +221,24 @@ export async function placeOrderAction(
       return { redirectUrl: checkout.url };
     }
 
-    return { redirectUrl: `/siparis/tesekkur/${created.reference}` };
+    if (provider === "iyzico") {
+      return { redirectUrl: `/odeme/iyzico/${created.reference}` };
+    }
+
+    if (provider === "paytr") {
+      return { redirectUrl: `/odeme/paytr/${created.reference}` };
+    }
+
+    if (provider === null) {
+      return { redirectUrl: `/siparis/tesekkur/${created.reference}` };
+    }
+
+    const _exhaustive: never = provider;
+    return _exhaustive;
   } catch (error) {
+    if (error instanceof StockShortageError) {
+      return { error: `"${error.productTitle}" için yeterli stok kalmadı. Sepeti güncelleyip tekrar deneyin.` };
+    }
     console.error(error);
     return { error: "Sipariş kaydedilirken bir hata oluştu." };
   }

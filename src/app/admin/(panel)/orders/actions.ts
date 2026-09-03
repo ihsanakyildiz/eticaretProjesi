@@ -1,7 +1,7 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
-import { OrderAddressKind, Role } from "@prisma/client";
+import { revalidatePath, revalidateTag } from "next/cache";
+import { OrderAddressKind, OrderStatus, Role } from "@prisma/client";
 import { requirePermission } from "@/lib/staff-permissions";
 import {
   nextDocumentNumber,
@@ -29,6 +29,15 @@ import {
 import { getSettingsMapUncached } from "@/lib/settings";
 import { getSmtpConfigFromSettings, isSmtpReady, sendMailWithConfig } from "@/lib/smtp";
 import { parseMajorToMinor } from "@/lib/product-money";
+import { executeOrderRefund, paidTotalMinor, refundedTotalMinor } from "@/lib/order-refunds";
+import { getClientIp } from "@/lib/request-ip";
+import { goodsHaveLeftWarehouse, statusChangeBlockedByFulfillment } from "@/lib/order-cases";
+import {
+  applyReservedStockDelta,
+  releaseOrderStock,
+  StockShortageError,
+  syncOrderStockForStatus,
+} from "@/lib/order-stock";
 import { prisma } from "@/lib/prisma";
 
 export type OrderFormState = {
@@ -40,6 +49,8 @@ export type OrderFormState = {
 
 function revalidateOrders(id?: string) {
   revalidatePath("/admin/orders");
+  revalidatePath("/uye/siparisler");
+  revalidateTag("products");
   if (id) {
     revalidatePath(`/admin/orders/${id}`);
     revalidatePath(`/admin/orders/${id}/documents`, "layout");
@@ -156,12 +167,16 @@ export async function createOrderAction(
           },
         },
       });
+      await syncOrderStockForStatus(tx, order.id, prismaOrderStatus(status));
       return order;
     });
 
     revalidateOrders(created.id);
     return { success: true, message: "Sipariş oluşturuldu.", redirectId: created.id };
   } catch (error) {
+    if (error instanceof StockShortageError) {
+      return { error: `"${error.productTitle}" için yeterli stok yok.` };
+    }
     console.error(error);
     return { error: "Sipariş kaydedilirken bir hata oluştu." };
   }
@@ -175,18 +190,64 @@ export async function updateOrderStatusAction(input: { id: string; status: Order
   if (!id) return { error: "Sipariş bulunamadı." };
   const status = parseOrderStatus(input.status);
 
-  const order = await prisma.order.findUnique({ where: { id }, select: { id: true } });
+  const order = await prisma.order.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      status: true,
+      paymentProvider: true,
+      payments: { select: { amountMinor: true } },
+      refunds: { select: { amountMinor: true } },
+    },
+  });
   if (!order) return { error: "Sipariş bulunamadı." };
 
-  await prisma.$transaction([
-    prisma.order.update({
-      where: { id },
-      data: { status: prismaOrderStatus(status) },
-    }),
-    prisma.orderStatusEvent.create({
-      data: { orderId: id, status: prismaOrderStatus(status) },
-    }),
-  ]);
+  const blocked = statusChangeBlockedByFulfillment(parseOrderStatus(order.status), status);
+  if (blocked) return { error: blocked };
+
+  const remaining = Math.max(0, paidTotalMinor(order.payments) - refundedTotalMinor(order.refunds));
+
+  if (status === "CANCELED" || status === "REFUNDED") {
+    if (remaining > 0) {
+      const refunded = await executeOrderRefund({
+        orderId: id,
+        amountMinor: remaining,
+        note: status === "CANCELED" ? "Sipariş iptali" : "Sipariş iadesi",
+        ip: await getClientIp(),
+        restock: status === "CANCELED" || !goodsHaveLeftWarehouse(parseOrderStatus(order.status)),
+        orderStatusOnFullRefund: status === "CANCELED" ? OrderStatus.CANCELED : OrderStatus.REFUNDED,
+      });
+      if (!refunded.ok) return { error: refunded.error };
+      revalidateOrders(id);
+      return {
+        success: true,
+        message:
+          status === "CANCELED"
+            ? "Sipariş iptal edildi. Ödeme iade edildi ve stok geri alındı."
+            : "İade tamamlandı. Tutar müşteriye gönderildi.",
+      };
+    }
+  }
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      const nextStatus = prismaOrderStatus(status);
+      await syncOrderStockForStatus(tx, id, nextStatus);
+      await tx.order.update({
+        where: { id },
+        data: { status: nextStatus },
+      });
+      await tx.orderStatusEvent.create({
+        data: { orderId: id, status: nextStatus },
+      });
+    });
+  } catch (error) {
+    if (error instanceof StockShortageError) {
+      return { error: `"${error.productTitle}" için yeterli stok yok. Durum değiştirilemedi.` };
+    }
+    console.error(error);
+    return { error: "Durum güncellenemedi." };
+  }
   revalidateOrders(id);
   return { success: true, message: "Durum güncellendi." };
 }
@@ -218,6 +279,32 @@ export async function addOrderPaymentAction(input: {
   });
   revalidateOrders(id);
   return { success: true, message: "Ödeme eklendi." };
+}
+
+export async function refundOrderAction(input: { id: string; amount: string; note?: string }) {
+  const gate = await requirePermission("orders", "update");
+  if (!gate.ok) return { error: gate.error };
+
+  const id = String(input.id ?? "").trim();
+  const amountMinor = parseMajorToMinor(input.amount);
+  if (!id) return { error: "Sipariş bulunamadı." };
+  if (amountMinor === null || amountMinor <= 0) return { error: "Geçerli bir iade tutarı girin." };
+
+  const result = await executeOrderRefund({
+    orderId: id,
+    amountMinor,
+    note: input.note,
+    ip: await getClientIp(),
+  });
+  if (!result.ok) return { error: result.error };
+
+  revalidateOrders(id);
+  return {
+    success: true,
+    message: result.fullyRefunded
+      ? "İade tamamlandı. Tutar müşteriye gönderildi."
+      : "Kısmi iade kaydedildi. Tutar müşteriye gönderildi.",
+  };
 }
 
 export async function updateOrderNoteAction(input: { id: string; privateNote: string }) {
@@ -451,6 +538,12 @@ export async function addOrderItemAction(input: {
 
   try {
     await prisma.$transaction(async (tx) => {
+      await applyReservedStockDelta(tx, {
+        orderId,
+        variantId: variant.id,
+        quantityDelta: quantity,
+        title: variant.product.title,
+      });
       await tx.orderItem.create({
         data: {
           orderId,
@@ -469,6 +562,9 @@ export async function addOrderItemAction(input: {
       await recalculateOrderTotals(tx, orderId);
     });
   } catch (error) {
+    if (error instanceof StockShortageError) {
+      return { error: `"${error.productTitle}" için yeterli stok yok.` };
+    }
     console.error(error);
     return { error: "Ürün eklenirken bir hata oluştu." };
   }
@@ -497,7 +593,7 @@ export async function updateOrderItemAction(input: {
 
   const item = await prisma.orderItem.findFirst({
     where: { id: itemId, orderId },
-    select: { id: true, taxRatePercent: true },
+    select: { id: true, taxRatePercent: true, quantity: true, variantId: true, title: true },
   });
   if (!item) return { error: "Satır bulunamadı." };
 
@@ -509,6 +605,12 @@ export async function updateOrderItemAction(input: {
 
   try {
     await prisma.$transaction(async (tx) => {
+      await applyReservedStockDelta(tx, {
+        orderId,
+        variantId: item.variantId,
+        quantityDelta: quantity - item.quantity,
+        title: item.title,
+      });
       await tx.orderItem.update({
         where: { id: item.id },
         data: {
@@ -520,6 +622,9 @@ export async function updateOrderItemAction(input: {
       await recalculateOrderTotals(tx, orderId);
     });
   } catch (error) {
+    if (error instanceof StockShortageError) {
+      return { error: `"${error.productTitle}" için yeterli stok yok.` };
+    }
     console.error(error);
     return { error: "Satır güncellenirken bir hata oluştu." };
   }
@@ -541,12 +646,18 @@ export async function deleteOrderItemAction(input: { orderId: string; itemId: st
 
   const item = await prisma.orderItem.findFirst({
     where: { id: itemId, orderId },
-    select: { id: true },
+    select: { id: true, variantId: true, quantity: true, title: true },
   });
   if (!item) return { error: "Satır bulunamadı." };
 
   try {
     await prisma.$transaction(async (tx) => {
+      await applyReservedStockDelta(tx, {
+        orderId,
+        variantId: item.variantId,
+        quantityDelta: -item.quantity,
+        title: item.title,
+      });
       await tx.orderItem.delete({ where: { id: item.id } });
       await recalculateOrderTotals(tx, orderId);
     });
@@ -565,7 +676,15 @@ export async function deleteOrderAction(input: { id: string }) {
 
   const id = String(input.id ?? "").trim();
   if (!id) return { error: "Sipariş bulunamadı." };
-  await prisma.order.delete({ where: { id } });
+  try {
+    await prisma.$transaction(async (tx) => {
+      await releaseOrderStock(tx, id);
+      await tx.order.delete({ where: { id } });
+    });
+  } catch (error) {
+    console.error(error);
+    return { error: "Sipariş silinemedi." };
+  }
   revalidateOrders();
   return { success: true, message: "Sipariş silindi." };
 }
@@ -579,7 +698,17 @@ export async function deleteOrdersAction(input: { ids: string[] }) {
   );
   if (ids.length === 0) return { error: "Silinecek sipariş seçin." };
 
-  await prisma.order.deleteMany({ where: { id: { in: ids } } });
+  try {
+    await prisma.$transaction(async (tx) => {
+      for (const id of ids) {
+        await releaseOrderStock(tx, id);
+      }
+      await tx.order.deleteMany({ where: { id: { in: ids } } });
+    });
+  } catch (error) {
+    console.error(error);
+    return { error: "Siparişler silinemedi." };
+  }
   revalidateOrders();
   return { success: true, message: `${ids.length} sipariş silindi.` };
 }

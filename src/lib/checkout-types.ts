@@ -30,6 +30,31 @@ export type CheckoutCarrier = {
 
 export type CartDeliveryCode = "SAME_DAY" | "DAYS_1_3" | "DAYS_3_5" | "DAYS_5_10";
 
+export const CART_LINE_ISSUES = [
+  "MISSING",
+  "INACTIVE_VARIANT",
+  "INACTIVE_PRODUCT",
+  "HIDDEN",
+  "NOT_FOR_SALE",
+  "OUT_OF_STOCK",
+  "NO_PRICE",
+] as const;
+
+export type CartLineIssueCode = (typeof CART_LINE_ISSUES)[number];
+
+export type CartNoticeKind = "removed" | "price_up" | "price_down" | "qty_adjusted";
+
+export type CartNotice = {
+  id: string;
+  kind: CartNoticeKind;
+  message: string;
+};
+
+export type CartPriceChange = {
+  fromMinor: number;
+  toMinor: number;
+};
+
 export type HydratedCartLine = {
   variantId: string;
   productId: string;
@@ -51,6 +76,9 @@ export type HydratedCartLine = {
   quantityStep: number;
   estimatedDelivery: CartDeliveryCode | null;
   available: boolean;
+  issue: CartLineIssueCode | null;
+  priceChange: CartPriceChange | null;
+  qtyAdjustedFrom: number | null;
 };
 
 export type HydratedCart = {

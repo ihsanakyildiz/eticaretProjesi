@@ -13,8 +13,12 @@ import {
   productSaleUnitLabel,
   productVisibilityLabel,
 } from "@/lib/product-editor";
-import { parseMajorToMinor } from "@/lib/product-money";
+import { parseMajorToMinor, resolveImportedListPrices } from "@/lib/product-money";
+import { normalizeProductBarcode } from "@/lib/product-barcode";
+import { uniqueBarcodeOrNull } from "@/lib/product-barcode-db";
 import { prisma } from "@/lib/prisma";
+import { isPrismaUniqueError, withPrismaRetry } from "@/lib/prisma-retry";
+import { seedWarehouseStockForNewVariants, writeCatalogStock } from "@/lib/inventory";
 import {
   buildVariantCombinationKey,
   DEFAULT_VARIANT_COMBINATION_KEY,
@@ -42,9 +46,10 @@ export const PRODUCT_IMPORT_COLUMNS = [
   { key: "supplier", header: "Tedarikçi", required: false, hint: "Mevcut tedarikçi adı veya slug" },
   { key: "summary", header: "Kısa açıklama", required: false, hint: "" },
   { key: "content", header: "Açıklama", required: false, hint: "HTML olabilir" },
-  { key: "price", header: "Fiyat (KDV hariç)", required: false, hint: "Boş veya 0 ise ürün yüklenir, satışa kapanır" },
-  { key: "compareAt", header: "Karşılaştırma fiyatı", required: false, hint: "KDV hariç" },
-  { key: "cost", header: "Maliyet", required: false, hint: "KDV hariç" },
+  { key: "price", header: "Satış fiyatı (KDV hariç)", required: false, hint: "Normal satış. Boş veya 0 ise ürün yüklenir, satışa kapanır" },
+  { key: "discount", header: "İndirimli satış fiyatı (KDV hariç)", required: false, hint: "Doluysa müşteri bunu öder; satış fiyatı sitede üstü çizili görünür" },
+  { key: "compareAt", header: "Karşılaştırma fiyatı", required: false, hint: "Eski kalıp. İndirimli satış varsa bunu boş bırakın", template: false },
+  { key: "cost", header: "Alış fiyatı (KDV hariç)", required: false, hint: "Maliyet; sitede görünmez" },
   { key: "taxRate", header: "KDV (%)", required: false, hint: "Boşsa varsayılan oran" },
   { key: "stock", header: "Stok", required: false, hint: "Varsayılan 0" },
   { key: "barcode", header: "Barkod", required: true, hint: "Zorunlu. Barkodsuz satırlar yüklenmez" },
@@ -74,6 +79,7 @@ export type ProductImportColumnKey = (typeof PRODUCT_IMPORT_COLUMNS)[number]["ke
 
 export type ProductImportRawRow = Partial<Record<ProductImportColumnKey, string>> & {
   rowNumber: number;
+  externalId?: string;
 };
 
 export type ProductImportPreviewStatus = "ready" | "zero_price" | "error";
@@ -85,6 +91,7 @@ export type ProductImportPreviewRow = {
   sku: string;
   barcode: string;
   price: string;
+  discount: string;
   stock: string;
   variantSummary: string;
   rowLabel: string;
@@ -136,6 +143,7 @@ export type ProductImportDraft = {
   title: string;
   slugInput: string;
   sku: string | null;
+  externalId: string | null;
   categoryId: string;
   brandId: string | null;
   supplierId: string | null;
@@ -184,9 +192,20 @@ export type ProductImportUsed = {
   slugs: Set<string>;
   productSkus: Set<string>;
   variantSkus: Set<string>;
+  barcodes: Set<string>;
   attributeValues: Map<string, { id: string; name: string }>;
   attributeValueSort: Map<string, number>;
 };
+
+export type ProductImportUniques = {
+  productSkus: Set<string>;
+  variantSkus: Set<string>;
+  barcodes: Set<string>;
+};
+
+export function skuKey(value: string) {
+  return value.trim().toLocaleLowerCase("tr-TR");
+}
 
 export type PreparedImportedProduct = {
   productId: string;
@@ -200,6 +219,7 @@ export type PreparedImportedProduct = {
     brandId: string | null;
     supplierId: string | null;
     sku: string | null;
+    externalId: string | null;
     mpn: string | null;
     upc: string | null;
     gtin: string | null;
@@ -330,9 +350,17 @@ const HEADER_ALIASES: Record<ProductImportColumnKey, string[]> = {
   supplier: ["tedarikçi", "tedarikci", "supplier"],
   summary: ["kısa açıklama", "kisa aciklama", "summary"],
   content: ["açıklama", "aciklama", "content", "description"],
-  price: ["fiyat (kdv hariç)", "fiyat", "price", "base price"],
+  price: ["fiyat (kdv hariç)", "fiyat", "price", "base price", "satış fiyatı", "satis fiyati", "satış fiyatı (kdv hariç)"],
+  discount: [
+    "indirimli satış fiyatı",
+    "indirimli satis fiyati",
+    "indirimli satış fiyatı (kdv hariç)",
+    "indirimli",
+    "discount",
+    "sale price",
+  ],
   compareAt: ["karşılaştırma fiyatı", "karsilastirma fiyati", "compare at"],
-  cost: ["maliyet", "cost"],
+  cost: ["maliyet", "cost", "alış fiyatı", "alis fiyati", "alış"],
   taxRate: ["kdv (%)", "kdv", "tax", "tax rate"],
   stock: ["stok", "stock", "adet"],
   barcode: ["barkod", "barcode"],
@@ -390,6 +418,13 @@ function parseBooleanCell(raw: string | undefined, fallback: boolean) {
     case "true":
     case "1":
     case "on":
+    case "active":
+    case "aktif":
+    case "açık":
+    case "acik":
+    case "open":
+    case "enabled":
+    case "published":
       return true;
     case "hayır":
     case "hayir":
@@ -398,6 +433,13 @@ function parseBooleanCell(raw: string | undefined, fallback: boolean) {
     case "false":
     case "0":
     case "off":
+    case "inactive":
+    case "pasif":
+    case "kapalı":
+    case "kapali":
+    case "closed":
+    case "disabled":
+    case "draft":
       return false;
     default:
       return null;
@@ -479,7 +521,7 @@ function isImportImageUrl(value: string) {
   return value.startsWith("/uploads/") || value.startsWith("https://") || value.startsWith("http://");
 }
 
-function parseImageUrls(raw: string | undefined): { urls: string[]; invalid: string[] } {
+export function parseImageUrls(raw: string | undefined): { urls: string[]; invalid: string[] } {
   const cleaned = (raw ?? "")
     .replace(/\u0000/g, "")
     .replace(/\r\n/g, "\n")
@@ -554,6 +596,56 @@ export async function loadProductImportLookups(): Promise<ProductImportLookups> 
     attributes,
     defaultTaxPercent: defaultTax?.percent ?? 20,
   };
+}
+
+export function collectImportOptionNames(rows: ProductImportRawRow[]) {
+  const names: string[] = [];
+  for (const row of rows) {
+    for (const key of ["option1Name", "option2Name", "option3Name"] as const) {
+      const value = (row[key] ?? "").trim();
+      if (value) names.push(value);
+    }
+  }
+  return names;
+}
+
+export async function ensureImportAttributes(
+  names: string[],
+  lookups: ProductImportLookups,
+) {
+  const wanted = [...new Set(names.map((name) => name.trim()).filter(Boolean))];
+  if (wanted.length === 0) return;
+  const usedSlugs = new Set(lookups.attributes.map((item) => item.slug));
+  let sortOrder = lookups.attributes.reduce((max, item) => Math.max(max, 0), lookups.attributes.length - 1);
+  for (const name of wanted) {
+    if (resolveByNameOrSlug(lookups.attributes, name)) continue;
+    let slug = slugify(name) || "ozellik";
+    let index = 2;
+    while (usedSlugs.has(slug)) {
+      slug = `${(slugify(name) || "ozellik").slice(0, 70)}-${index}`.slice(0, 80);
+      index += 1;
+    }
+    usedSlugs.add(slug);
+    sortOrder += 1;
+    const created = await prisma.productAttribute.create({
+      data: {
+        name: name.slice(0, 191),
+        slug,
+        displayType: "TEXT",
+        isActive: true,
+        sortOrder,
+      },
+      select: { id: true, name: true, slug: true },
+    });
+    lookups.attributes.push({ ...created, values: [] });
+  }
+}
+
+export async function ensureImportAttributesFromRows(
+  rows: ProductImportRawRow[],
+  lookups: ProductImportLookups,
+) {
+  await ensureImportAttributes(collectImportOptionNames(rows), lookups);
 }
 
 function firstCell(rows: ProductImportRawRow[], key: ProductImportColumnKey) {
@@ -651,19 +743,31 @@ export function parseJobRowRawJson(rawJson: string): ProductImportRawRow[] {
   throw new Error("invalid");
 }
 
-export function parseJobRowMeta(rawJson: string): { variantSummary: string; rowLabel: string } {
+export function parseJobRowMeta(rawJson: string): {
+  variantSummary: string;
+  rowLabel: string;
+  discount: string;
+} {
   try {
     const parsed: unknown = JSON.parse(rawJson);
     if (isJobRawPayload(parsed)) {
+      const first = parsed.rows[0];
       return {
         variantSummary: parsed.variantSummary ?? "",
         rowLabel: parsed.rowLabel ?? "",
+        discount: (first?.discount ?? "").trim(),
       };
+    }
+    if (parsed && typeof parsed === "object" && "kind" in parsed) {
+      const update = parsed as { kind?: string; sourceDiscount?: unknown };
+      if (update.kind === "update" && typeof update.sourceDiscount === "string") {
+        return { variantSummary: "", rowLabel: "", discount: update.sourceDiscount.trim() };
+      }
     }
   } catch {
     /* eski işler */
   }
-  return { variantSummary: "", rowLabel: "" };
+  return { variantSummary: "", rowLabel: "", discount: "" };
 }
 
 function seedAttributeValueCache(lookups: ProductImportLookups): Map<string, { id: string; name: string }> {
@@ -685,15 +789,43 @@ export function createProductImportUsed(lookups: ProductImportLookups): ProductI
     slugs: new Set<string>(),
     productSkus: new Set<string>(),
     variantSkus: new Set<string>(),
+    barcodes: new Set<string>(),
     attributeValues: seedAttributeValueCache(lookups),
     attributeValueSort: new Map<string, number>(),
+  };
+}
+
+export async function loadProductImportUniques(): Promise<ProductImportUniques> {
+  const [products, variants] = await Promise.all([
+    prisma.product.findMany({ select: { sku: true } }),
+    prisma.productVariant.findMany({ select: { sku: true, barcode: true } }),
+  ]);
+  const productSkus = new Set<string>();
+  const variantSkus = new Set<string>();
+  const barcodes = new Set<string>();
+  for (const product of products) {
+    if (product.sku) productSkus.add(skuKey(product.sku));
+  }
+  for (const variant of variants) {
+    variantSkus.add(skuKey(variant.sku));
+    const barcode = normalizeProductBarcode(variant.barcode);
+    if (barcode) barcodes.add(barcode);
+  }
+  return { productSkus, variantSkus, barcodes };
+}
+
+export function uniquesFromUsed(used: ProductImportUsed): ProductImportUniques {
+  return {
+    productSkus: used.productSkus,
+    variantSkus: used.variantSkus,
+    barcodes: used.barcodes,
   };
 }
 
 export async function hydrateProductImportUsed(used: ProductImportUsed) {
   const [products, variants, valueSorts] = await Promise.all([
     prisma.product.findMany({ select: { slug: true, sku: true } }),
-    prisma.productVariant.findMany({ select: { sku: true } }),
+    prisma.productVariant.findMany({ select: { sku: true, barcode: true } }),
     prisma.productAttributeValue.groupBy({
       by: ["attributeId"],
       _max: { sortOrder: true },
@@ -701,10 +833,12 @@ export async function hydrateProductImportUsed(used: ProductImportUsed) {
   ]);
   for (const product of products) {
     used.slugs.add(product.slug);
-    if (product.sku) used.productSkus.add(product.sku);
+    if (product.sku) used.productSkus.add(skuKey(product.sku));
   }
   for (const variant of variants) {
-    used.variantSkus.add(variant.sku);
+    used.variantSkus.add(skuKey(variant.sku));
+    const barcode = normalizeProductBarcode(variant.barcode);
+    if (barcode) used.barcodes.add(barcode);
   }
   for (const row of valueSorts) {
     used.attributeValueSort.set(row.attributeId, row._max.sortOrder ?? -1);
@@ -714,6 +848,7 @@ export async function hydrateProductImportUsed(used: ProductImportUsed) {
 export function buildImportGroup(
   rows: ProductImportRawRow[],
   lookups: ProductImportLookups,
+  uniques?: ProductImportUniques,
 ): { draft: ProductImportDraft | null; errors: string[] } {
   const errors: string[] = [];
   if (rows.length === 0) return { draft: null, errors: ["Boş ürün grubu."] };
@@ -817,11 +952,14 @@ export function buildImportGroup(
   const barcodes = new Set<string>();
 
   for (const item of rows) {
-    const barcode = emptyToNull(item.barcode, 64);
+    const barcode = normalizeProductBarcode(item.barcode);
     if (!barcode) {
       errors.push(`Satır ${item.rowNumber}: barkod zorunludur.`);
     } else if (barcodes.has(barcode)) {
       errors.push(`Satır ${item.rowNumber}: aynı üründe tekrarlayan barkod (${barcode}).`);
+    } else if (uniques?.barcodes.has(barcode)) {
+      errors.push(`Satır ${item.rowNumber}: bu barkod başka bir üründe kayıtlı (${barcode}).`);
+      barcodes.add(barcode);
     } else {
       barcodes.add(barcode);
     }
@@ -864,15 +1002,30 @@ export function buildImportGroup(
     }
 
     const rowImages = parseImageUrls(item.imageUrl);
-    variants.push({
-      sku: emptyToNull(item.sku, 80),
-      barcode: barcode ?? "",
-      priceMinor: parseMajorToMinor(item.price ?? "") ?? 0,
+    const variantSku = emptyToNull(item.sku, 80);
+    if (variantSku && uniques?.variantSkus.has(skuKey(variantSku))) {
+      errors.push(`Satır ${item.rowNumber}: bu SKU başka bir üründe kayıtlı (${variantSku}).`);
+    }
+
+    const priced = resolveImportedListPrices({
+      saleMinor: parseMajorToMinor(item.price ?? "") ?? 0,
+      discountMinor: parseMajorToMinor(item.discount ?? ""),
       compareAtMinor: parseMajorToMinor(item.compareAt ?? ""),
+    });
+    variants.push({
+      sku: variantSku,
+      barcode: barcode ?? "",
+      priceMinor: priced.chargeMinor,
+      compareAtMinor: priced.listMinor,
       stockQuantity: parseStock(item.stock),
       optionValues,
       imageUrl: rowImages.urls[0] ?? null,
     });
+  }
+
+  const productCode = emptyToNull(row.sku, 80) ?? emptyToNull(row.productKey, 80);
+  if (productCode && uniques?.productSkus.has(skuKey(productCode))) {
+    errors.push(`Ürün kodu başka bir üründe kayıtlı: ${productCode}. Aynı kodla yeni ürün yüklenemez.`);
   }
 
   const priced = variants.filter((variant) => variant.priceMinor > 0);
@@ -893,13 +1046,14 @@ export function buildImportGroup(
       title: title.slice(0, 191),
       slugInput: (row.slug ?? "").trim(),
       sku: emptyToNull(row.sku, 80) ?? emptyToNull(row.productKey, 80),
+      externalId: emptyToNull(row.externalId, 191),
       categoryId: category.id,
       brandId: brand?.id ?? null,
       supplierId: supplier?.id ?? null,
       summary: emptyToNull(row.summary, 2000),
       content: emptyToNull(row.content, 20000),
       basePriceMinor,
-      compareAtMinor: parseMajorToMinor(row.compareAt ?? ""),
+      compareAtMinor: priced[0]?.compareAtMinor ?? variants[0]?.compareAtMinor ?? null,
       costMinor: parseMajorToMinor(row.cost ?? ""),
       taxRatePercent: Number.isFinite(taxParsed) ? Math.min(100, Math.max(0, taxParsed)) : lookups.defaultTaxPercent,
       stockQuantity: variants[0]?.stockQuantity ?? 0,
@@ -908,7 +1062,7 @@ export function buildImportGroup(
       upc: emptyToNull(row.upc, 64),
       gtin: emptyToNull(row.gtin, 64),
       imageUrls: gallery,
-      isActive: isActive === true,
+      isActive: isActive === true && availableForOrder && !zeroPrice && gallery.length > 0,
       availableForOrder,
       showPrice: showPrice === true,
       visibility,
@@ -940,13 +1094,50 @@ export function buildImportDraft(
 export function previewImportRows(
   rows: ProductImportRawRow[],
   lookups: ProductImportLookups,
+  uniques?: ProductImportUniques,
 ): ProductImportPreviewRow[] {
-  return groupImportRawRows(rows).map((group) => {
-    const { draft, errors } = buildImportGroup(group, lookups);
+  const fileBarcodes = new Map<string, number>();
+  const fileProductCodes = new Map<string, number>();
+  const fileVariantSkus = new Map<string, number>();
+  const previews = groupImportRawRows(rows).map((group) => {
+    const extra: string[] = [];
+    const productCode = firstCell(group, "productKey") || firstCell(group, "sku");
+    if (productCode) {
+      const key = skuKey(productCode);
+      const previous = fileProductCodes.get(key);
+      if (previous) {
+        extra.push(`Ürün kodu dosyada tekrar ediyor (${productCode}, ilk satır ${previous}).`);
+      } else {
+        fileProductCodes.set(key, group[0].rowNumber);
+      }
+    }
+    for (const item of group) {
+      const barcode = normalizeProductBarcode(item.barcode);
+      if (barcode) {
+        const previous = fileBarcodes.get(barcode);
+        if (previous && previous !== group[0].rowNumber) {
+          extra.push(`Barkod dosyada başka üründe de var (${barcode}, ilk satır ${previous}).`);
+        } else if (!previous) {
+          fileBarcodes.set(barcode, group[0].rowNumber);
+        }
+      }
+      const variantSku = (item.sku ?? "").trim();
+      if (variantSku) {
+        const key = skuKey(variantSku);
+        const previous = fileVariantSkus.get(key);
+        if (previous && previous !== group[0].rowNumber) {
+          extra.push(`SKU dosyada başka üründe de var (${variantSku}, ilk satır ${previous}).`);
+        } else if (!previous) {
+          fileVariantSkus.set(key, group[0].rowNumber);
+        }
+      }
+    }
+    const { draft, errors } = buildImportGroup(group, lookups, uniques);
+    const allErrors = [...errors, ...extra];
     const optionNames = inheritOptionNames(group).filter(Boolean);
     const first = group[0];
     const priceMinor = draft?.basePriceMinor ?? parseMajorToMinor(first.price ?? "") ?? 0;
-    const ok = errors.length === 0;
+    const ok = allErrors.length === 0;
     const zeroPrice = ok && (draft ? draft.variants.every((variant) => variant.priceMinor <= 0) : priceMinor <= 0);
     const status: ProductImportPreviewStatus = !ok ? "error" : zeroPrice ? "zero_price" : "ready";
     const title = firstCell(group, "title");
@@ -958,15 +1149,17 @@ export function previewImportRows(
       sku: firstCell(group, "sku") || firstCell(group, "productKey"),
       barcode: firstCell(group, "barcode"),
       price: firstCell(group, "price") || (zeroPrice ? "0" : ""),
+      discount: firstCell(group, "discount"),
       stock: String(group.reduce((sum, item) => sum + parseStock(item.stock), 0)),
       variantSummary: formatVariantSummary(optionNames, group.length),
       rowLabel: formatRowLabel(group),
       ok,
       zeroPrice,
       status,
-      errors,
+      errors: allErrors,
     };
   });
+  return previews;
 }
 
 export function summarizeImportPreview(
@@ -1003,6 +1196,16 @@ function nextUniqueLabel(base: string, used: Set<string>, maxLen = 80) {
   return candidate;
 }
 
+function takeUniqueSku(raw: string, used: Set<string>) {
+  const original = raw.trim().slice(0, 80);
+  const key = skuKey(original);
+  if (!used.has(key)) {
+    used.add(key);
+    return original;
+  }
+  return nextUniqueLabel(key, used);
+}
+
 function resolveCachedAttributeValue(
   attributeId: string,
   valueName: string,
@@ -1020,6 +1223,16 @@ export async function ensureImportAttributeValues(
   drafts: ProductImportDraft[],
   used: ProductImportUsed,
 ) {
+  await ensureOptionAttributeValues(
+    drafts.flatMap((draft) => draft.variants.flatMap((variant) => variant.optionValues)),
+    used,
+  );
+}
+
+async function ensureOptionAttributeValues(
+  options: Array<{ attributeId: string; valueName: string }>,
+  used: ProductImportUsed,
+) {
   const pending: Array<{
     id: string;
     attributeId: string;
@@ -1029,47 +1242,211 @@ export async function ensureImportAttributeValues(
     sortOrder: number;
   }> = [];
 
-  for (const draft of drafts) {
-    for (const variant of draft.variants) {
-      for (const option of variant.optionValues) {
-        const valueName = option.valueName;
-        const slug = slugify(valueName) || "deger";
-        const bySlug = used.attributeValues.get(`${option.attributeId}:${slug}`);
-        const byName = used.attributeValues.get(
-          `${option.attributeId}:name:${valueName.toLocaleLowerCase("tr-TR")}`,
-        );
-        if (bySlug || byName) continue;
+  for (const option of options) {
+    const valueName = option.valueName;
+    const slug = slugify(valueName) || "deger";
+    const bySlug = used.attributeValues.get(`${option.attributeId}:${slug}`);
+    const byName = used.attributeValues.get(
+      `${option.attributeId}:name:${valueName.toLocaleLowerCase("tr-TR")}`,
+    );
+    if (bySlug || byName) continue;
 
-        let uniqueSlug = slug.slice(0, 80);
-        let index = 2;
-        while (used.attributeValues.has(`${option.attributeId}:${uniqueSlug}`)) {
-          uniqueSlug = `${slug}-${index}`.slice(0, 80);
-          index += 1;
-        }
-        const sortOrder = (used.attributeValueSort.get(option.attributeId) ?? -1) + 1;
-        used.attributeValueSort.set(option.attributeId, sortOrder);
-        const id = newRecordId();
-        const resolved = { id, name: valueName.slice(0, 191) };
-        used.attributeValues.set(`${option.attributeId}:${uniqueSlug}`, resolved);
-        used.attributeValues.set(
-          `${option.attributeId}:name:${valueName.toLocaleLowerCase("tr-TR")}`,
-          resolved,
-        );
-        pending.push({
-          id,
-          attributeId: option.attributeId,
-          name: valueName.slice(0, 191),
-          slug: uniqueSlug,
-          isActive: true,
-          sortOrder,
-        });
-      }
+    let uniqueSlug = slug.slice(0, 80);
+    let index = 2;
+    while (used.attributeValues.has(`${option.attributeId}:${uniqueSlug}`)) {
+      uniqueSlug = `${slug}-${index}`.slice(0, 80);
+      index += 1;
     }
+    const sortOrder = (used.attributeValueSort.get(option.attributeId) ?? -1) + 1;
+    used.attributeValueSort.set(option.attributeId, sortOrder);
+    const id = newRecordId();
+    const resolved = { id, name: valueName.slice(0, 191) };
+    used.attributeValues.set(`${option.attributeId}:${uniqueSlug}`, resolved);
+    used.attributeValues.set(
+      `${option.attributeId}:name:${valueName.toLocaleLowerCase("tr-TR")}`,
+      resolved,
+    );
+    pending.push({
+      id,
+      attributeId: option.attributeId,
+      name: valueName.slice(0, 191),
+      slug: uniqueSlug,
+      isActive: true,
+      sortOrder,
+    });
   }
 
   if (pending.length > 0) {
     await prisma.productAttributeValue.createMany({ data: pending });
   }
+}
+
+function optionValuesFromRow(row: ProductImportRawRow, lookups: ProductImportLookups) {
+  const slots = [
+    { name: (row.option1Name ?? "").trim(), value: (row.option1Value ?? "").trim() },
+    { name: (row.option2Name ?? "").trim(), value: (row.option2Value ?? "").trim() },
+    { name: (row.option3Name ?? "").trim(), value: (row.option3Value ?? "").trim() },
+  ];
+  const optionValues: Array<{ attributeId: string; valueName: string }> = [];
+  for (const slot of slots) {
+    if (!slot.name || !slot.value) continue;
+    const attribute = resolveByNameOrSlug(lookups.attributes, slot.name);
+    if (!attribute) continue;
+    optionValues.push({ attributeId: attribute.id, valueName: slot.value.slice(0, 191) });
+  }
+  return optionValues;
+}
+
+export async function appendImportedVariant(options: {
+  productId: string;
+  row: ProductImportRawRow;
+  lookups: ProductImportLookups;
+  used: ProductImportUsed;
+  priceMinor: number;
+  compareAtMinor: number | null;
+  stockQuantity: number;
+}): Promise<"created" | "updated"> {
+  const { productId, row, lookups, used, priceMinor, compareAtMinor, stockQuantity } = options;
+  await ensureImportAttributesFromRows([row], lookups);
+  const optionValues = optionValuesFromRow(row, lookups);
+  await ensureOptionAttributeValues(optionValues, used);
+
+  const resolved = optionValues.map((option) => {
+    const value = resolveCachedAttributeValue(option.attributeId, option.valueName, used);
+    return {
+      attributeId: option.attributeId,
+      valueId: value.id,
+      valueName: value.name,
+    };
+  });
+  const combinationKey =
+    resolved.length === 0
+      ? DEFAULT_VARIANT_COMBINATION_KEY
+      : buildVariantCombinationKey(
+          resolved.map((item) => ({ attributeId: item.attributeId, valueId: item.valueId })),
+        );
+  const existing = await prisma.productVariant.findMany({
+    where: { productId },
+    select: { id: true, sku: true, combinationKey: true, sortOrder: true, isDefault: true },
+    orderBy: [{ sortOrder: "asc" }],
+  });
+  const skuSeed =
+    (row.sku ?? "").trim().slice(0, 80) ||
+    [existing[0]?.sku, ...resolved.map((item) => item.valueName)].filter(Boolean).join("-") ||
+    `SKU-${existing.length + 1}`;
+  const barcode = normalizeProductBarcode(row.barcode);
+  const imageUrl = parseImageUrls(row.imageUrl).urls[0] ?? null;
+  const title = formatVariantTitle(resolved.map((item) => item.valueName));
+
+  const bySku = (row.sku ?? "").trim()
+    ? existing.find((item) => skuKey(item.sku) === skuKey(row.sku ?? ""))
+    : undefined;
+  const byCombo = existing.find((item) => item.combinationKey === combinationKey);
+  const onlyDefault =
+    existing.length === 1 &&
+    existing[0].combinationKey === DEFAULT_VARIANT_COMBINATION_KEY &&
+    resolved.length > 0
+      ? existing[0]
+      : undefined;
+  const target = bySku ?? byCombo ?? onlyDefault;
+  const nextSku =
+    target && skuKey(target.sku) === skuKey(skuSeed)
+      ? target.sku
+      : takeUniqueSku(skuSeed, used.variantSkus);
+  const nextBarcode =
+    barcode && !(used.barcodes.has(barcode) && !target)
+      ? await uniqueBarcodeOrNull(barcode, target?.id)
+      : null;
+
+  const variantData = {
+    sku: nextSku,
+    barcode: nextBarcode,
+    title,
+    priceMinor,
+    compareAtMinor,
+    stockQuantity,
+    image: imageUrl,
+    combinationKey,
+    isDefault: target?.isDefault ?? existing.length === 0,
+  };
+
+  if (target) {
+    await prisma.productVariant.update({
+      where: { id: target.id },
+      data: variantData,
+    });
+    if (resolved.length > 0) {
+      await prisma.productVariantSelection.deleteMany({ where: { variantId: target.id } });
+      await prisma.productVariantSelection.createMany({
+        data: resolved.map((item) => ({
+          variantId: target.id,
+          attributeId: item.attributeId,
+          valueId: item.valueId,
+        })),
+      });
+    }
+    if (barcode) used.barcodes.add(barcode);
+    await writeCatalogStock(prisma, target.id, stockQuantity, { note: "İçe aktarma stok" });
+    return "updated";
+  }
+
+  const variantId = newRecordId();
+  const sortOrder = existing.reduce((max, item) => Math.max(max, item.sortOrder), -1) + 1;
+  const now = new Date();
+  try {
+    await prisma.productVariant.create({
+      data: {
+        id: variantId,
+        productId,
+        ...variantData,
+        trackInventory: true,
+        allowBackorder: false,
+        isActive: true,
+        sortOrder,
+        createdAt: now,
+        updatedAt: now,
+      },
+    });
+  } catch (error) {
+    if (!isPrismaUniqueError(error)) throw error;
+    const conflict = await prisma.productVariant.findFirst({
+      where: {
+        productId,
+        OR: [{ combinationKey }, { sku: nextSku }],
+      },
+      select: { id: true },
+    });
+    if (!conflict) throw error;
+    await prisma.productVariant.update({
+      where: { id: conflict.id },
+      data: variantData,
+    });
+    if (resolved.length > 0) {
+      await prisma.productVariantSelection.deleteMany({ where: { variantId: conflict.id } });
+      await prisma.productVariantSelection.createMany({
+        data: resolved.map((item) => ({
+          variantId: conflict.id,
+          attributeId: item.attributeId,
+          valueId: item.valueId,
+        })),
+      });
+    }
+    if (barcode) used.barcodes.add(barcode);
+    await writeCatalogStock(prisma, conflict.id, stockQuantity, { note: "İçe aktarma stok" });
+    return "updated";
+  }
+  if (resolved.length > 0) {
+    await prisma.productVariantSelection.createMany({
+      data: resolved.map((item) => ({
+        variantId,
+        attributeId: item.attributeId,
+        valueId: item.valueId,
+      })),
+    });
+  }
+  if (barcode) used.barcodes.add(barcode);
+  await writeCatalogStock(prisma, variantId, stockQuantity, { note: "İçe aktarma stok" });
+  return "created";
 }
 
 export function prepareImportedProduct(
@@ -1080,7 +1457,7 @@ export function prepareImportedProduct(
   const now = new Date();
   const productId = newRecordId();
   const slug = nextUniqueLabel(slugify(draft.slugInput || draft.title) || "urun", used.slugs);
-  const productSku = draft.sku ? nextUniqueLabel(draft.sku, used.productSkus) : null;
+  const productSku = draft.sku ? takeUniqueSku(draft.sku, used.productSkus) : null;
 
   const variants: PreparedImportedProduct["variants"] = [];
   const selections: PreparedImportedProduct["selections"] = [];
@@ -1102,8 +1479,8 @@ export function prepareImportedProduct(
     variants.push({
       id: variantId,
       productId,
-      sku: nextUniqueLabel(skuSeed, used.variantSkus),
-      barcode: variant.barcode || null,
+      sku: takeUniqueSku(skuSeed, used.variantSkus),
+      barcode: normalizeProductBarcode(variant.barcode),
       title: formatVariantTitle(resolved.map((item) => item.valueName)),
       priceMinor: variant.priceMinor,
       compareAtMinor: variant.compareAtMinor,
@@ -1123,6 +1500,8 @@ export function prepareImportedProduct(
       createdAt: now,
       updatedAt: now,
     });
+    const barcode = normalizeProductBarcode(variant.barcode);
+    if (barcode) used.barcodes.add(barcode);
     for (const item of resolved) {
       selections.push({
         variantId,
@@ -1144,6 +1523,7 @@ export function prepareImportedProduct(
       brandId: draft.brandId,
       supplierId: draft.supplierId,
       sku: productSku,
+      externalId: draft.externalId,
       mpn: draft.mpn,
       upc: draft.upc,
       gtin: draft.gtin,
@@ -1165,7 +1545,7 @@ export function prepareImportedProduct(
       availableForOrder: draft.availableForOrder,
       showPrice: draft.showPrice,
       onlineOnly: false,
-      onSale: false,
+      onSale: Boolean(draft.compareAtMinor && draft.compareAtMinor > draft.basePriceMinor),
       outOfStockBehavior: draft.outOfStockBehavior,
       isActive: draft.isActive,
       sortOrder,
@@ -1187,18 +1567,32 @@ export function prepareImportedProduct(
   };
 }
 
+type ImportWriteClient = Pick<
+  typeof prisma,
+  "product" | "productVariant" | "productVariantSelection" | "productImage" | "$executeRaw"
+>;
+
+function productCreateData(item: PreparedImportedProduct) {
+  const { externalId: _externalId, ...product } = item.product;
+  return product;
+}
+
 export async function insertImportedProducts(
   items: PreparedImportedProduct[],
-  tx: Pick<
-    typeof prisma,
-    "product" | "productVariant" | "productVariantSelection" | "productImage"
-  > = prisma,
+  tx: ImportWriteClient = prisma,
 ) {
   if (items.length === 0) return;
-  await tx.product.createMany({ data: items.map((item) => item.product) });
+  // Prisma client may lag behind schema (Windows EPERM on generate). createMany
+  // rejects unknown `externalId`; the MySQL column is written with raw SQL after.
+  await tx.product.createMany({ data: items.map((item) => productCreateData(item)) });
   const variants = items.flatMap((item) => item.variants);
   if (variants.length > 0) {
     await tx.productVariant.createMany({ data: variants });
+    await seedWarehouseStockForNewVariants(
+      tx as typeof prisma,
+      variants.map((row) => ({ id: row.id, stockQuantity: row.stockQuantity })),
+      "İçe aktarma",
+    );
   }
   const selections = items.flatMap((item) => item.selections);
   if (selections.length > 0) {
@@ -1208,6 +1602,51 @@ export async function insertImportedProducts(
   if (images.length > 0) {
     await tx.productImage.createMany({ data: images });
   }
+  for (const item of items) {
+    const externalId = item.product.externalId?.trim();
+    if (!externalId) continue;
+    await tx.$executeRaw`UPDATE products SET externalId = ${externalId.slice(0, 191)} WHERE id = ${item.productId}`;
+  }
+}
+
+const INSERT_CHUNK = 4;
+
+export async function insertImportedProductsSafely(
+  items: PreparedImportedProduct[],
+  onItemError?: (item: PreparedImportedProduct, error: unknown) => void,
+) {
+  const inserted: PreparedImportedProduct[] = [];
+  for (let index = 0; index < items.length; index += INSERT_CHUNK) {
+    const chunk = items.slice(index, index + INSERT_CHUNK);
+    try {
+      await withPrismaRetry(() =>
+        prisma.$transaction(
+          async (tx) => {
+            await insertImportedProducts(chunk, tx);
+          },
+          { timeout: 45000, maxWait: 15000 },
+        ),
+      );
+      inserted.push(...chunk);
+    } catch {
+      for (const item of chunk) {
+        try {
+          await withPrismaRetry(() =>
+            prisma.$transaction(
+              async (tx) => {
+                await insertImportedProducts([item], tx);
+              },
+              { timeout: 30000, maxWait: 10000 },
+            ),
+          );
+          inserted.push(item);
+        } catch (rowError) {
+          onItemError?.(item, rowError);
+        }
+      }
+    }
+  }
+  return inserted;
 }
 
 export async function createImportedProduct(

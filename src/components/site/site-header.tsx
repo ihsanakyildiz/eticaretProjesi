@@ -86,7 +86,7 @@ export function SiteHeader({
           <span className="flex h-10 w-10 items-center justify-center rounded-full bg-site-primary text-sm font-bold text-white shadow-md shadow-violet-500/30">
             {siteName.slice(0, 1).toUpperCase()}
           </span>
-          <span className="truncate text-lg font-bold tracking-tight text-site-fg">
+          <span className="truncate text-lg font-semibold tracking-tight text-site-fg">
             {siteName}
           </span>
         </SiteLink>

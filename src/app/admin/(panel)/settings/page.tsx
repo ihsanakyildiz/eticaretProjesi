@@ -34,8 +34,8 @@ export default async function SettingsPage() {
         <p className="text-xs font-medium tracking-wide text-slate-400 uppercase">Ayarlar</p>
         <h1 className="mt-1 text-xl font-semibold text-slate-800 sm:text-2xl">Genel Ayarlar</h1>
         <p className="mt-2 max-w-2xl text-sm text-slate-500">
-          Site kimliği, görünüm, iletişim, SEO, link yapısı, e-posta ve gelişmiş kod
-          ayarlarını üstteki sekmelerden yönetin. SMTP’yi kaydettikten sonra “Test
+          Site kimliği, görünüm, iletişim, SEO, link yapısı, e-posta, gelişmiş stok
+          ve kod ayarlarını üstteki sekmelerden yönetin. SMTP’yi kaydettikten sonra “Test
           e-postası gönder” ile bağlantıyı doğrulayın.
         </p>
       </div>

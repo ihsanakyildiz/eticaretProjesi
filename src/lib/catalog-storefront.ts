@@ -1,5 +1,6 @@
 import type { ProductSaleUnit } from "@prisma/client";
 import { isVariantPurchasable, type OutOfStockBehavior } from "@/lib/product-stock";
+import { resolveSalePrice } from "@/lib/product-sale";
 import {
   publicProductBrandHref,
   publicProductCategoryHref,
@@ -18,6 +19,8 @@ export type CatalogProductCard = {
   image: string | null;
   basePriceMinor: number;
   compareAtMinor: number | null;
+  saleStartsAt: Date | null;
+  saleEndsAt: Date | null;
   taxRatePercent: number;
   showPrice: boolean;
   onSale: boolean;
@@ -32,6 +35,9 @@ export type CatalogProductCard = {
   images: { url: string; isCover: boolean }[];
   variants: {
     priceMinor: number;
+    compareAtMinor?: number | null;
+    saleStartsAt: Date | null;
+    saleEndsAt: Date | null;
     stockQuantity: number;
     isDefault: boolean;
     trackInventory: boolean;
@@ -104,27 +110,54 @@ export function pickSellableVariants<
   return priced.length > 0 ? priced : pool;
 }
 
-export function catalogCardPrice(product: {
-  basePriceMinor: number;
-  variants: Array<{
-    priceMinor: number;
-    stockQuantity: number;
-    isDefault: boolean;
-    selectionCount?: number;
-  }>;
-}) {
+export function catalogCardPrice(
+  product: {
+    basePriceMinor: number;
+    compareAtMinor?: number | null;
+    saleStartsAt?: Date | string | null;
+    saleEndsAt?: Date | string | null;
+    variants: Array<{
+      priceMinor: number;
+      compareAtMinor?: number | null;
+      saleStartsAt?: Date | string | null;
+      saleEndsAt?: Date | string | null;
+      stockQuantity: number;
+      isDefault: boolean;
+      selectionCount?: number;
+    }>;
+  },
+  now = new Date(),
+) {
   const sellable = pickSellableVariants(product.variants);
   const defaultVariant =
     sellable.find((item) => item.isDefault) ?? sellable[0] ?? product.variants[0];
-  const priceMinor =
+  const rawPrice =
     defaultVariant && defaultVariant.priceMinor > 0
       ? defaultVariant.priceMinor
       : product.basePriceMinor;
+  const resolved = resolveSalePrice(
+    {
+      priceMinor: rawPrice,
+      compareAtMinor:
+        defaultVariant?.compareAtMinor != null
+          ? defaultVariant.compareAtMinor
+          : (product.compareAtMinor ?? null),
+      saleStartsAt: defaultVariant?.saleStartsAt ?? product.saleStartsAt,
+      saleEndsAt: defaultVariant?.saleEndsAt ?? product.saleEndsAt,
+    },
+    now,
+  );
   const stockQuantity = (sellable.length > 0 ? sellable : product.variants).reduce(
     (sum, item) => sum + item.stockQuantity,
     0,
   );
-  return { priceMinor, stockQuantity };
+  return {
+    priceMinor: resolved.priceMinor,
+    compareAtMinor: resolved.compareAtMinor,
+    stockQuantity,
+    onSale: resolved.onSale,
+    saleEndsAt: resolved.onSale ? resolved.saleEndsAt : null,
+  };
 }
 
 export function catalogCardAvailability(product: {

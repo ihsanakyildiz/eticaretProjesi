@@ -1,6 +1,6 @@
 import "server-only";
 
-import type { Prisma, ProductVisibility } from "@prisma/client";
+import type { Prisma } from "@prisma/client";
 import { collectDescendantIds } from "@/lib/category-tree";
 import { unstable_cache, revalidateTag } from "next/cache";
 import {
@@ -10,6 +10,10 @@ import {
   type ProductSectionSource,
 } from "@/lib/page-sections";
 import { prisma } from "@/lib/prisma";
+import { parsePerformance, productDataCacheSeconds } from "@/lib/performance";
+import { getSettingsMap } from "@/lib/settings";
+import { resolveCatalogListingConstraint } from "@/lib/catalog-listing-constraint";
+import { storefrontListingWhere, storefrontPublicProductWhere } from "@/lib/storefront-product-where";
 import type {
   CatalogCategoryCard,
   CatalogListingFilters,
@@ -35,8 +39,6 @@ export const CATALOG_CACHE_TAG = "products";
 export const CATALOG_GRID_PAGE_SIZE = 24;
 const CACHE_REVALIDATE = 60;
 
-const listingVisibility: ProductVisibility[] = ["EVERYWHERE", "CATALOG"];
-
 const productCardSelect = {
   id: true,
   urlId: true,
@@ -46,6 +48,8 @@ const productCardSelect = {
   image: true,
   basePriceMinor: true,
   compareAtMinor: true,
+  saleStartsAt: true,
+  saleEndsAt: true,
   taxRatePercent: true,
   showPrice: true,
   onSale: true,
@@ -64,8 +68,13 @@ const productCardSelect = {
   },
   variants: {
     where: { isActive: true },
+    orderBy: [{ isDefault: "desc" }, { sortOrder: "asc" }],
+    take: 8,
     select: {
       priceMinor: true,
+      compareAtMinor: true,
+      saleStartsAt: true,
+      saleEndsAt: true,
       stockQuantity: true,
       isDefault: true,
       trackInventory: true,
@@ -74,28 +83,58 @@ const productCardSelect = {
   },
 } satisfies Prisma.ProductSelect;
 
+type ProductCardRow = Prisma.ProductGetPayload<{ select: typeof productCardSelect }>;
+
+function toCatalogCards(rows: Array<ProductCardRow | undefined>): CatalogProductCard[] {
+  return rows.filter((row): row is ProductCardRow => Boolean(row)) as CatalogProductCard[];
+}
+
 export function bustCatalogCache() {
   revalidateTag(CATALOG_CACHE_TAG);
 }
 
-function listingWhere(extra?: Prisma.ProductWhereInput): Prisma.ProductWhereInput {
-  return {
-    isActive: true,
-    visibility: { in: listingVisibility },
-    ...extra,
-  };
+async function catalogCacheRevalidateSeconds() {
+  try {
+    const seconds = parsePerformance(await getSettingsMap()).htmlCacheSeconds;
+    return seconds > 0 ? seconds : CACHE_REVALIDATE;
+  } catch {
+    return CACHE_REVALIDATE;
+  }
 }
 
-export const getCachedCatalogListing = unstable_cache(
-  async () =>
-    prisma.product.findMany({
-      where: listingWhere(),
-      orderBy: [{ sortOrder: "asc" }, { title: "asc" }],
-      select: productCardSelect,
-    }),
-  ["catalog-listing-v2"],
-  { tags: [CATALOG_CACHE_TAG, "site"], revalidate: CACHE_REVALIDATE },
-);
+async function productPageCacheOptions() {
+  try {
+    const perf = parsePerformance(await getSettingsMap());
+    return {
+      revalidate: productDataCacheSeconds(perf),
+      relatedLimit: perf.productRelatedLimit,
+      galleryLimit: perf.productGalleryLimit,
+    };
+  } catch {
+    return {
+      revalidate: CACHE_REVALIDATE,
+      relatedLimit: 8,
+      galleryLimit: 16,
+    };
+  }
+}
+
+function listingCacheKey(filters: CatalogListingFilters, page: number) {
+  return JSON.stringify({
+    p: Math.max(1, page),
+    s: filters.sort,
+    c: [...(filters.categoryIds ?? [])].sort(),
+    b: [...filters.brandSlugs].sort(),
+    f: [...filters.filterValueIds].sort(),
+    min: filters.minMajor,
+    max: filters.maxMajor,
+    q: filters.query ?? "",
+  });
+}
+
+function listingWhere(extra?: Prisma.ProductWhereInput): Prisma.ProductWhereInput {
+  return storefrontListingWhere(extra);
+}
 
 export type CatalogUrlRef = {
   slug: string;
@@ -155,30 +194,20 @@ export function findCatalogProductRef(slug: string, urlId?: number | null) {
     slug,
     () =>
       prisma.product.findFirst({
-        where: { urlId: urlId!, isActive: true, visibility: { not: "NONE" } },
+        where: storefrontPublicProductWhere({ urlId: urlId! }),
         select: { slug: true, urlId: true },
       }),
     () =>
       prisma.product.findFirst({
-        where: { slug, isActive: true, visibility: { not: "NONE" } },
+        where: storefrontPublicProductWhere({ slug }),
         select: { slug: true, urlId: true },
       }),
   );
 }
 
-export const getCachedCatalogSlugs = unstable_cache(
-  async () =>
-    prisma.product.findMany({
-      where: { isActive: true, visibility: { not: "NONE" } },
-      select: { slug: true },
-    }),
-  ["catalog-slugs"],
-  { tags: [CATALOG_CACHE_TAG], revalidate: CACHE_REVALIDATE },
-);
-
 export const getCachedCatalogCategoryIndex = unstable_cache(
   async () => {
-    const [categories, products] = await Promise.all([
+    const [categories, counts] = await Promise.all([
       prisma.productCategory.findMany({
         where: { isActive: true },
         orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
@@ -193,21 +222,28 @@ export const getCachedCatalogCategoryIndex = unstable_cache(
           image: true,
         },
       }),
-      prisma.product.findMany({
+      prisma.product.groupBy({
+        by: ["categoryId"],
         where: listingWhere({ categoryId: { not: null } }),
-        select: { categoryId: true },
+        _count: { _all: true },
       }),
     ]);
+    const countByCategoryId = new Map(
+      counts.flatMap((row) =>
+        row.categoryId ? [[row.categoryId, row._count._all] as const] : [],
+      ),
+    );
 
     return categories.map((category) => {
       const ids = collectDescendantIds(categories, category.id);
-      const productCount = products.filter(
-        (row) => row.categoryId && ids.has(row.categoryId),
-      ).length;
+      let productCount = 0;
+      for (const id of ids) {
+        productCount += countByCategoryId.get(id) ?? 0;
+      }
       return { ...category, productCount };
     });
   },
-  ["catalog-category-index"],
+    ["catalog-category-index-v4"],
   { tags: [CATALOG_CACHE_TAG, "site"], revalidate: CACHE_REVALIDATE },
 );
 
@@ -242,11 +278,12 @@ export const getCachedCatalogBrandIndex = unstable_cache(
       }))
       .filter((brand) => brand.productCount > 0);
   },
-  ["catalog-brand-index"],
+  ["catalog-brand-index-v3"],
   { tags: [CATALOG_CACHE_TAG, "site"], revalidate: CACHE_REVALIDATE },
 );
 
-export function getCachedCatalogCategoryPage(slug: string) {
+export async function getCachedCatalogCategoryPage(slug: string) {
+  const revalidate = await catalogCacheRevalidateSeconds();
   return unstable_cache(
     async () => {
       const category = await prisma.productCategory.findFirst({
@@ -264,33 +301,15 @@ export function getCachedCatalogCategoryPage(slug: string) {
         },
       });
       if (!category) return null;
-
-      const catalog = await prisma.productCategory.findMany({
-        where: { isActive: true },
-        select: {
-          id: true,
-          parentId: true,
-          name: true,
-          slug: true,
-          sortOrder: true,
-          isActive: true,
-        },
-      });
-      const ids = [...collectDescendantIds(catalog, category.id)];
-      const products = await prisma.product.findMany({
-        where: listingWhere({ categoryId: { in: ids } }),
-        orderBy: [{ sortOrder: "asc" }, { title: "asc" }],
-        select: productCardSelect,
-      });
-
-      return { category, products };
+      return { category };
     },
-    ["catalog-category-page-v2", slug],
-    { tags: [CATALOG_CACHE_TAG, "site"], revalidate: CACHE_REVALIDATE },
+    ["catalog-category-meta-v1", slug],
+    { tags: [CATALOG_CACHE_TAG, "site"], revalidate },
   )();
 }
 
-export function getCachedCatalogBrandPage(slug: string) {
+export async function getCachedCatalogBrandPage(slug: string) {
+  const revalidate = await catalogCacheRevalidateSeconds();
   return unstable_cache(
     async () => {
       const brand = await prisma.brand.findFirst({
@@ -309,30 +328,25 @@ export function getCachedCatalogBrandPage(slug: string) {
         },
       });
       if (!brand) return null;
-
-      const products = await prisma.product.findMany({
-        where: listingWhere({ brandId: brand.id }),
-        orderBy: [{ sortOrder: "asc" }, { title: "asc" }],
-        select: productCardSelect,
-      });
-
-      return { brand, products };
+      return { brand };
     },
-    ["catalog-brand-page-v2", slug],
-    { tags: [CATALOG_CACHE_TAG, "site"], revalidate: CACHE_REVALIDATE },
+    ["catalog-brand-meta-v1", slug],
+    { tags: [CATALOG_CACHE_TAG, "site"], revalidate },
   )();
 }
 
-export function getCachedCatalogProduct(slug: string) {
+export async function getCachedCatalogProduct(slug: string) {
+  const { revalidate, relatedLimit, galleryLimit } = await productPageCacheOptions();
   return unstable_cache(
     async () => {
       const product = await prisma.product.findFirst({
-        where: { slug, isActive: true, visibility: { not: "NONE" } },
+        where: storefrontPublicProductWhere({ slug }),
         include: {
           category: { select: { id: true, urlId: true, name: true, slug: true } },
           brand: { select: { id: true, urlId: true, name: true, slug: true, logo: true } },
           images: {
-            orderBy: { sortOrder: "asc" },
+            orderBy: [{ isCover: "desc" }, { sortOrder: "asc" }],
+            take: galleryLimit,
             select: { id: true, url: true, alt: true, isCover: true },
           },
           attachments: {
@@ -348,9 +362,23 @@ export function getCachedCatalogProduct(slug: string) {
           variants: {
             where: { isActive: true },
             orderBy: [{ isDefault: "desc" }, { sortOrder: "asc" }],
-            include: {
+            select: {
+              id: true,
+              title: true,
+              sku: true,
+              priceMinor: true,
+              compareAtMinor: true,
+              saleStartsAt: true,
+              saleEndsAt: true,
+              stockQuantity: true,
+              trackInventory: true,
+              allowBackorder: true,
+              isDefault: true,
+              image: true,
               selections: {
-                include: {
+                select: {
+                  attributeId: true,
+                  valueId: true,
                   attribute: {
                     select: {
                       id: true,
@@ -358,34 +386,27 @@ export function getCachedCatalogProduct(slug: string) {
                       slug: true,
                       sortOrder: true,
                       displayType: true,
-                      values: {
-                        where: { isActive: true },
-                        orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
-                        select: {
-                          id: true,
-                          name: true,
-                          slug: true,
-                          sortOrder: true,
-                          colorHex: true,
-                          image: true,
-                        },
-                      },
                     },
                   },
                   value: {
-                    select: { id: true, name: true, slug: true, sortOrder: true, colorHex: true, image: true },
+                    select: {
+                      id: true,
+                      name: true,
+                      slug: true,
+                      sortOrder: true,
+                      colorHex: true,
+                      image: true,
+                    },
                   },
                 },
               },
             },
           },
           relatedFrom: {
+            take: Math.max(0, relatedLimit),
             orderBy: { sortOrder: "asc" },
             where: {
-              related: {
-                isActive: true,
-                visibility: { in: listingVisibility },
-              },
+              related: storefrontListingWhere(),
             },
             include: {
               related: { select: productCardSelect },
@@ -400,8 +421,8 @@ export function getCachedCatalogProduct(slug: string) {
         related: product.relatedFrom.map((row) => row.related),
       };
     },
-    ["catalog-product-v5", slug],
-    { tags: [CATALOG_CACHE_TAG, "site"], revalidate: CACHE_REVALIDATE },
+    ["catalog-product-v10", slug, String(relatedLimit), String(galleryLimit)],
+    { tags: [CATALOG_CACHE_TAG, "site"], revalidate },
   )();
 }
 
@@ -531,56 +552,66 @@ export async function getProductsBySource(
         select: productCardSelect,
       });
       const byId = new Map(rows.map((row) => [row.id, row]));
-      return ids.map((id) => byId.get(id)).filter((row): row is CatalogProductCard => Boolean(row));
+      return toCatalogCards(ids.map((id) => byId.get(id)));
     }
     case "BEST_SELLERS": {
       const ids = await bestSellerIds(limit, extra);
       if (ids.length === 0) {
-        return prisma.product.findMany({
-          where: listingWhere(extra),
-          orderBy: [{ clickCount: "desc" }, { createdAt: "desc" }],
-          take: limit,
-          select: productCardSelect,
-        });
+        return toCatalogCards(
+          await prisma.product.findMany({
+            where: listingWhere(extra),
+            orderBy: [{ clickCount: "desc" }, { createdAt: "desc" }],
+            take: limit,
+            select: productCardSelect,
+          }),
+        );
       }
       const rows = await prisma.product.findMany({
         where: listingWhere({ id: { in: ids } }),
         select: productCardSelect,
       });
       const byId = new Map(rows.map((row) => [row.id, row]));
-      return ids.map((id) => byId.get(id)).filter((row): row is CatalogProductCard => Boolean(row));
+      return toCatalogCards(ids.map((id) => byId.get(id)));
     }
     case "MOST_CLICKED":
-      return prisma.product.findMany({
-        where: listingWhere(extra),
-        orderBy: [{ clickCount: "desc" }, { createdAt: "desc" }],
-        take: limit,
-        select: productCardSelect,
-      });
-    case "MOST_VIEWED":
-      return prisma.product.findMany({
-        where: listingWhere(extra),
-        orderBy: [{ viewCount: "desc" }, { createdAt: "desc" }],
-        take: limit,
-        select: productCardSelect,
-      });
-    case "ON_SALE":
-      return prisma.product.findMany({
-        where: listingWhere({
-          ...extra,
-          OR: [{ onSale: true }, { compareAtMinor: { gt: 0 } }],
+      return toCatalogCards(
+        await prisma.product.findMany({
+          where: listingWhere(extra),
+          orderBy: [{ clickCount: "desc" }, { createdAt: "desc" }],
+          take: limit,
+          select: productCardSelect,
         }),
-        orderBy: [{ createdAt: "desc" }],
-        take: limit,
-        select: productCardSelect,
-      });
+      );
+    case "MOST_VIEWED":
+      return toCatalogCards(
+        await prisma.product.findMany({
+          where: listingWhere(extra),
+          orderBy: [{ viewCount: "desc" }, { createdAt: "desc" }],
+          take: limit,
+          select: productCardSelect,
+        }),
+      );
+    case "ON_SALE":
+      return toCatalogCards(
+        await prisma.product.findMany({
+          where: listingWhere({
+            ...extra,
+            OR: [{ onSale: true }, { compareAtMinor: { gt: 0 } }],
+          }),
+          orderBy: [{ createdAt: "desc" }],
+          take: limit,
+          select: productCardSelect,
+        }),
+      );
     case "NEW":
-      return prisma.product.findMany({
-        where: listingWhere(extra),
-        orderBy: [{ createdAt: "desc" }, { sortOrder: "asc" }],
-        take: limit,
-        select: productCardSelect,
-      });
+      return toCatalogCards(
+        await prisma.product.findMany({
+          where: listingWhere(extra),
+          orderBy: [{ createdAt: "desc" }, { sortOrder: "asc" }],
+          take: limit,
+          select: productCardSelect,
+        }),
+      );
     default: {
       const _exhaustive: never = kind;
       return _exhaustive;
@@ -596,7 +627,7 @@ export async function getCatalogProductsByIds(ids: string[]): Promise<CatalogPro
     select: productCardSelect,
   });
   const byId = new Map(rows.map((row) => [row.id, row]));
-  return unique.map((id) => byId.get(id)).filter((row): row is CatalogProductCard => Boolean(row));
+  return toCatalogCards(unique.map((id) => byId.get(id)));
 }
 
 export async function getProductCategoriesBySource(query: {
@@ -666,89 +697,42 @@ export async function getFilteredCatalogListing(
   filters: CatalogListingFilters,
   page: number,
 ): Promise<{ products: CatalogProductCard[]; total: number }> {
-  const extra: Prisma.ProductWhereInput = {};
-  const and: Prisma.ProductWhereInput[] = [];
-  if (filters.categoryIds && filters.categoryIds.length > 0) {
-    extra.categoryId = { in: filters.categoryIds };
-  }
-  if (filters.brandSlugs.length > 0) {
-    extra.brand = { slug: { in: filters.brandSlugs }, isActive: true };
-  }
-  if (filters.filterValueIds.length > 0) {
-    and.push(
-      ...filters.filterValueIds.map((valueId) => ({
-        filterAssignments: { some: { valueId } },
-      })),
-    );
-  }
-  if (filters.minMajor != null || filters.maxMajor != null) {
-    const minMinor = filters.minMajor != null ? Math.round(filters.minMajor * 100) : undefined;
-    const maxMinor = filters.maxMajor != null ? Math.round(filters.maxMajor * 100) : undefined;
-    and.push({
-      OR: [
-        {
-          variants: {
-            some: {
-              isActive: true,
-              priceMinor: {
-                ...(minMinor != null ? { gte: minMinor } : {}),
-                ...(maxMinor != null ? { lte: maxMinor } : {}),
-              },
-            },
-          },
-        },
-        {
-          variants: { none: { isActive: true } },
-          basePriceMinor: {
-            ...(minMinor != null ? { gte: minMinor } : {}),
-            ...(maxMinor != null ? { lte: maxMinor } : {}),
-          },
-        },
-      ],
-    });
-  }
-  const listingQuery = filters.query?.trim();
-  if (listingQuery) {
-    and.push({
-      OR: [
-        { title: { contains: listingQuery } },
-        { slug: { contains: listingQuery } },
-        { brand: { is: { name: { contains: listingQuery } } } },
-      ],
-    });
-  }
-  if (and.length > 0) extra.AND = and;
-
+  const extra = await resolveCatalogListingConstraint(filters);
   const where = listingWhere(extra);
   const skip = (Math.max(1, page) - 1) * CATALOG_GRID_PAGE_SIZE;
 
   if (filters.sort === "cok-satan") {
-    const ids = await bestSellerIds(240, extra);
-    const [total, soldRows, fallback] = await Promise.all([
+    const rankedTake = skip + CATALOG_GRID_PAGE_SIZE;
+    const ids = await bestSellerIds(rankedTake, extra);
+    const pageIds = ids.slice(skip, skip + CATALOG_GRID_PAGE_SIZE);
+    const [total, soldRows] = await Promise.all([
       prisma.product.count({ where }),
-      ids.length > 0
+      pageIds.length > 0
         ? prisma.product.findMany({
-            where: listingWhere({ ...extra, id: { in: ids } }),
+            where: listingWhere({ ...extra, id: { in: pageIds } }),
             select: productCardSelect,
           })
         : Promise.resolve([]),
-      prisma.product.findMany({
-        where,
-        orderBy: listingOrderBy("cok-satan"),
-        select: productCardSelect,
-      }),
     ]);
     const byId = new Map(soldRows.map((row) => [row.id, row]));
-    const ranked = ids
-      .map((id) => byId.get(id))
-      .filter((row): row is CatalogProductCard => Boolean(row));
-    const rankedIds = new Set(ranked.map((row) => row.id));
-    const rest = fallback.filter((row) => !rankedIds.has(row.id));
-    const ordered = [...ranked, ...rest];
-    return {
-      total,
-      products: ordered.slice(skip, skip + CATALOG_GRID_PAGE_SIZE),
-    };
+    const ranked = toCatalogCards(pageIds.map((id) => byId.get(id)));
+    if (ranked.length >= CATALOG_GRID_PAGE_SIZE) {
+      return { total, products: ranked.slice(0, CATALOG_GRID_PAGE_SIZE) };
+    }
+    if (total > ids.length) {
+      const fallback = await prisma.product.findMany({
+        where: listingWhere({
+          ...extra,
+          id: ids.length > 0 ? { notIn: ids } : undefined,
+        }),
+        orderBy: listingOrderBy("cok-satan"),
+        skip: Math.max(0, skip - ids.length),
+        take: CATALOG_GRID_PAGE_SIZE - ranked.length,
+        select: productCardSelect,
+      });
+      return { total, products: [...ranked, ...toCatalogCards(fallback)] };
+    }
+    return { total, products: ranked };
   }
 
   const [total, products] = await Promise.all([
@@ -761,7 +745,19 @@ export async function getFilteredCatalogListing(
       select: productCardSelect,
     }),
   ]);
-  return { products, total };
+  return { products: toCatalogCards(products), total };
+}
+
+export async function getCachedFilteredCatalogListing(
+  filters: CatalogListingFilters,
+  page: number,
+): Promise<{ products: CatalogProductCard[]; total: number }> {
+  const revalidate = await catalogCacheRevalidateSeconds();
+  return unstable_cache(
+    () => getFilteredCatalogListing(filters, page),
+    ["catalog-listing-page-v5", listingCacheKey(filters, page)],
+    { tags: [CATALOG_CACHE_TAG, "site"], revalidate },
+  )();
 }
 
 export const getCachedCatalogBrandsForFacets = unstable_cache(

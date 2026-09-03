@@ -3,6 +3,7 @@
 import { after } from "next/server";
 import {
   createImportJobFromWorkbook,
+  createUpdateJobFromWorkbook,
   getImportJobSummary,
   getLatestImportJob,
   listImportJobRows,
@@ -11,6 +12,7 @@ import {
   type ProductImportJobSummary,
   type ProductImportRowPage,
 } from "@/lib/product-import-job";
+import { countProductsForUpdate, isProductUpdateMode } from "@/lib/product-import-update";
 import { kickImportWorker } from "@/lib/product-import-worker";
 import { requirePermission } from "@/lib/staff-permissions";
 
@@ -82,4 +84,67 @@ export async function resumeProductImportJobsAction() {
   if (!gate.ok) return { error: gate.error };
   kickImportWorker();
   return { ok: true as const };
+}
+
+export async function countProductUpdateExportAction(input: {
+  categoryId?: string;
+  brandId?: string;
+  mode?: string;
+}) {
+  const gate = await requirePermission("products", "view");
+  if (!gate.ok) return { error: gate.error };
+  const mode = input.mode && isProductUpdateMode(input.mode) ? input.mode : "all";
+  const counts = await countProductsForUpdate(
+    {
+      categoryId: input.categoryId?.trim() || null,
+      brandId: input.brandId?.trim() || null,
+    },
+    mode,
+  );
+  return counts;
+}
+
+export async function previewProductUpdateAction(
+  _prev: ProductImportPreviewState,
+  formData: FormData,
+): Promise<ProductImportPreviewState> {
+  const gate = await requirePermission("products", "update");
+  if (!gate.ok) return { error: gate.error };
+
+  const file = formData.get("file");
+  if (!(file instanceof File)) return { error: "Excel dosyası seçin." };
+
+  try {
+    const created = await createUpdateJobFromWorkbook(file);
+    if ("error" in created && created.error) return { error: created.error };
+    if (!("job" in created) || !created.job) return { error: "Dosya okunamadı." };
+    return { job: created.job };
+  } catch (error) {
+    console.error(error);
+    const text = error instanceof Error ? error.message : "";
+    if (text.includes("Can't reach database") || text.includes("P1001")) {
+      return {
+        error:
+          "Veritabanı kısa süre yanıt vermedi. MySQL çalışıyor olsa bile büyük dosya onu kilitleyebilir. Birkaç saniye bekleyip Önizle’ye tekrar basın.",
+      };
+    }
+    return { error: text || "Excel dosyası okunamadı." };
+  }
+}
+
+export async function startProductUpdateAction(
+  jobId: string,
+): Promise<{ error?: string; job?: ProductImportJobSummary }> {
+  const gate = await requirePermission("products", "update");
+  if (!gate.ok) return { error: gate.error };
+
+  const queued = await queueImportJob(jobId);
+  if ("error" in queued && queued.error) return { error: queued.error };
+
+  after(() => {
+    kickImportWorker();
+  });
+
+  const job = await getImportJobSummary(jobId);
+  return job ? { job } : { error: "Güncelleme işi bulunamadı." };
 }

@@ -1,4 +1,5 @@
 import { SiteLink } from "@/components/site/site-link";
+import { FooterNewsletterForm } from "@/components/site/footer-newsletter-form";
 import { Mail, MapPin, Phone } from "lucide-react";
 import type { SiteNavItem } from "./site-types";
 
@@ -34,6 +35,20 @@ export function SiteFooter({
 
   return (
     <footer className="border-t border-site-border bg-site-surface">
+      <div className="border-b border-site-border">
+        <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-5 sm:flex-row sm:items-center sm:justify-between sm:gap-6 sm:px-6 lg:px-8">
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-site-fg">Kampanya ve fırsatlardan haberdar olun</p>
+            <p className="mt-0.5 text-xs text-site-muted">
+              Yeni ürün ve indirimler için e-posta bırakın.{" "}
+              <SiteLink href="/gizlilik" className="underline underline-offset-2 hover:text-site-fg">
+                Gizlilik
+              </SiteLink>
+            </p>
+          </div>
+          <FooterNewsletterForm />
+        </div>
+      </div>
       <div className="mx-auto grid max-w-7xl gap-10 px-4 py-14 sm:px-6 md:grid-cols-2 lg:grid-cols-4 lg:px-8">
         <div className="md:col-span-2 lg:col-span-1">
           <SiteLink href="/" className="inline-flex items-center gap-2.5">

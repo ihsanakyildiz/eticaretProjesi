@@ -45,3 +45,62 @@ export function marginRatePercent(exclMinor: number, costMinor: number): number 
   if (exclMinor <= 0) return null;
   return ((exclMinor - costMinor) / exclMinor) * 100;
 }
+
+/** Satış + isteğe bağlı indirimli → kayıt (müşteri öder / üstü çizili liste). */
+export function toChargeAndListPrice(
+  saleMinor: number,
+  discountMinor: number | null | undefined,
+): { chargeMinor: number; listMinor: number | null } {
+  const sale = Math.max(0, Math.round(saleMinor));
+  const discount =
+    discountMinor == null || !Number.isFinite(discountMinor)
+      ? null
+      : Math.max(0, Math.round(discountMinor));
+  if (discount != null && discount > 0 && discount < sale) {
+    return { chargeMinor: discount, listMinor: sale };
+  }
+  return { chargeMinor: sale, listMinor: null };
+}
+
+/** Kayıtlı fiyatı admin alanlarına çevir (satış / indirimli). */
+export function fromChargeAndListPrice(
+  chargeMinor: number,
+  listMinor: number | null | undefined,
+): { saleMinor: number; discountMinor: number | null } {
+  if (listMinor != null && listMinor > chargeMinor) {
+    return { saleMinor: listMinor, discountMinor: chargeMinor };
+  }
+  return { saleMinor: chargeMinor, discountMinor: null };
+}
+
+/**
+ * Excel / XML / API satırından kayıtlı fiyat.
+ * İndirimli doluysa yeni model; değilse eski karşılaştırma (yüksekse liste, düşükse indirim).
+ */
+export function resolveImportedListPrices(input: {
+  saleMinor: number | null | undefined;
+  discountMinor?: number | null;
+  compareAtMinor?: number | null;
+}): { chargeMinor: number; listMinor: number | null } {
+  const sale =
+    input.saleMinor != null && Number.isFinite(input.saleMinor)
+      ? Math.max(0, Math.round(input.saleMinor))
+      : 0;
+  const discount =
+    input.discountMinor != null && Number.isFinite(input.discountMinor)
+      ? Math.max(0, Math.round(input.discountMinor))
+      : null;
+  const compareAt =
+    input.compareAtMinor != null && Number.isFinite(input.compareAtMinor)
+      ? Math.max(0, Math.round(input.compareAtMinor))
+      : null;
+
+  if (discount != null && discount > 0) {
+    return toChargeAndListPrice(sale, discount);
+  }
+  if (compareAt != null && compareAt > 0 && sale > 0) {
+    if (compareAt > sale) return { chargeMinor: sale, listMinor: compareAt };
+    if (compareAt < sale) return toChargeAndListPrice(sale, compareAt);
+  }
+  return { chargeMinor: sale, listMinor: null };
+}

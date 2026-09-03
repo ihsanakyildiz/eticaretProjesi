@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import dynamic from "next/dynamic";
 import { JsonLd } from "@/components/site/json-ld";
 import { ProjectCard } from "@/components/site/project/project-card";
 import { ProjectCategorySidebar } from "@/components/site/project/project-category-sidebar";
@@ -27,9 +26,6 @@ export async function generateMetadata(): Promise<Metadata> {
   });
 }
 
-const HomeCta = dynamic(() =>
-  import("@/components/site/home/home-cta").then((mod) => mod.HomeCta),
-);
 
 type ProjectsIndexPageProps = {
   searchParams: Promise<{ sayfa?: string }>;
@@ -128,7 +124,6 @@ export default async function ProjectsIndexPage({
         </SiteSidebarPageLayout>
       </section>
 
-      <HomeCta />
     </>
   );
 }

@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ChevronLeft, ChevronRight, Printer } from "lucide-react";
+import { ChevronLeft, ChevronRight, Printer, Warehouse } from "lucide-react";
 import {
   ORDER_PAYMENT_METHODS,
   formatOrderDateTime,
@@ -11,7 +11,13 @@ import {
   type OrderPaymentMethodCode,
   type OrderStatusCode,
 } from "@/lib/orders";
+import { isWarehouseReadyStatus } from "@/lib/warehouse";
+import {
+  orderPaymentProviderLabel,
+  type OrderPaymentProvider,
+} from "@/lib/checkout-payment-choice";
 import { formatMinorTry } from "@/lib/product-money";
+import type { OrderCaseView } from "@/lib/order-cases";
 import {
   addOrderMessageAction,
   addOrderPaymentAction,
@@ -19,6 +25,8 @@ import {
 } from "../actions";
 import { OrderStatusSelect } from "../order-status-select";
 import { OrderItemsEditor, type CatalogProduct, type OrderItemRow } from "./order-items-editor";
+import { OrderCasePanel } from "./order-case-panel";
+import { OrderRefundPanel, type OrderRefundRow } from "./order-refund-panel";
 import { OrderWorkspaceTabs, type OrderDocumentRow } from "./order-workspace-tabs";
 
 type AddressBlock = {
@@ -35,6 +43,7 @@ export type OrderDetailModel = {
   reference: string;
   status: OrderStatusCode;
   paymentMethod: OrderPaymentMethodCode;
+  paymentProvider: OrderPaymentProvider | null;
   productsMinor: number;
   shippingMinor: number;
   taxMinor: number;
@@ -67,6 +76,8 @@ export type OrderDetailModel = {
     transactionId: string | null;
     paidAt: string;
   }[];
+  refunds: OrderRefundRow[];
+  cases: OrderCaseView[];
   messages: { id: string; body: string; visibleToCustomer: boolean; createdAt: string }[];
 };
 
@@ -82,16 +93,19 @@ export function OrderDetail({ order }: { order: OrderDetailModel }) {
   const [payAmount, setPayAmount] = useState((order.totalMinor / 100).toFixed(2));
   const [payTxn, setPayTxn] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
-  const run = (task: () => Promise<{ error?: string }>) => {
+  const run = (task: () => Promise<{ error?: string; message?: string }>) => {
     startTransition(async () => {
       const result = await task();
       if (result.error) {
         setError(result.error);
+        setNotice(null);
         return;
       }
       setError(null);
+      setNotice(result.message ?? null);
       router.refresh();
     });
   };
@@ -122,6 +136,15 @@ export function OrderDetail({ order }: { order: OrderDetailModel }) {
           <Printer className="h-4 w-4" />
           Siparişi yazdır
         </button>
+        {isWarehouseReadyStatus(order.status) || order.status === "SHIPPED" ? (
+          <Link
+            href={`/admin/warehouse/${order.id}`}
+            className="inline-flex items-center gap-1.5 rounded-md bg-[#405189] px-3 py-2 text-sm font-semibold text-white hover:bg-[#364574]"
+          >
+            <Warehouse className="h-4 w-4" />
+            Depo paketleme
+          </Link>
+        ) : null}
         <div className="ml-auto flex items-center gap-1">
           {order.previousId ? (
             <Link
@@ -155,6 +178,11 @@ export function OrderDetail({ order }: { order: OrderDetailModel }) {
       {error ? (
         <div className="rounded-md border border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700">{error}</div>
       ) : null}
+      {notice ? (
+        <div className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm text-emerald-800">
+          {notice}
+        </div>
+      ) : null}
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,22rem)_minmax(0,1fr)]">
         <div className="space-y-4">
@@ -165,7 +193,14 @@ export function OrderDetail({ order }: { order: OrderDetailModel }) {
               <Row label="Referans" value={order.reference} />
               <Row label="Toplam" value={formatMinorTry(order.totalMinor)} />
               <Row label="Oluşturulma" value={formatOrderDateTime(order.createdAt)} />
-              <Row label="Ödeme" value={orderPaymentMethodLabel(order.paymentMethod)} />
+              <Row
+                label="Ödeme"
+                value={
+                  order.paymentProvider
+                    ? `${orderPaymentMethodLabel(order.paymentMethod)} (${orderPaymentProviderLabel(order.paymentProvider)})`
+                    : orderPaymentMethodLabel(order.paymentMethod)
+                }
+              />
               <Row label="Teslimat" value={order.carrierName || "—"} />
             </dl>
           </section>
@@ -269,6 +304,42 @@ export function OrderDetail({ order }: { order: OrderDetailModel }) {
             createdAt={order.createdAt}
             isPending={isPending}
             onStatusChange={setStatus}
+            onRun={run}
+          />
+
+          <OrderCasePanel
+            orderId={order.id}
+            status={order.status}
+            remainingMinor={Math.max(
+              0,
+              order.payments.reduce((sum, row) => sum + Math.max(0, row.amountMinor), 0) -
+                order.refunds.reduce((sum, row) => sum + row.amountMinor, 0),
+            )}
+            items={order.items.map((item) => ({
+              id: item.id,
+              title: item.title,
+              variantTitle: item.variantTitle,
+              quantity: item.quantity,
+            }))}
+            cases={order.cases}
+            isPending={isPending}
+            onRun={run}
+          />
+
+          <OrderRefundPanel
+            orderId={order.id}
+            status={order.status}
+            paidMinor={order.payments.reduce((sum, row) => sum + Math.max(0, row.amountMinor), 0)}
+            refunds={order.refunds}
+            providerLabel={
+              order.paymentProvider ? orderPaymentProviderLabel(order.paymentProvider) : "Manuel"
+            }
+            isCardProvider={
+              order.paymentProvider === "iyzico" ||
+              order.paymentProvider === "stripe" ||
+              order.paymentProvider === "paytr"
+            }
+            isPending={isPending}
             onRun={run}
           />
 

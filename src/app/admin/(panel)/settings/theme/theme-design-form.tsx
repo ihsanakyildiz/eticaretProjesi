@@ -20,6 +20,23 @@ import { saveSettingsAction, type SettingsFormState } from "../actions";
 
 const initialState: SettingsFormState = {};
 
+function previewFontFamily(font: ThemeFont): string {
+  switch (font) {
+    case "inter":
+      return "var(--font-inter), system-ui, sans-serif";
+    case "geist":
+      return "var(--font-geist-sans), system-ui, sans-serif";
+    case "system":
+      return "system-ui, sans-serif";
+    case "plus-jakarta":
+      return "var(--font-plus-jakarta), system-ui, sans-serif";
+    default: {
+      const _exhaustive: never = font;
+      return _exhaustive;
+    }
+  }
+}
+
 type ThemeDesignFormProps = {
   values: Record<string, string>;
 };
@@ -62,12 +79,7 @@ function ThemePreview({
         style={{
           background: tokens.bg,
           color: tokens.fg,
-          fontFamily:
-            font === "geist"
-              ? "var(--font-geist-sans), system-ui, sans-serif"
-              : font === "system"
-                ? "system-ui, sans-serif"
-                : "var(--font-plus-jakarta), system-ui, sans-serif",
+          fontFamily: previewFontFamily(font),
         }}
       >
         <div className="mb-4 flex items-center justify-between gap-3">
@@ -213,7 +225,7 @@ export function ThemeDesignForm({ values }: ThemeDesignFormProps) {
   const activePreset = formValues.theme_preset || "violet";
   const defaultMode = (formValues.theme_default_mode || "light") as ThemeMode;
   const radius = (formValues.theme_radius || "md") as ThemeRadius;
-  const font = (formValues.theme_font || "plus-jakarta") as ThemeFont;
+  const font = (formValues.theme_font || "inter") as ThemeFont;
 
   return (
     <form action={formAction} className="space-y-6">
@@ -342,10 +354,14 @@ export function ThemeDesignForm({ values }: ThemeDesignFormProps) {
                   onChange={(event) => updateField("theme_font", event.target.value)}
                   className="w-full rounded-md border border-[#e9ebec] bg-white px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-[#0ab39c] focus:ring-2 focus:ring-[#0ab39c]/20"
                 >
+                  <option value="inter">Inter (ince, pazar yeri)</option>
                   <option value="plus-jakarta">Plus Jakarta Sans</option>
                   <option value="geist">Geist Sans</option>
                   <option value="system">Sistem yazı tipi</option>
                 </select>
+                <p className="mt-1.5 text-xs text-slate-500">
+                  Inter, Trendyol / Temu tarzı ince bir görünüm verir. Yönetim paneli yazı tipi değişmez.
+                </p>
               </div>
             </div>
           </section>

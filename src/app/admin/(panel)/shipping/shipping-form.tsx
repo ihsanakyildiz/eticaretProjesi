@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useRef, useState } from "react";
+import { useActionState, useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ImageIcon, Loader2, PlugZap, Save, Trash2, Upload } from "lucide-react";
@@ -15,6 +15,8 @@ import {
 import { slugify } from "@/lib/slug";
 import {
   createShippingCarrierAction,
+  testArasConnectionAction,
+  testYurticiConnectionAction,
   updateShippingCarrierAction,
   type ShippingCarrierFormState,
 } from "./actions";
@@ -34,6 +36,11 @@ export type ShippingCarrierFormValues = {
   notes?: string;
   sortOrder?: number;
   isActive?: boolean;
+  apiUsername?: string;
+  apiEnvironment?: "test" | "live";
+  apiLanguage?: "TR" | "EN";
+  apiCustomerCode?: string;
+  apiHasPassword?: boolean;
 };
 
 function applyProviderDefaults(
@@ -82,7 +89,18 @@ export function ShippingCarrierForm({
   );
   const [logo, setLogo] = useState(initial?.logo ?? "");
   const [preview, setPreview] = useState(initial?.logo ?? "");
+  const [apiEnvironment, setApiEnvironment] = useState<"test" | "live">(
+    initial?.apiEnvironment ?? "test",
+  );
+  const [apiUsername, setApiUsername] = useState(initial?.apiUsername ?? "");
+  const [apiCustomerCode, setApiCustomerCode] = useState(initial?.apiCustomerCode ?? "");
+  const [apiLanguage, setApiLanguage] = useState<"TR" | "EN">(initial?.apiLanguage ?? "TR");
+  const showApiForm = provider === "YURTICI" || provider === "ARAS";
+  const [apiTestMessage, setApiTestMessage] = useState<string | null>(null);
+  const [apiTestError, setApiTestError] = useState<string | null>(null);
+  const [isTesting, startTest] = useTransition();
   const fileRef = useRef<HTMLInputElement>(null);
+  const passwordRef = useRef<HTMLInputElement>(null);
   const providerMeta = shippingCarrierProviderById(provider);
 
   useEffect(() => {
@@ -113,8 +131,8 @@ export function ShippingCarrierForm({
         <div className="border-b border-[#e9ebec] px-5 py-4">
           <h2 className="text-base font-semibold text-slate-800">Firma bilgisi</h2>
           <p className="mt-1 text-sm text-slate-500">
-            Bilinen bir kargo seçin veya özel firma tanımlayın. API bağlantısı sonraki adımda
-            eklenecek.
+            Bilinen bir kargo seçin veya özel firma tanımlayın. Yurtiçi ve Aras Kargo için API
+            kimlik bilgilerini aynı formdan girebilirsiniz.
           </p>
         </div>
 
@@ -355,26 +373,165 @@ export function ShippingCarrierForm({
         <div className="border-b border-[#e9ebec] px-5 py-4">
           <h2 className="text-base font-semibold text-slate-800">API entegrasyonu</h2>
           <p className="mt-1 text-sm text-slate-500">
-            Sipariş oluşturma ve takip için API bağlanacak; kimlik bilgileri sonra eklenecek.
+            {provider === "YURTICI"
+              ? "Yurtiçi Kargo SOAP (ShippingOrderDispatcherServices) kimlik bilgileri."
+              : provider === "ARAS"
+                ? "Aras Kargo SOAP (SetOrder / GetQueryJSON) kimlik bilgileri."
+                : "Sipariş oluşturma ve takip için API bağlanacak."}
           </p>
         </div>
-        <div className="flex items-start gap-3 p-5">
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#405189]/10 text-[#405189]">
-            <PlugZap className="h-5 w-5" />
-          </span>
-          <div>
-            <p className="text-sm font-medium text-slate-800">
-              {providerMeta.apiPlanned
-                ? `${providerMeta.label} API’si henüz bağlı değil`
-                : "Özel firmalar için API tanımı yok"}
-            </p>
-            <p className="mt-1 text-sm text-slate-500">
-              {providerMeta.apiPlanned
-                ? "Bu sağlayıcı için gönderi oluşturma ve takip entegrasyonu sonraki aşamada eklenecek."
-                : "Takip URL şablonunu doldurun. Özel API ihtiyacı olursa sağlayıcı olarak kaydedilebilir."}
-            </p>
+        {showApiForm ? (
+          <div className="space-y-5 p-5">
+            <div className="rounded-md border border-sky-100 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+              {provider === "ARAS"
+                ? "Şubenizden SetOrder kullanıcı adı ve şifresi alın. Takip için esasweb.araskargo.com.tr üzerinden XML servis kaydı yapıp GetQueryJSON yöntemini seçin; oradaki müşteri kodunu buraya yazın. Canlıya geçmeden önce çıkış IP adresinizi Aras’a bildirin."
+                : "Kurumsal müşteri temsilcinizden web servis kullanıcı adı ve şifresi alın. Test ortamı için Yurtiçi’nin verdiği deneme hesabını (ör. YKTEST) kullanın. Canlıya geçmeden önce çıkış IP adresinizi Yurtiçi BT’ye bildirin."}
+            </div>
+            <div className="grid gap-5 md:grid-cols-2">
+              <div>
+                <label htmlFor="apiEnvironment" className="mb-1.5 block text-sm font-medium text-slate-700">
+                  Ortam
+                </label>
+                <select
+                  id="apiEnvironment"
+                  name="apiEnvironment"
+                  value={apiEnvironment}
+                  onChange={(event) =>
+                    setApiEnvironment(event.target.value === "live" ? "live" : "test")
+                  }
+                  className={inputClass}
+                >
+                  <option value="test">Test</option>
+                  <option value="live">Canlı</option>
+                </select>
+              </div>
+              {provider === "YURTICI" ? (
+                <div>
+                  <label htmlFor="apiLanguage" className="mb-1.5 block text-sm font-medium text-slate-700">
+                    Servis dili
+                  </label>
+                  <select
+                    id="apiLanguage"
+                    name="apiLanguage"
+                    value={apiLanguage}
+                    onChange={(event) => setApiLanguage(event.target.value === "EN" ? "EN" : "TR")}
+                    className={inputClass}
+                  >
+                    <option value="TR">Türkçe</option>
+                    <option value="EN">English</option>
+                  </select>
+                </div>
+              ) : (
+                <div>
+                  <label htmlFor="apiCustomerCode" className="mb-1.5 block text-sm font-medium text-slate-700">
+                    Müşteri kodu
+                  </label>
+                  <input
+                    id="apiCustomerCode"
+                    name="apiCustomerCode"
+                    value={apiCustomerCode}
+                    onChange={(event) => setApiCustomerCode(event.target.value)}
+                    autoComplete="off"
+                    placeholder="Esasweb müşteri kodu"
+                    className={inputClass}
+                  />
+                </div>
+              )}
+              <div>
+                <label htmlFor="apiUsername" className="mb-1.5 block text-sm font-medium text-slate-700">
+                  Web servis kullanıcı adı
+                </label>
+                <input
+                  id="apiUsername"
+                  name="apiUsername"
+                  value={apiUsername}
+                  onChange={(event) => setApiUsername(event.target.value)}
+                  autoComplete="off"
+                  placeholder={provider === "ARAS" ? "SetOrder kullanıcı adı" : "YKTEST veya satış kodunuz"}
+                  className={inputClass}
+                />
+              </div>
+              <div>
+                <label htmlFor="apiPassword" className="mb-1.5 block text-sm font-medium text-slate-700">
+                  Web servis şifresi
+                </label>
+                <input
+                  ref={passwordRef}
+                  id="apiPassword"
+                  name="apiPassword"
+                  type="password"
+                  autoComplete="new-password"
+                  placeholder={initial?.apiHasPassword ? "••••••••  (boş bırakın = değişmez)" : "Şifre"}
+                  className={inputClass}
+                />
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                disabled={isTesting}
+                onClick={() => {
+                  setApiTestError(null);
+                  setApiTestMessage(null);
+                  startTest(async () => {
+                    const result =
+                      provider === "ARAS"
+                        ? await testArasConnectionAction({
+                            carrierId: initial?.id,
+                            username: apiUsername,
+                            password: passwordRef.current?.value ?? "",
+                            customerCode: apiCustomerCode,
+                            environment: apiEnvironment,
+                          })
+                        : await testYurticiConnectionAction({
+                            carrierId: initial?.id,
+                            username: apiUsername,
+                            password: passwordRef.current?.value ?? "",
+                            environment: apiEnvironment,
+                            language: apiLanguage,
+                          });
+                    if (result.error) {
+                      setApiTestError(result.error);
+                      return;
+                    }
+                    setApiTestMessage(result.message ?? "Bağlantı başarılı.");
+                  });
+                }}
+                className="inline-flex items-center gap-2 rounded-md border border-[#405189] px-3 py-2 text-sm font-semibold text-[#405189] hover:bg-[#405189]/5 disabled:opacity-60"
+              >
+                {isTesting ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlugZap className="h-4 w-4" />}
+                Bağlantıyı dene
+              </button>
+              {initial?.apiHasPassword ? (
+                <p className="text-xs text-slate-500">Kayıtlı şifre var. Yeni şifre yazmazsanız korunur.</p>
+              ) : null}
+            </div>
+            {apiTestError ? (
+              <p className="text-sm text-rose-600">{apiTestError}</p>
+            ) : null}
+            {apiTestMessage ? (
+              <p className="text-sm text-emerald-700">{apiTestMessage}</p>
+            ) : null}
           </div>
-        </div>
+        ) : (
+          <div className="flex items-start gap-3 p-5">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#405189]/10 text-[#405189]">
+              <PlugZap className="h-5 w-5" />
+            </span>
+            <div>
+              <p className="text-sm font-medium text-slate-800">
+                {providerMeta.apiPlanned
+                  ? `${providerMeta.label} API’si henüz bağlı değil`
+                  : "Özel firmalar için API tanımı yok"}
+              </p>
+              <p className="mt-1 text-sm text-slate-500">
+                {providerMeta.apiPlanned
+                  ? "Bu sağlayıcı için gönderi oluşturma ve takip entegrasyonu sonraki aşamada eklenecek."
+                  : "Takip URL şablonunu doldurun. Özel API ihtiyacı olursa sağlayıcı olarak kaydedilebilir."}
+              </p>
+            </div>
+          </div>
+        )}
       </section>
 
       <section className="rounded-lg border border-[#e9ebec] bg-white shadow-sm">

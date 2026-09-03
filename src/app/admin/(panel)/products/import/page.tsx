@@ -1,35 +1,56 @@
 import type { Metadata } from "next";
-import { Upload } from "lucide-react";
-import { getLatestImportJob } from "@/lib/product-import-job";
-import { kickImportWorker } from "@/lib/product-import-worker";
-import { ProductImportClient } from "./product-import-client";
+import Link from "next/link";
+import { FileSpreadsheet, Rss, Webhook } from "lucide-react";
+import { ImportPageHeader, ImportSectionNav } from "./import-section-nav";
+import { IMPORT_PATHS } from "./import-paths";
 
 export const metadata: Metadata = {
   title: "Ürün yükle",
   description: "Excel, XML veya API ile ürün içe aktarın",
 };
 
-export default async function ProductImportPage() {
-  const initialJob = await getLatestImportJob().catch(() => null);
-  if (initialJob && (initialJob.status === "QUEUED" || initialJob.status === "RUNNING")) {
-    kickImportWorker();
-  }
+const CARDS = [
+  {
+    href: IMPORT_PATHS.excel,
+    icon: FileSpreadsheet,
+    title: "Excel",
+    text: "Yeni ürün yükleyin veya mevcut ürünleri Excel ile güncelleyin.",
+  },
+  {
+    href: IMPORT_PATHS.xml,
+    icon: Rss,
+    title: "XML kaynakları",
+    text: "Kayıtlı tedarikçi XML’lerini yönetin. Her kaynağın kendi eşleme sayfası vardır.",
+  },
+  {
+    href: IMPORT_PATHS.api,
+    icon: Webhook,
+    title: "API kaynakları",
+    text: "JSON API’den ürün çekin, alanları eşleyin ve belirli aralıklarla güncelleyin.",
+  },
+] as const;
 
+export default function ProductImportHubPage() {
   return (
     <div className="space-y-6">
-      <div className="rounded-lg border border-[#e9ebec] bg-white p-5 shadow-sm">
-        <p className="text-xs font-medium tracking-wide text-slate-400 uppercase">Mağaza</p>
-        <h1 className="mt-1 flex items-center gap-2 text-xl font-semibold text-slate-800 sm:text-2xl">
-          <Upload className="h-6 w-6 text-[#405189]" />
-          Ürün yükle
-        </h1>
-        <p className="mt-2 max-w-3xl text-sm text-slate-500">
-          Excel kalıbını indirip yükleyin. Görsel linkleri bu sunucuya indirilir; açılmayan
-          linkli ürün yüklenmez. Ürünler toplu kaydedilir. Aktarım bitince Excel satır
-          verisi silinir.
-        </p>
+      <ImportPageHeader
+        title="Ürün yükle"
+        description="Yeni ürün yükleyin, mevcut ürünleri Excel ile güncelleyin veya tedarikçi XML / API kaynaklarını zamanlayın. Aynı barkod veya ürün kodu kabul edilmez."
+      />
+      <ImportSectionNav />
+      <div className="grid gap-4 md:grid-cols-3">
+        {CARDS.map((card) => (
+          <Link
+            key={card.href}
+            href={card.href}
+            className="rounded-lg border border-[#e9ebec] bg-white p-5 shadow-sm transition hover:border-[#405189]/40 hover:shadow-md"
+          >
+            <card.icon className="h-6 w-6 text-[#405189]" />
+            <h2 className="mt-3 text-base font-semibold text-slate-800">{card.title}</h2>
+            <p className="mt-1 text-sm text-slate-500">{card.text}</p>
+          </Link>
+        ))}
       </div>
-      <ProductImportClient initialJob={initialJob} />
     </div>
   );
 }

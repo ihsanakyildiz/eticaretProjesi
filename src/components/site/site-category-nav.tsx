@@ -5,6 +5,7 @@ import { SiteLink } from "@/components/site/site-link";
 import { ChevronDown, ChevronRight, LayoutGrid } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
+import type { SiteCategoryNavItem } from "@/components/site/site-types";
 import { useCatalogUrls } from "@/components/site/site-url-provider";
 
 function isActivePath(pathname: string, href: string) {

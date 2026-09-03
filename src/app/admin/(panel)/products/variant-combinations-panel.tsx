@@ -3,7 +3,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, Pencil, Sparkles, Trash2 } from "lucide-react";
 import { COMBINATION_TABLE_PAGE_SIZE } from "@/lib/product-combinations";
-import { formatMinorToMajorInput, parseMajorToMinor } from "@/lib/product-money";
+import {
+  formatMinorToMajorInput,
+  fromChargeAndListPrice,
+  parseMajorToMinor,
+  toChargeAndListPrice,
+} from "@/lib/product-money";
 import type { ProductVariantDraft } from "@/lib/product-editor";
 import { DEFAULT_VARIANT_COMBINATION_KEY } from "@/lib/product-variants";
 import {
@@ -15,6 +20,7 @@ import {
 } from "@/lib/product-combination-filters";
 import type { GeneratorAttribute } from "./generate-combinations-modal";
 import { VariantEditModal, type ProductGalleryPick } from "./variant-edit-modal";
+import { CatalogStockHint, catalogStockInputClass } from "./catalog-stock-field";
 
 function AttributeFilterDropdown({
   axis,
@@ -122,6 +128,7 @@ export function VariantCombinationsPanel({
   basePriceMinor,
   sku,
   inputClass,
+  lockStock = false,
   onVariantsChange,
   onOpenGenerator,
 }: {
@@ -134,6 +141,7 @@ export function VariantCombinationsPanel({
   basePriceMinor: number;
   sku: string;
   inputClass: string;
+  lockStock?: boolean;
   onVariantsChange: (next: ProductVariantDraft[] | ((prev: ProductVariantDraft[]) => ProductVariantDraft[])) => void;
   onOpenGenerator: () => void;
 }) {
@@ -260,7 +268,9 @@ export function VariantCombinationsPanel({
         <div>
           <h2 className="text-base font-semibold text-slate-800">Kombinasyonlar</h2>
           <p className="mt-1 text-sm text-slate-500">
-            Stok ve fiyat her SKU satırındadır. Çok sayıda satır sayfalı listelenir; filtre ile daraltın.
+            {lockStock
+              ? "Fiyat her SKU satırındadır. Stok adedi ürün kartından değiştirilemez; gelişmiş stok sistemini kullanın."
+              : "Stok ve fiyat her SKU satırındadır. Çok sayıda satır sayfalı listelenir; filtre ile daraltın."}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -293,15 +303,19 @@ export function VariantCombinationsPanel({
       {!hasCombinations ? (
         <div className="grid max-w-md gap-4 p-5">
           <p className="text-sm text-slate-500">
-            Bu ürün tek SKU. Beden/renk için kombinasyon üretin veya stok adedini aşağıdan girin.
+            {lockStock
+              ? "Bu ürün tek SKU. Stok adedi gelişmiş stok sisteminden yönetilir."
+              : "Bu ürün tek SKU. Beden/renk için kombinasyon üretin veya stok adedini aşağıdan girin."}
           </p>
           <div>
             <label className="mb-1.5 block text-sm font-medium text-slate-700">Stok adedi</label>
             <input
               type="number"
               min={0}
+              readOnly={lockStock}
               value={defaultStock}
               onChange={(e) => {
+                if (lockStock) return;
                 const stockQuantity = Number.parseInt(e.target.value, 10) || 0;
                 onVariantsChange((prev) =>
                   prev.map((item) =>
@@ -309,8 +323,9 @@ export function VariantCombinationsPanel({
                   ),
                 );
               }}
-              className={inputClass}
+              className={catalogStockInputClass(inputClass, lockStock)}
             />
+            <CatalogStockHint locked={lockStock} />
           </div>
         </div>
       ) : (
@@ -372,14 +387,20 @@ export function VariantCombinationsPanel({
                     <th className="w-14 py-2 pr-2">Görsel</th>
                     <th className="py-2 pr-2">Kombinasyon</th>
                     <th className="py-2 pr-2">Referans</th>
-                    <th className="py-2 pr-2">Fiyat (KDV hariç)</th>
+                    <th className="py-2 pr-2">Satış (KDV hariç)</th>
+                    <th className="py-2 pr-2">İndirimli</th>
                     <th className="py-2 pr-2">Adet</th>
                     <th className="py-2 pr-2">Varsayılan</th>
                     <th />
                   </tr>
                 </thead>
                 <tbody>
-                  {pageItems.map((variant) => (
+                  {pageItems.map((variant) => {
+                    const listPrice = fromChargeAndListPrice(
+                      variant.priceMinor,
+                      variant.compareAtMinor,
+                    );
+                    return (
                     <tr key={variant.clientKey} className="border-b border-[#e9ebec]">
                       <td className="py-2 pr-2">
                         <input
@@ -425,26 +446,60 @@ export function VariantCombinationsPanel({
                           type="number"
                           min={0}
                           step="0.01"
-                          value={formatMinorToMajorInput(variant.priceMinor)}
-                          onChange={(e) =>
+                          value={formatMinorToMajorInput(listPrice.saleMinor)}
+                          onChange={(e) => {
+                            const next = toChargeAndListPrice(
+                              parseMajorToMinor(e.target.value) ?? 0,
+                              listPrice.discountMinor,
+                            );
                             updateVariant(variant.clientKey, {
-                              priceMinor: parseMajorToMinor(e.target.value) ?? 0,
-                            })
-                          }
-                          className="w-28 rounded-md border border-[#e9ebec] px-2 py-1 text-sm"
+                              priceMinor: next.chargeMinor,
+                              compareAtMinor: next.listMinor,
+                            });
+                          }}
+                          className="w-24 rounded-md border border-[#e9ebec] px-2 py-1 text-sm"
                         />
                       </td>
                       <td className="py-2 pr-2">
                         <input
                           type="number"
                           min={0}
+                          step="0.01"
+                          value={
+                            listPrice.discountMinor != null
+                              ? formatMinorToMajorInput(listPrice.discountMinor)
+                              : ""
+                          }
+                          onChange={(e) => {
+                            const next = toChargeAndListPrice(
+                              listPrice.saleMinor,
+                              parseMajorToMinor(e.target.value),
+                            );
+                            updateVariant(variant.clientKey, {
+                              priceMinor: next.chargeMinor,
+                              compareAtMinor: next.listMinor,
+                            });
+                          }}
+                          placeholder="—"
+                          className="w-24 rounded-md border border-[#e9ebec] px-2 py-1 text-sm"
+                        />
+                      </td>
+                      <td className="py-2 pr-2">
+                        <input
+                          type="number"
+                          min={0}
+                          readOnly={lockStock}
                           value={variant.stockQuantity}
-                          onChange={(e) =>
+                          onChange={(e) => {
+                            if (lockStock) return;
                             updateVariant(variant.clientKey, {
                               stockQuantity: Number.parseInt(e.target.value, 10) || 0,
-                            })
-                          }
-                          className="w-20 rounded-md border border-[#e9ebec] px-2 py-1 text-sm"
+                            });
+                          }}
+                          className={catalogStockInputClass(
+                            "w-20 rounded-md border border-[#e9ebec] px-2 py-1 text-sm",
+                            lockStock,
+                          )}
                         />
                       </td>
                       <td className="py-2 pr-2">
@@ -483,7 +538,8 @@ export function VariantCombinationsPanel({
                         </div>
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             )}
@@ -524,6 +580,7 @@ export function VariantCombinationsPanel({
           attributes={attributes}
           productImages={productImages}
           taxRatePercent={taxRatePercent}
+          lockStock={lockStock}
           onSave={saveEditedVariant}
           onClose={() => setEditingKey(null)}
         />

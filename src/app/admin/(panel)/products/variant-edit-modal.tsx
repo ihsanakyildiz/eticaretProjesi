@@ -5,13 +5,17 @@ import { createPortal } from "react-dom";
 import { ChevronLeft, ChevronRight, ImageIcon, Upload, X } from "lucide-react";
 import { AdminSwitch } from "@/components/admin/admin-switch";
 import { combinationDisplayTitle } from "@/lib/product-combination-filters";
-import type { ProductVariantDraft } from "@/lib/product-editor";
+import { normalizeProductBarcode } from "@/lib/product-barcode";
 import {
   formatMinorToMajorInput,
+  fromChargeAndListPrice,
   parseMajorToMinor,
   taxIncludedMinor,
+  toChargeAndListPrice,
 } from "@/lib/product-money";
+import type { ProductVariantDraft } from "@/lib/product-editor";
 import type { GeneratorAttribute } from "./generate-combinations-modal";
+import { CatalogStockHint, catalogStockInputClass } from "./catalog-stock-field";
 
 export type ProductGalleryPick = {
   preview: string;
@@ -23,7 +27,7 @@ type VariantEditForm = {
   sku: string;
   barcode: string;
   priceMajor: string;
-  compareAtMajor: string;
+  discountMajor: string;
   stockQuantity: number;
   isDefault: boolean;
   isActive: boolean;
@@ -39,12 +43,13 @@ function formFromVariant(variant: ProductVariantDraft): VariantEditForm {
   const preview = variant.imageFile
     ? URL.createObjectURL(variant.imageFile)
     : (variant.image ?? "");
+  const prices = fromChargeAndListPrice(variant.priceMinor, variant.compareAtMinor);
   return {
     sku: variant.sku,
     barcode: variant.barcode ?? "",
-    priceMajor: formatMinorToMajorInput(variant.priceMinor),
-    compareAtMajor:
-      variant.compareAtMinor != null ? formatMinorToMajorInput(variant.compareAtMinor) : "",
+    priceMajor: formatMinorToMajorInput(prices.saleMinor),
+    discountMajor:
+      prices.discountMinor != null ? formatMinorToMajorInput(prices.discountMinor) : "",
     stockQuantity: variant.stockQuantity,
     isDefault: variant.isDefault,
     isActive: variant.isActive !== false,
@@ -58,11 +63,15 @@ function formFromVariant(variant: ProductVariantDraft): VariantEditForm {
 }
 
 function formToPatch(form: VariantEditForm): Partial<ProductVariantDraft> {
+  const stored = toChargeAndListPrice(
+    parseMajorToMinor(form.priceMajor) ?? 0,
+    parseMajorToMinor(form.discountMajor),
+  );
   return {
     sku: form.sku.trim() || "SKU",
     barcode: form.barcode.trim(),
-    priceMinor: parseMajorToMinor(form.priceMajor) ?? 0,
-    compareAtMinor: parseMajorToMinor(form.compareAtMajor),
+    priceMinor: stored.chargeMinor,
+    compareAtMinor: stored.listMinor,
     stockQuantity: Math.max(0, Math.round(form.stockQuantity)),
     isDefault: form.isDefault,
     isActive: form.isActive,
@@ -80,6 +89,7 @@ export function VariantEditModal({
   attributes,
   productImages,
   taxRatePercent,
+  lockStock = false,
   onSave,
   onClose,
 }: {
@@ -88,18 +98,22 @@ export function VariantEditModal({
   attributes: GeneratorAttribute[];
   productImages: ProductGalleryPick[];
   taxRatePercent: number;
+  lockStock?: boolean;
   onSave: (clientKey: string, patch: Partial<ProductVariantDraft>, nextKey?: string) => void;
   onClose: () => void;
 }) {
   const fileId = useId();
   const fileRef = useRef<HTMLInputElement>(null);
   const [form, setForm] = useState<VariantEditForm>(() => formFromVariant(variant));
+  const [barcodeError, setBarcodeError] = useState<string | null>(null);
   const index = Math.max(0, list.findIndex((item) => item.clientKey === variant.clientKey));
   const hasPrev = index > 0;
   const hasNext = index >= 0 && index < list.length - 1;
   const title = combinationDisplayTitle(variant, attributes);
-  const priceMinor = parseMajorToMinor(form.priceMajor) ?? 0;
-  const priceIncl = taxIncludedMinor(priceMinor, taxRatePercent);
+  const saleMinor = parseMajorToMinor(form.priceMajor) ?? 0;
+  const storedPrice = toChargeAndListPrice(saleMinor, parseMajorToMinor(form.discountMajor));
+  const priceIncl = taxIncludedMinor(storedPrice.chargeMinor, taxRatePercent);
+  const saleIncl = taxIncludedMinor(saleMinor, taxRatePercent);
   const galleryPicks = productImages.filter((item) => item.url || item.file);
 
   useEffect(() => {
@@ -119,6 +133,18 @@ export function VariantEditModal({
   }, [onClose]);
 
   const persist = (nextKey?: string) => {
+    const barcode = normalizeProductBarcode(form.barcode);
+    const taken = list.some(
+      (item) =>
+        item.clientKey !== variant.clientKey &&
+        Boolean(barcode) &&
+        normalizeProductBarcode(item.barcode) === barcode,
+    );
+    if (taken) {
+      setBarcodeError(`Bu barkod bu üründeki başka bir varyantta zaten var (${barcode}).`);
+      return;
+    }
+    setBarcodeError(null);
     onSave(variant.clientKey, formToPatch(form), nextKey);
   };
 
@@ -258,9 +284,13 @@ export function VariantEditModal({
               <label className="mb-1.5 block text-sm font-medium text-slate-700">Barkod</label>
               <input
                 value={form.barcode}
-                onChange={(e) => setForm((prev) => ({ ...prev, barcode: e.target.value }))}
+                onChange={(e) => {
+                  setBarcodeError(null);
+                  setForm((prev) => ({ ...prev, barcode: e.target.value }));
+                }}
                 className={inputClass}
               />
+              {barcodeError ? <p className="mt-1 text-xs text-rose-600">{barcodeError}</p> : null}
             </div>
             <div>
               <label className="mb-1.5 block text-sm font-medium text-slate-700">
@@ -276,33 +306,48 @@ export function VariantEditModal({
               <label className="mb-1.5 block text-sm font-medium text-slate-700">
                 Satış fiyatı (KDV dahil)
               </label>
-              <input value={formatMinorToMajorInput(priceIncl)} readOnly className={`${inputClass} bg-[#f3f6f9]`} />
+              <input value={formatMinorToMajorInput(saleIncl)} readOnly className={`${inputClass} bg-[#f3f6f9]`} />
             </div>
             <div>
               <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                Karşılaştırma fiyatı (KDV hariç)
+                İndirimli satış fiyatı (KDV hariç)
               </label>
               <input
-                value={form.compareAtMajor}
-                onChange={(e) => setForm((prev) => ({ ...prev, compareAtMajor: e.target.value }))}
+                value={form.discountMajor}
+                onChange={(e) => setForm((prev) => ({ ...prev, discountMajor: e.target.value }))}
                 className={inputClass}
-                placeholder="İsteğe bağlı"
+                placeholder="Boş = indirim yok"
               />
             </div>
+            {storedPrice.listMinor != null ? (
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                  Müşteri öder (KDV dahil)
+                </label>
+                <input
+                  value={formatMinorToMajorInput(priceIncl)}
+                  readOnly
+                  className={`${inputClass} bg-[#f3f6f9]`}
+                />
+              </div>
+            ) : null}
             <div>
               <label className="mb-1.5 block text-sm font-medium text-slate-700">Stok adedi</label>
               <input
                 type="number"
                 min={0}
+                readOnly={lockStock}
                 value={form.stockQuantity}
-                onChange={(e) =>
+                onChange={(e) => {
+                  if (lockStock) return;
                   setForm((prev) => ({
                     ...prev,
                     stockQuantity: Number.parseInt(e.target.value, 10) || 0,
-                  }))
-                }
-                className={inputClass}
+                  }));
+                }}
+                className={catalogStockInputClass(inputClass, lockStock)}
               />
+              <CatalogStockHint locked={lockStock} />
             </div>
           </div>
 

@@ -1,12 +1,17 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useCart } from "@/components/site/cart/cart-provider";
 
 export function OrderThanksClearCart() {
-  const { clearSelected } = useCart();
+  const { ready, clearSelected } = useCart();
+  const clearedRef = useRef(false);
+
   useEffect(() => {
+    if (!ready || clearedRef.current) return;
+    clearedRef.current = true;
     clearSelected();
-  }, [clearSelected]);
+  }, [ready, clearSelected]);
+
   return null;
 }

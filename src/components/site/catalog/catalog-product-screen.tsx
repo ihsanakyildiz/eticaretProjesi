@@ -2,12 +2,12 @@ import type { Metadata } from "next";
 import dynamic from "next/dynamic";
 import { notFound } from "next/navigation";
 import { FileText } from "lucide-react";
+import { CatalogBreadcrumb } from "@/components/site/catalog/catalog-breadcrumb";
 import { ProductBuyBox } from "@/components/site/catalog/product-buy-box";
 import { ProductCard } from "@/components/site/catalog/product-card";
-import { ProductDetailTabs } from "@/components/site/catalog/product-detail-tabs";
 import { ProductViewTracker } from "@/components/site/catalog/product-view-tracker";
 import { JsonLd } from "@/components/site/json-ld";
-import { SiteLink } from "@/components/site/site-link";
+import { getCategoryBreadcrumb } from "@/lib/category-tree";
 import {
   catalogBrandHref,
   catalogCardAvailability,
@@ -15,23 +15,21 @@ import {
   catalogCardSchemaAvailability,
   catalogCategoryHref,
   catalogProductHref,
+  getCachedCatalogCategoryIndex,
   getCachedCatalogProduct,
 } from "@/lib/catalog-products";
 import { prepareRichHtml } from "@/lib/html";
 import { buildProductJsonLd } from "@/lib/json-ld";
 import { parsePerformance, withCdnUrl } from "@/lib/performance";
+import { prisma } from "@/lib/prisma";
 import { productEstimatedDeliveryLabel } from "@/lib/product-editor";
+import { reviewerDisplayName } from "@/lib/reviews";
 import { buildPublicMetadata, resolveProductSeo } from "@/lib/seo";
 import { getSettingsMap } from "@/lib/settings";
-import {
-  catalogHubTitle,
-  parseUrlStructure,
-  publicCatalogPath,
-  type UrlStructure,
-} from "@/lib/url-structure";
+import { parseUrlStructure, type UrlStructure } from "@/lib/url-structure";
 
-const HomeCta = dynamic(() =>
-  import("@/components/site/home/home-cta").then((mod) => mod.HomeCta),
+const ProductDetailTabs = dynamic(() =>
+  import("@/components/site/catalog/product-detail-tabs").then((mod) => mod.ProductDetailTabs),
 );
 
 function featureDisplay(row: {
@@ -81,11 +79,31 @@ export async function CatalogProductScreen({
   slug: string;
   urls: UrlStructure;
 }) {
-  const [product, settings] = await Promise.all([
+  const [product, settings, categories, reviewRows] = await Promise.all([
     getCachedCatalogProduct(slug),
     getSettingsMap().catch(() => ({}) as Record<string, string>),
+    getCachedCatalogCategoryIndex().catch(() => []),
+    prisma.productReview.findMany({
+      where: { product: { slug }, status: "APPROVED" },
+      orderBy: { createdAt: "desc" },
+      take: 50,
+      select: {
+        id: true,
+        rating: true,
+        comment: true,
+        displayName: true,
+        createdAt: true,
+        user: { select: { firstName: true, lastName: true, name: true } },
+        images: { orderBy: { sortOrder: "asc" }, select: { url: true } },
+      },
+    }).catch(() => []),
   ]);
   if (!product) notFound();
+  const reviewCount = reviewRows.length;
+  const reviewAverage =
+    reviewCount === 0
+      ? 0
+      : reviewRows.reduce((sum, row) => sum + row.rating, 0) / reviewCount;
 
   const perf = parsePerformance(settings);
   const cover = withCdnUrl(product.image, perf.cdnUrl);
@@ -104,8 +122,18 @@ export async function CatalogProductScreen({
     disableThirdParty: perf.disableThirdParty,
   });
   const path = catalogProductHref(product.slug, urls, product.urlId);
-  const catalogPath = publicCatalogPath(urls);
-  const hubTitle = catalogHubTitle(urls);
+  const homeLabel = settings.site_name?.trim() || "Ana Sayfa";
+  const categoryTrail = product.category
+    ? getCategoryBreadcrumb(categories, product.category.id)
+    : [];
+  const crumbs = [
+    { name: homeLabel, href: "/" },
+    ...categoryTrail.map((item) => ({
+      name: item.name,
+      href: catalogCategoryHref(item.slug, urls, item.urlId),
+    })),
+    { name: product.title },
+  ];
   const gallery = product.images.map((image) => ({
     ...image,
     url: withCdnUrl(image.url, perf.cdnUrl) ?? image.url,
@@ -120,11 +148,11 @@ export async function CatalogProductScreen({
           description: seo.seoDescription,
           path,
           crumbs: [
-            { name: "Ana Sayfa", path: "/" },
-            { name: hubTitle, path: catalogPath },
-            ...(product.category
-              ? [{ name: product.category.name, path: catalogCategoryHref(product.category.slug, urls, product.category.urlId) }]
-              : []),
+            { name: homeLabel, path: "/" },
+            ...categoryTrail.map((item) => ({
+              name: item.name,
+              path: catalogCategoryHref(item.slug, urls, item.urlId),
+            })),
             { name: product.title, path },
           ],
           image: cover,
@@ -136,59 +164,34 @@ export async function CatalogProductScreen({
         })}
       />
 
-      <ProductViewTracker productId={product.id} />
-      <section className="border-b border-site-border bg-site-surface py-5">
+      {perf.productPreloadImage && cover ? (
+        <link rel="preload" as="image" href={cover} fetchPriority="high" />
+      ) : null}
+      <ProductViewTracker productId={product.id} recordView={perf.productTrackViews} />
+      <section className="py-5 sm:py-6">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <nav className="text-sm text-site-muted">
-            <SiteLink href="/" className="hover:text-site-primary">
-              Ana Sayfa
-            </SiteLink>
-            <span className="mx-2">/</span>
-            <SiteLink href={catalogPath} className="hover:text-site-primary">
-              {hubTitle}
-            </SiteLink>
-            {product.category ? (
-              <>
-                <span className="mx-2">/</span>
-                <SiteLink
-                  href={catalogCategoryHref(product.category.slug, urls, product.category.urlId)}
-                  className="hover:text-site-primary"
-                >
-                  {product.category.name}
-                </SiteLink>
-              </>
-            ) : null}
-            <span className="mx-2">/</span>
-            <span className="text-site-fg">{product.title}</span>
-          </nav>
-        </div>
-      </section>
-
-      <section className="py-8 sm:py-10">
-        <div className="mx-auto max-w-7xl space-y-10 px-4 sm:px-6 lg:px-8">
-          <div>
-            <h1 className="font-display text-2xl font-bold tracking-tight text-site-fg sm:text-3xl">
-              {product.title}
-            </h1>
-            <div className="mt-2 flex flex-wrap gap-3 text-sm text-site-muted">
-              {product.brand ? (
-                <SiteLink href={catalogBrandHref(product.brand.slug, urls, product.brand.urlId)} className="hover:text-site-primary">
-                  {product.brand.name}
-                </SiteLink>
-              ) : null}
-              {product.sku ? <span>SKU: {product.sku}</span> : null}
-              {product.onlineOnly ? <span>Sadece çevrimiçi</span> : null}
-            </div>
-          </div>
+          <CatalogBreadcrumb items={crumbs} />
+          <div className="space-y-10">
           <ProductBuyBox
             title={product.title}
+            brandName={product.brand?.name ?? null}
+            brandHref={
+              product.brand
+                ? catalogBrandHref(product.brand.slug, urls, product.brand.urlId)
+                : null
+            }
+            sku={product.sku}
+            onlineOnly={product.onlineOnly}
             gallery={gallery}
+            galleryEager={perf.productGalleryEager}
             variants={product.variants.map((variant) => ({
               id: variant.id,
               title: variant.title,
               sku: variant.sku,
               priceMinor: variant.priceMinor,
               compareAtMinor: variant.compareAtMinor,
+              saleStartsAt: variant.saleStartsAt,
+              saleEndsAt: variant.saleEndsAt,
               stockQuantity: variant.stockQuantity,
               trackInventory: variant.trackInventory,
               allowBackorder: variant.allowBackorder,
@@ -207,14 +210,6 @@ export async function CatalogProductScreen({
                 valueSortOrder: selection.value.sortOrder,
                 colorHex: selection.value.colorHex,
                 image: selection.value.image,
-                attributeValues: selection.attribute.values.map((value) => ({
-                  id: value.id,
-                  name: value.name,
-                  slug: value.slug,
-                  sortOrder: value.sortOrder,
-                  colorHex: value.colorHex,
-                  image: value.image,
-                })),
               })),
             }))}
             taxRatePercent={product.taxRatePercent}
@@ -240,6 +235,21 @@ export async function CatalogProductScreen({
               name: row.filter.name,
               value: featureDisplay(row),
             }))}
+            reviews={reviewRows.map((row) => ({
+              id: row.id,
+              rating: row.rating,
+              comment: row.comment ?? "",
+              author: reviewerDisplayName({
+                displayName: row.displayName,
+                firstName: row.user.firstName,
+                lastName: row.user.lastName,
+                name: row.user.name,
+              }),
+              createdAt: row.createdAt.toISOString(),
+              photos: row.images.map((image) => image.url),
+            }))}
+            reviewAverage={reviewAverage}
+            reviewCount={reviewCount}
           />
 
           {product.attachments.length > 0 ? (
@@ -273,9 +283,9 @@ export async function CatalogProductScreen({
               </div>
             </div>
           ) : null}
+          </div>
         </div>
       </section>
-      <HomeCta />
     </>
   );
 }

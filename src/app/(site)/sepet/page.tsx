@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { CartPage } from "@/components/site/cart/cart-page";
 
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = {
   title: "Sepet",
   description: "Sepetinizdeki ürünleri inceleyin ve ödemeye geçin.",

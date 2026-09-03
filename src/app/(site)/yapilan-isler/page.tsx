@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import dynamic from "next/dynamic";
 import { JsonLd } from "@/components/site/json-ld";
 import { WorkCard } from "@/components/site/work/work-card";
 import { SiteSidebarPageLayout } from "@/components/site/site-sidebar-layout";
@@ -27,9 +26,6 @@ export async function generateMetadata(): Promise<Metadata> {
   });
 }
 
-const HomeCta = dynamic(() =>
-  import("@/components/site/home/home-cta").then((mod) => mod.HomeCta),
-);
 
 type WorksIndexPageProps = {
   searchParams: Promise<{ sayfa?: string }>;
@@ -125,7 +121,6 @@ export default async function WorksIndexPage({
         </SiteSidebarPageLayout>
       </section>
 
-      <HomeCta />
     </>
   );
 }

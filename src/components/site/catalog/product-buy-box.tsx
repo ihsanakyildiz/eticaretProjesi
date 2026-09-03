@@ -5,10 +5,13 @@ import { useRouter } from "next/navigation";
 import type { ProductAttributeDisplayType, ProductSaleUnit } from "@prisma/client";
 import { useCart } from "@/components/site/cart/cart-provider";
 import { SiteImage, SiteImageFallback } from "@/components/site/site-image";
+import { SiteLink } from "@/components/site/site-link";
+import { SaleCountdown, useTickingNow } from "@/components/site/catalog/sale-countdown";
 import { pickSellableVariants } from "@/lib/catalog-storefront";
 import { fallbackSwatchHex } from "@/lib/product-attributes";
 import { productSaleUnitShort } from "@/lib/product-editor";
 import { formatMinorTry, taxIncludedMinor } from "@/lib/product-money";
+import { resolveSalePrice } from "@/lib/product-sale";
 import { isVariantPurchasable, type OutOfStockBehavior } from "@/lib/product-stock";
 import {
   buildStorefrontVariantAxes,
@@ -27,6 +30,8 @@ export type StorefrontVariant = {
   sku: string;
   priceMinor: number;
   compareAtMinor: number | null;
+  saleStartsAt?: Date | string | null;
+  saleEndsAt?: Date | string | null;
   stockQuantity: number;
   trackInventory: boolean;
   allowBackorder: boolean;
@@ -44,6 +49,10 @@ export type StorefrontGalleryImage = {
 
 export function ProductBuyBox({
   title,
+  brandName = null,
+  brandHref = null,
+  sku = null,
+  onlineOnly = false,
   gallery,
   variants,
   taxRatePercent,
@@ -56,8 +65,13 @@ export function ProductBuyBox({
   outOfStockLabel,
   outOfStockBehavior,
   deliveryLabel,
+  galleryEager = 1,
 }: {
   title: string;
+  brandName?: string | null;
+  brandHref?: string | null;
+  sku?: string | null;
+  onlineOnly?: boolean;
   gallery: StorefrontGalleryImage[];
   variants: StorefrontVariant[];
   taxRatePercent: number;
@@ -70,6 +84,7 @@ export function ProductBuyBox({
   outOfStockLabel: string | null;
   outOfStockBehavior: OutOfStockBehavior;
   deliveryLabel?: string | null;
+  galleryEager?: number;
 }) {
   const sellable = useMemo(() => pickSellableVariants(variants), [variants]);
   const defaultVariant =
@@ -81,7 +96,20 @@ export function ProductBuyBox({
   const [qty, setQty] = useState(Math.max(1, minOrderQty));
   const [activeImage, setActiveImage] = useState(gallery[0]?.url ?? "");
   const [added, setAdded] = useState(false);
+  const addedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const urlReadyRef = useRef(false);
+
+  const flashAdded = () => {
+    setAdded(true);
+    if (addedTimerRef.current) clearTimeout(addedTimerRef.current);
+    addedTimerRef.current = setTimeout(() => setAdded(false), 1800);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (addedTimerRef.current) clearTimeout(addedTimerRef.current);
+    };
+  }, []);
 
   const variant = useMemo(
     () =>
@@ -91,6 +119,19 @@ export function ProductBuyBox({
       variants[0],
     [defaultVariant?.id, picked, sellable, variants],
   );
+  const saleTick = Boolean(variant?.saleStartsAt || variant?.saleEndsAt);
+  const now = useTickingNow(saleTick);
+  const resolvedSale = variant
+    ? resolveSalePrice(
+        {
+          priceMinor: variant.priceMinor,
+          compareAtMinor: variant.compareAtMinor,
+          saleStartsAt: variant.saleStartsAt,
+          saleEndsAt: variant.saleEndsAt,
+        },
+        now ?? undefined,
+      )
+    : null;
   const hasAxisPicker = axes.length > 0 && sellable.length > 1;
   const hasFallbackSelect = !hasAxisPicker && sellable.length > 1;
 
@@ -117,10 +158,12 @@ export function ProductBuyBox({
     writeVariantSearchToUrl(axes, picked);
   }, [axes, picked, sellable]);
   const image = variant?.image || activeImage || gallery[0]?.url || null;
-  const priceIncl = variant ? taxIncludedMinor(variant.priceMinor, taxRatePercent) : 0;
+  const priceIncl = resolvedSale
+    ? taxIncludedMinor(resolvedSale.priceMinor, taxRatePercent)
+    : 0;
   const compareIncl =
-    variant?.compareAtMinor != null
-      ? taxIncludedMinor(variant.compareAtMinor, taxRatePercent)
+    resolvedSale?.compareAtMinor != null
+      ? taxIncludedMinor(resolvedSale.compareAtMinor, taxRatePercent)
       : null;
   const hasPhysicalStock =
     !variant?.trackInventory || (variant?.stockQuantity ?? 0) > 0;
@@ -137,6 +180,8 @@ export function ProductBuyBox({
         }),
     );
   const unitLabel = productSaleUnitShort(saleUnit);
+  const displaySku = (variant?.sku?.trim() || sku?.trim() || "") || null;
+  const showMeta = Boolean(brandName || displaySku || onlineOnly);
 
   const bumpQty = (direction: 1 | -1) => {
     const step = Math.max(1, quantityStep);
@@ -154,7 +199,7 @@ export function ProductBuyBox({
               src={image}
               alt={title}
               fill
-              priority
+              priority={galleryEager > 0}
               className="object-cover"
               sizes="(max-width: 1024px) 100vw, 50vw"
             />
@@ -164,7 +209,7 @@ export function ProductBuyBox({
         </div>
         {gallery.length > 1 ? (
           <div className="mt-3 flex flex-wrap gap-2">
-            {gallery.map((item) => (
+            {gallery.map((item, index) => (
               <button
                 key={item.id}
                 type="button"
@@ -176,7 +221,14 @@ export function ProductBuyBox({
                     : "border-site-border"
                 }`}
               >
-                <SiteImage src={item.url} alt={item.alt || title} fill className="object-cover" sizes="64px" />
+                <SiteImage
+                  src={item.url}
+                  alt={item.alt || title}
+                  fill
+                  priority={index < galleryEager}
+                  className="object-cover"
+                  sizes="64px"
+                />
               </button>
             ))}
           </div>
@@ -184,17 +236,50 @@ export function ProductBuyBox({
       </div>
 
       <div>
+        <header className="mb-4">
+          <h1 className="text-[1.0625rem] font-medium leading-snug tracking-tight text-site-fg sm:text-lg">
+            {title}
+          </h1>
+          {showMeta ? (
+            <p className="mt-1.5 text-[12px] font-normal leading-relaxed tracking-wide text-site-muted">
+              {brandName ? (
+                brandHref ? (
+                  <SiteLink href={brandHref} className="transition-colors hover:text-site-fg">
+                    {brandName}
+                  </SiteLink>
+                ) : (
+                  <span>{brandName}</span>
+                )
+              ) : null}
+              {brandName && displaySku ? " " : null}
+              {displaySku ? <span>SKU: {displaySku}</span> : null}
+              {(brandName || displaySku) && onlineOnly ? (
+                <span className="mx-1.5 text-site-border">·</span>
+              ) : null}
+              {onlineOnly ? <span>Sadece çevrimiçi</span> : null}
+            </p>
+          ) : null}
+        </header>
         {showPrice ? (
           <div className="flex flex-wrap items-end gap-3">
-            <p className="font-display text-3xl font-bold text-site-fg">{formatMinorTry(priceIncl)}</p>
             {compareIncl && compareIncl > priceIncl ? (
               <p className="text-lg text-site-muted line-through">{formatMinorTry(compareIncl)}</p>
             ) : null}
+            <p
+              className={`font-display text-3xl font-semibold tracking-tight ${
+                compareIncl && compareIncl > priceIncl ? "text-rose-600" : "text-site-primary"
+              }`}
+            >
+              {formatMinorTry(priceIncl)}
+            </p>
             <span className="text-sm text-site-muted">KDV dahil / {unitLabel}</span>
           </div>
         ) : (
           <p className="text-site-muted">Fiyat için bizimle iletişime geçin.</p>
         )}
+        {resolvedSale?.onSale && resolvedSale.saleEndsAt ? (
+          <SaleCountdown endsAt={resolvedSale.saleEndsAt} />
+        ) : null}
 
         {hasAxisPicker ? (
           <div className="mt-6 space-y-4">
@@ -289,17 +374,21 @@ export function ProductBuyBox({
               <button
                 type="button"
                 onClick={() => {
-                  addItem(variant.id, qty);
-                  setAdded(true);
+                  addItem(variant.id, qty, priceIncl);
+                  flashAdded();
                 }}
-                className="inline-flex rounded-md bg-site-primary px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:brightness-110"
+                className={`inline-flex rounded-md px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition ${
+                  added
+                    ? "bg-emerald-600 hover:bg-emerald-600"
+                    : "bg-site-primary hover:brightness-110"
+                }`}
               >
                 {added ? "Sepete eklendi" : "Sepete ekle"}
               </button>
               <button
                 type="button"
                 onClick={() => {
-                  addItem(variant.id, qty);
+                  addItem(variant.id, qty, priceIncl);
                   router.push("/sepet");
                 }}
                 className="inline-flex rounded-md border border-site-border px-5 py-2.5 text-sm font-semibold text-site-fg transition hover:bg-site-surface"

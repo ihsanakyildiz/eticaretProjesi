@@ -31,7 +31,7 @@ export function AdminHeader({
     .toUpperCase();
 
   return (
-    <header className="admin-surface sticky top-0 z-30 flex h-16 items-center gap-4 border-b border-[#e9ebec] bg-white px-4 lg:px-6">
+    <header className="admin-surface sticky top-0 z-30 flex h-16 items-center gap-4 border-b border-[#e9ebec] bg-white px-4 print:hidden lg:px-6">
       <button
         type="button"
         onClick={toggle}

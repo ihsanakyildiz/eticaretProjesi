@@ -12,7 +12,22 @@ import {
   type ProductFeatureDraft,
   type ProductVariantDraft,
 } from "@/lib/product-editor";
+import {
+  loadProductListVariants,
+  type ProductListVariantRow,
+} from "@/lib/admin-product-list";
 import { parseMajorToMinor } from "@/lib/product-money";
+import {
+  clearedSaleWrite,
+  listPriceMinor,
+  parseSaleWindow,
+  ratioChargeMinor,
+  storedSaleWrite,
+  toIsoOrNull,
+} from "@/lib/product-sale";
+import { syncProductSaleFromDefault } from "@/lib/product-sale-expire";
+import { isAdvancedInventoryEnabled } from "@/lib/advanced-inventory";
+import { writeCatalogStock } from "@/lib/inventory";
 import { pruneIncompleteCombinations } from "@/lib/product-combinations";
 import { prisma } from "@/lib/prisma";
 import {
@@ -21,6 +36,8 @@ import {
   formatVariantTitle,
 } from "@/lib/product-variants";
 import { slugify } from "@/lib/slug";
+import { normalizeProductBarcode } from "@/lib/product-barcode";
+import { variantDraftBarcodeError, invalidateDuplicateBarcodeCount } from "@/lib/product-barcode-db";
 import {
   deletePublicAsset,
   saveOptimizedImage,
@@ -38,6 +55,7 @@ export type ProductFormState = {
 
 function revalidateProductAdmin(id?: string, slug?: string) {
   revalidatePath("/admin/products");
+  revalidatePath("/admin/products/duplicate-barcodes");
   revalidatePath("/", "layout");
   revalidatePath("/katalog");
   revalidatePath("/kategori");
@@ -428,9 +446,10 @@ async function syncVariants(
     isDefault: pruned.length > 0 ? index === defaultIndex : item.isDefault,
     priceMinor: item.priceMinor > 0 ? item.priceMinor : basePriceMinor,
   }));
+  const lockCatalogStock = await isAdvancedInventoryEnabled();
   const existing = await prisma.productVariant.findMany({
     where: { productId },
-    select: { id: true, sku: true, combinationKey: true, image: true },
+    select: { id: true, sku: true, combinationKey: true, image: true, stockQuantity: true },
   });
   const incomingIds = new Set(
     normalized.map((item) => item.id).filter((id): id is string => Boolean(id)),
@@ -486,7 +505,7 @@ async function syncVariants(
       Number.isFinite(draft.priceMinor) && draft.priceMinor >= 0
         ? Math.round(draft.priceMinor)
         : basePriceMinor;
-    const stockQuantity = Number.isFinite(draft.stockQuantity)
+    const requestedStock = Number.isFinite(draft.stockQuantity)
       ? Math.max(0, Math.round(draft.stockQuantity))
       : 0;
     const compareAtMinor =
@@ -500,13 +519,14 @@ async function syncVariants(
     }
     const sku = await uniqueVariantSku(draft.sku || combinationKey.slice(0, 12), variantId);
     const previous = existing.find((row) => row.id === variantId);
+    const stockQuantity = lockCatalogStock ? (previous?.stockQuantity ?? 0) : requestedStock;
     const uploaded =
       imageFiles.get(draft.clientKey) ?? (draft.id ? imageFiles.get(draft.id) : undefined);
     const image = await resolveVariantImage(draft, previous?.image, uploaded);
 
     const data = {
       sku,
-      barcode: emptyToNull(draft.barcode ?? "", 64),
+      barcode: normalizeProductBarcode(draft.barcode ?? ""),
       title: (draft.title || formatVariantTitle([])).slice(0, 191),
       priceMinor,
       compareAtMinor,
@@ -530,6 +550,12 @@ async function syncVariants(
         data: { productId, ...data },
       });
       variantId = created.id;
+    }
+
+    if (variantId && !lockCatalogStock) {
+      await writeCatalogStock(prisma, variantId, stockQuantity, {
+        note: "Ürün formu stok güncellemesi",
+      });
     }
 
     if (selections.length && variantId) {
@@ -713,6 +739,9 @@ export async function createProductAction(
     return { error: "Kategori seçin.", fieldErrors: { categoryId: "Kategori zorunludur" } };
   }
 
+  const barcodeError = await variantDraftBarcodeError(fields.variants);
+  if (barcodeError) return { error: barcodeError };
+
   try {
     let sortOrder = fields.sortOrder;
     if (!String(formData.get("sortOrder") ?? "").trim()) {
@@ -736,6 +765,7 @@ export async function createProductAction(
     await syncFeatures(created.id, fields.features);
     await syncVariants(created.id, fields.variants, fields.basePriceMinor, fields.variantImageFiles);
 
+    invalidateDuplicateBarcodeCount();
     revalidateProductAdmin(created.id, created.slug);
     return { success: true, message: "Ürün oluşturuldu.", redirectId: created.id };
   } catch (error) {
@@ -766,6 +796,15 @@ export async function updateProductAction(
   }
 
   try {
+    const existingVariants = await prisma.productVariant.findMany({
+      where: { productId: id },
+      select: { id: true },
+    });
+    const barcodeError = await variantDraftBarcodeError(fields.variants, {
+      excludeVariantIds: existingVariants.map((row) => row.id),
+    });
+    if (barcodeError) return { error: barcodeError };
+
     const data = await productCoreData(fields, id);
     await prisma.product.update({ where: { id }, data });
 
@@ -779,6 +818,7 @@ export async function updateProductAction(
     await syncFeatures(id, fields.features);
     await syncVariants(id, fields.variants, fields.basePriceMinor, fields.variantImageFiles);
 
+    invalidateDuplicateBarcodeCount();
     revalidateProductAdmin(id, data.slug);
     if (existing.slug !== data.slug) {
       revalidatePath(`/${existing.slug}`);
@@ -904,6 +944,8 @@ export async function duplicateProductAction(input: { id: string }): Promise<{
         isbn: source.isbn,
         basePriceMinor: source.basePriceMinor,
         compareAtMinor: source.compareAtMinor,
+        saleStartsAt: source.saleStartsAt,
+        saleEndsAt: source.saleEndsAt,
         costMinor: source.costMinor,
         taxRatePercent: source.taxRatePercent,
         widthCm: source.widthCm,
@@ -977,17 +1019,21 @@ export async function duplicateProductAction(input: { id: string }): Promise<{
       });
     }
 
+    const lockCatalogStock = await isAdvancedInventoryEnabled();
     for (const variant of source.variants) {
       const copiedSku = await uniqueVariantSku(`${variant.sku}-KPY`);
+      const copiedStock = lockCatalogStock ? 0 : variant.stockQuantity;
       const createdVariant = await prisma.productVariant.create({
         data: {
           productId: created.id,
           sku: copiedSku,
-          barcode: variant.barcode,
+          barcode: null,
           title: variant.title,
           priceMinor: variant.priceMinor,
           compareAtMinor: variant.compareAtMinor,
-          stockQuantity: variant.stockQuantity,
+          saleStartsAt: variant.saleStartsAt,
+          saleEndsAt: variant.saleEndsAt,
+          stockQuantity: copiedStock,
           trackInventory: variant.trackInventory,
           allowBackorder: variant.allowBackorder,
           isActive: variant.isActive,
@@ -1006,6 +1052,11 @@ export async function duplicateProductAction(input: { id: string }): Promise<{
           })),
         });
       }
+      if (!lockCatalogStock) {
+        await writeCatalogStock(prisma, createdVariant.id, copiedStock, {
+          note: "Ürün kopyalama",
+        });
+      }
     }
 
     revalidateProductAdmin(created.id, created.slug);
@@ -1013,5 +1064,264 @@ export async function duplicateProductAction(input: { id: string }): Promise<{
   } catch (error) {
     console.error(error);
     return { error: "Ürün kopyalanırken bir hata oluştu." };
+  }
+}
+
+export async function listProductVariantsAction(productId: string): Promise<{
+  error?: string;
+  variants?: ProductListVariantRow[];
+}> {
+  const gate = await requirePermission("products", "view");
+  if (!gate.ok) return { error: gate.error };
+  const id = String(productId ?? "").trim();
+  if (!id) return { error: "Ürün bulunamadı." };
+  const variants = await loadProductListVariants(id);
+  if (!variants) return { error: "Ürün bulunamadı." };
+  return { variants };
+}
+
+export async function updateProductVariantQuickAction(input: {
+  variantId: string;
+  barcode?: string;
+  priceMinor?: number;
+  stockQuantity?: number;
+}): Promise<{ error?: string; variant?: ProductListVariantRow }> {
+  const gate = await requirePermission("products", "update");
+  if (!gate.ok) return { error: gate.error };
+
+  const variantId = String(input.variantId ?? "").trim();
+  if (!variantId) return { error: "Varyant bulunamadı." };
+
+  const existing = await prisma.productVariant.findUnique({
+    where: { id: variantId },
+    select: {
+      id: true,
+      productId: true,
+      isDefault: true,
+      barcode: true,
+      priceMinor: true,
+      stockQuantity: true,
+      product: { select: { slug: true } },
+    },
+  });
+  if (!existing) return { error: "Varyant bulunamadı." };
+
+  const data: { barcode?: string | null; priceMinor?: number } = {};
+
+  if (input.barcode !== undefined) {
+    const barcode = normalizeProductBarcode(input.barcode);
+    const barcodeError = await variantDraftBarcodeError([{ id: existing.id, barcode }], {
+      excludeVariantIds: [existing.id],
+    });
+    if (barcodeError) return { error: barcodeError };
+    data.barcode = barcode;
+  }
+
+  if (input.priceMinor !== undefined) {
+    if (!Number.isFinite(input.priceMinor) || input.priceMinor < 0) {
+      return { error: "Geçerli bir fiyat girin." };
+    }
+    data.priceMinor = Math.round(input.priceMinor);
+  }
+
+  const lockCatalogStock = await isAdvancedInventoryEnabled();
+  const wantsStock = input.stockQuantity !== undefined;
+  if (wantsStock && lockCatalogStock) {
+    return { error: "Stok yalnızca gelişmiş stok sisteminden değişir." };
+  }
+  let nextStock: number | null = null;
+  if (wantsStock && !lockCatalogStock) {
+    const qty = Number(input.stockQuantity);
+    if (!Number.isFinite(qty) || qty < 0) return { error: "Geçerli bir stok girin." };
+    nextStock = Math.round(qty);
+  }
+
+  try {
+    if (Object.keys(data).length > 0) {
+      await prisma.productVariant.update({
+        where: { id: existing.id },
+        data,
+      });
+    }
+    if (data.priceMinor != null) {
+      const siblingCount = await prisma.productVariant.count({
+        where: { productId: existing.productId },
+      });
+      if (existing.isDefault || siblingCount <= 1) {
+        await prisma.product.update({
+          where: { id: existing.productId },
+          data: { basePriceMinor: data.priceMinor },
+        });
+      }
+    }
+    if (nextStock != null) {
+      await writeCatalogStock(prisma, existing.id, nextStock, {
+        note: "Ürün listesi stok güncellemesi",
+      });
+    }
+    invalidateDuplicateBarcodeCount();
+    bustCatalogCache();
+    revalidatePath("/", "layout");
+    revalidatePath("/katalog");
+    revalidatePath("/kategori");
+    revalidatePath("/marka");
+    revalidatePath("/arama");
+    revalidatePath("/magaza");
+    revalidatePath("/urunler");
+    revalidatePath(`/admin/products/${existing.productId}/edit`);
+    if (existing.product.slug) {
+      revalidatePath(`/${existing.product.slug}`);
+      revalidatePath(`/urun/${existing.product.slug}`);
+      revalidatePath(`/urunler/${existing.product.slug}`);
+    }
+    const variants = await loadProductListVariants(existing.productId);
+    const variant = variants?.find((row) => row.id === existing.id);
+    if (!variant) return { error: "Varyant güncellendi ancak yeniden okunamadı." };
+    return { variant };
+  } catch (error) {
+    console.error(error);
+    return { error: "Varyant güncellenirken bir hata oluştu." };
+  }
+}
+
+export type ProductSaleResult = {
+  error?: string;
+  variant?: ProductListVariantRow;
+  product?: {
+    id: string;
+    basePriceMinor: number;
+    compareAtMinor: number | null;
+    saleStartsAt: string | null;
+    saleEndsAt: string | null;
+  };
+};
+
+export async function updateProductSaleAction(input: {
+  variantId: string;
+  remove?: boolean;
+  listMinor?: number;
+  chargeMinor?: number;
+  saleStartsAt?: string | null;
+  saleEndsAt?: string | null;
+  applyToAll?: boolean;
+}): Promise<ProductSaleResult> {
+  const gate = await requirePermission("products", "update");
+  if (!gate.ok) return { error: gate.error };
+
+  const variantId = String(input.variantId ?? "").trim();
+  if (!variantId) return { error: "Varyant bulunamadı." };
+
+  const existing = await prisma.productVariant.findUnique({
+    where: { id: variantId },
+    select: {
+      id: true,
+      productId: true,
+      priceMinor: true,
+      compareAtMinor: true,
+      saleStartsAt: true,
+      saleEndsAt: true,
+      product: { select: { slug: true } },
+    },
+  });
+  if (!existing) return { error: "Varyant bulunamadı." };
+
+  const saleStartsAt = input.saleStartsAt ?? null;
+  const saleEndsAt = input.saleEndsAt ?? null;
+  let windowStart: Date | null = null;
+  let windowEnd: Date | null = null;
+  let listRef = listPriceMinor(existing);
+  let chargeRef = existing.priceMinor;
+
+  if (!input.remove) {
+    const listMinor =
+      input.listMinor == null || !Number.isFinite(input.listMinor)
+        ? null
+        : Math.round(input.listMinor);
+    const chargeMinor =
+      input.chargeMinor == null || !Number.isFinite(input.chargeMinor)
+        ? null
+        : Math.round(input.chargeMinor);
+    if (listMinor == null || listMinor <= 0) return { error: "Geçerli bir liste fiyatı girin." };
+    if (chargeMinor == null || chargeMinor <= 0) {
+      return { error: "Geçerli bir indirimli fiyat girin." };
+    }
+    if (chargeMinor >= listMinor) {
+      return { error: "İndirimli fiyat, liste fiyatından küçük olmalı." };
+    }
+    const window = parseSaleWindow({
+      timed: Boolean(saleStartsAt || saleEndsAt),
+      startsAt: saleStartsAt ?? "",
+      endsAt: saleEndsAt ?? "",
+    });
+    if (!window.ok) return { error: window.error };
+    listRef = listMinor;
+    chargeRef = chargeMinor;
+    windowStart = window.saleStartsAt;
+    windowEnd = window.saleEndsAt;
+  }
+
+  try {
+    const siblings = input.applyToAll
+      ? await prisma.productVariant.findMany({
+          where: { productId: existing.productId },
+          select: { id: true, priceMinor: true, compareAtMinor: true },
+        })
+      : [
+          {
+            id: existing.id,
+            priceMinor: existing.priceMinor,
+            compareAtMinor: existing.compareAtMinor,
+          },
+        ];
+
+    await prisma.$transaction(
+      siblings.map((row) => {
+        const listMinor = row.id === existing.id && !input.remove ? listRef : listPriceMinor(row);
+        const data = input.remove
+          ? clearedSaleWrite(listMinor)
+          : storedSaleWrite({
+              listMinor,
+              chargeMinor: row.id === existing.id ? chargeRef : ratioChargeMinor(listMinor, listRef, chargeRef),
+              saleStartsAt: windowStart,
+              saleEndsAt: windowEnd,
+            });
+        return prisma.productVariant.update({
+          where: { id: row.id },
+          data,
+        });
+      }),
+    );
+
+    await syncProductSaleFromDefault(existing.productId);
+    revalidateProductAdmin(existing.productId, existing.product.slug ?? undefined);
+
+    const [variants, product] = await Promise.all([
+      loadProductListVariants(existing.productId),
+      prisma.product.findUnique({
+        where: { id: existing.productId },
+        select: {
+          id: true,
+          basePriceMinor: true,
+          compareAtMinor: true,
+          saleStartsAt: true,
+          saleEndsAt: true,
+        },
+      }),
+    ]);
+    const variant = variants?.find((row) => row.id === existing.id);
+    if (!variant || !product) return { error: "Kampanya kaydedildi ancak yeniden okunamadı." };
+    return {
+      variant,
+      product: {
+        id: product.id,
+        basePriceMinor: product.basePriceMinor,
+        compareAtMinor: product.compareAtMinor,
+        saleStartsAt: toIsoOrNull(product.saleStartsAt),
+        saleEndsAt: toIsoOrNull(product.saleEndsAt),
+      },
+    };
+  } catch (error) {
+    console.error(error);
+    return { error: "Kampanya kaydedilirken bir hata oluştu." };
   }
 }

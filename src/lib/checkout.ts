@@ -1,22 +1,26 @@
 import "server-only";
 
 import { ProductEstimatedDelivery, Role } from "@prisma/client";
+import { unstable_cache } from "next/cache";
 import { auth } from "@/auth";
 import { pricedLine } from "@/lib/order-server";
+import { checkoutDataCacheSeconds, parsePerformance, withCdnUrl } from "@/lib/performance";
 import { taxIncludedMinor } from "@/lib/product-money";
+import { resolveSalePrice } from "@/lib/product-sale";
 import { prisma } from "@/lib/prisma";
 import { publicProductHref } from "@/lib/public-urls";
 import { getSettingsMap } from "@/lib/settings";
 import { parseUrlStructure } from "@/lib/url-structure";
 import { normalizeCartLines, type CartLine } from "@/lib/cart";
+import { allowsOrderWhenOutOfStock, isVariantPurchasable } from "@/lib/product-stock";
 import type {
   CartDeliveryCode,
+  CartLineIssueCode,
   CheckoutAddress,
   CheckoutCarrier,
   HydratedCart,
   HydratedCartLine,
 } from "@/lib/checkout-types";
-import { allowsOrderWhenOutOfStock, isVariantPurchasable } from "@/lib/product-stock";
 
 export type {
   CheckoutAddress,
@@ -24,6 +28,62 @@ export type {
   HydratedCart,
   HydratedCartLine,
 } from "@/lib/checkout-types";
+
+export const CHECKOUT_CACHE_TAG = "checkout";
+
+const cartVariantSelect = {
+  id: true,
+  title: true,
+  sku: true,
+  image: true,
+  priceMinor: true,
+  compareAtMinor: true,
+  saleStartsAt: true,
+  saleEndsAt: true,
+  stockQuantity: true,
+  trackInventory: true,
+  allowBackorder: true,
+  isDefault: true,
+  isActive: true,
+  product: {
+    select: {
+      id: true,
+      title: true,
+      slug: true,
+      urlId: true,
+      image: true,
+      taxRatePercent: true,
+      isActive: true,
+      visibility: true,
+      availableForOrder: true,
+      outOfStockBehavior: true,
+      extraShippingMinor: true,
+      compareAtMinor: true,
+      saleStartsAt: true,
+      saleEndsAt: true,
+      minOrderQty: true,
+      quantityStep: true,
+      estimatedDelivery: true,
+      brand: { select: { name: true } },
+    },
+  },
+} as const;
+
+async function loadCartVariants(ids: string[]) {
+  if (ids.length === 0) return [];
+  return prisma.productVariant.findMany({
+    where: { id: { in: ids } },
+    select: cartVariantSelect,
+  });
+}
+
+async function loadActiveCarriers() {
+  return prisma.shippingCarrier.findMany({
+    where: { isActive: true },
+    orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+    select: { id: true, name: true, logo: true },
+  });
+}
 
 export async function requireCheckoutUser() {
   const session = await auth();
@@ -56,41 +116,36 @@ function toCartDelivery(value: ProductEstimatedDelivery | null): CartDeliveryCod
   }
 }
 
+function classifyCartLine(input: {
+  variant: { isActive: boolean; priceMinor: number } | null;
+  product: {
+    isActive: boolean;
+    visibility: string;
+    availableForOrder: boolean;
+  } | null;
+  inStock: boolean;
+}): CartLineIssueCode | null {
+  if (!input.variant || !input.product) return "MISSING";
+  if (!input.variant.isActive) return "INACTIVE_VARIANT";
+  if (!input.product.isActive) return "INACTIVE_PRODUCT";
+  if (input.product.visibility === "NONE") return "HIDDEN";
+  if (!input.product.availableForOrder) return "NOT_FOR_SALE";
+  if (input.variant.priceMinor <= 0) return "NO_PRICE";
+  if (!input.inStock) return "OUT_OF_STOCK";
+  return null;
+}
+
 export async function hydrateCart(raw: CartLine[]): Promise<HydratedCart> {
   const lines = normalizeCartLines(raw);
   if (lines.length === 0) {
     return { lines: [], productsMinor: 0, taxMinor: 0, extraShippingMinor: 0 };
   }
 
-  const [variants, settings] = await Promise.all([
-    prisma.productVariant.findMany({
-      where: { id: { in: lines.map((line) => line.variantId) }, isActive: true },
-      include: {
-        product: {
-          select: {
-            id: true,
-            title: true,
-            slug: true,
-            urlId: true,
-            image: true,
-            taxRatePercent: true,
-            isActive: true,
-            visibility: true,
-            availableForOrder: true,
-            outOfStockBehavior: true,
-            extraShippingMinor: true,
-            compareAtMinor: true,
-            minOrderQty: true,
-            quantityStep: true,
-            estimatedDelivery: true,
-            brand: { select: { name: true } },
-          },
-        },
-      },
-    }),
-    getSettingsMap().catch(() => ({}) as Record<string, string>),
-  ]);
+  const settings = await getSettingsMap().catch(() => ({}) as Record<string, string>);
+  const perf = parsePerformance(settings);
   const urls = parseUrlStructure(settings);
+  const ids = [...new Set(lines.map((line) => line.variantId))];
+  const variants = await loadCartVariants(ids);
   const byId = new Map(variants.map((row) => [row.id, row]));
 
   const hydrated: HydratedCartLine[] = [];
@@ -99,72 +154,119 @@ export async function hydrateCart(raw: CartLine[]): Promise<HydratedCart> {
   let extraShippingMinor = 0;
 
   for (const line of lines) {
-    const variant = byId.get(line.variantId);
-    const product = variant?.product;
+    const variant = byId.get(line.variantId) ?? null;
+    const product = variant?.product ?? null;
+    const requestedQuantity = line.quantity;
+    let quantity = requestedQuantity;
+    let qtyAdjustedFrom: number | null = null;
+
+    if (variant && product) {
+      const minQty = Math.max(1, product.minOrderQty);
+      if (quantity < minQty) {
+        qtyAdjustedFrom = requestedQuantity;
+        quantity = minQty;
+      }
+      const denyOos = !allowsOrderWhenOutOfStock(product.outOfStockBehavior, variant.allowBackorder);
+      if (variant.trackInventory && denyOos && variant.stockQuantity > 0 && quantity > variant.stockQuantity) {
+        qtyAdjustedFrom = qtyAdjustedFrom ?? requestedQuantity;
+        quantity = variant.stockQuantity;
+      }
+    }
+
     const inStock = Boolean(
       variant &&
+        product &&
         isVariantPurchasable({
           trackInventory: variant.trackInventory,
           stockQuantity: variant.stockQuantity,
-          neededQuantity: line.quantity,
+          neededQuantity: quantity,
           allowBackorder: variant.allowBackorder,
-          outOfStockBehavior: product?.outOfStockBehavior,
+          outOfStockBehavior: product.outOfStockBehavior,
         }),
     );
-    const available = Boolean(
-      variant &&
-        product?.isActive &&
-        product.visibility !== "NONE" &&
-        product.availableForOrder &&
-        inStock,
-    );
-    if (!variant || !product || !available) continue;
+    const issue = classifyCartLine({ variant, product, inStock });
+    const available = issue == null;
 
-    const priced = pricedLine({
-      priceExclMinor: variant.priceMinor,
-      taxRatePercent: product.taxRatePercent,
-      quantity: line.quantity,
-    });
-    productsMinor += priced.totalMinor;
-    taxMinor += priced.taxMinor;
-    extraShippingMinor += product.extraShippingMinor * line.quantity;
+    const taxRatePercent = product?.taxRatePercent ?? 0;
+    const resolved = variant
+      ? resolveSalePrice({
+          priceMinor: variant.priceMinor,
+          compareAtMinor: variant.compareAtMinor ?? product?.compareAtMinor ?? null,
+          saleStartsAt: variant.saleStartsAt ?? product?.saleStartsAt,
+          saleEndsAt: variant.saleEndsAt ?? product?.saleEndsAt,
+        })
+      : null;
+    const chargeExcl = resolved?.priceMinor ?? variant?.priceMinor ?? 0;
+    const priced =
+      variant && chargeExcl > 0
+        ? pricedLine({
+            priceExclMinor: chargeExcl,
+            taxRatePercent,
+            quantity,
+          })
+        : {
+            unitPriceMinor: line.unitPriceMinor ?? 0,
+            totalMinor: 0,
+            taxMinor: 0,
+          };
 
-    const compareAtExcl = variant.compareAtMinor ?? product.compareAtMinor;
+    const snapshot = line.unitPriceMinor;
+    const priceChange =
+      available &&
+      snapshot != null &&
+      snapshot > 0 &&
+      priced.unitPriceMinor > 0 &&
+      snapshot !== priced.unitPriceMinor
+        ? { fromMinor: snapshot, toMinor: priced.unitPriceMinor }
+        : null;
+
+    if (available) {
+      productsMinor += priced.totalMinor;
+      taxMinor += priced.taxMinor;
+      extraShippingMinor += (product?.extraShippingMinor ?? 0) * quantity;
+    }
+
+    const compareAtExcl = resolved?.compareAtMinor ?? null;
     const compareAtMinor =
       compareAtExcl != null && compareAtExcl > 0
-        ? taxIncludedMinor(compareAtExcl, product.taxRatePercent)
+        ? taxIncludedMinor(compareAtExcl, taxRatePercent)
         : null;
     const savingsMinor =
-      compareAtMinor && compareAtMinor > priced.unitPriceMinor
-        ? (compareAtMinor - priced.unitPriceMinor) * line.quantity
+      available && compareAtMinor && compareAtMinor > priced.unitPriceMinor
+        ? (compareAtMinor - priced.unitPriceMinor) * quantity
         : 0;
     const maxQuantity =
+      variant &&
+      product &&
       variant.trackInventory &&
       !allowsOrderWhenOutOfStock(product.outOfStockBehavior, variant.allowBackorder)
-        ? Math.max(variant.stockQuantity, line.quantity)
+        ? Math.max(0, variant.stockQuantity)
         : null;
 
     hydrated.push({
-      variantId: variant.id,
-      productId: product.id,
-      title: product.title,
-      brandName: product.brand?.name ?? null,
-      variantTitle: variant.isDefault ? null : variant.title,
-      href: publicProductHref(product.slug, urls, product.urlId),
-      sku: variant.sku,
-      image: variant.image || product.image,
-      quantity: line.quantity,
+      variantId: line.variantId,
+      productId: product?.id ?? "",
+      title: product?.title ?? "Ürün artık satışta değil",
+      brandName: product?.brand?.name ?? null,
+      variantTitle: variant && !variant.isDefault ? variant.title : null,
+      href: product ? publicProductHref(product.slug, urls, product.urlId) : "/sepet",
+      sku: variant?.sku ?? null,
+      image: withCdnUrl(variant?.image || product?.image || null, perf.cdnUrl),
+      quantity,
       unitPriceMinor: priced.unitPriceMinor,
       compareAtMinor,
       savingsMinor,
-      taxRatePercent: product.taxRatePercent,
-      totalMinor: priced.totalMinor,
-      extraShippingMinor: product.extraShippingMinor * line.quantity,
+      taxRatePercent,
+      totalMinor: available ? priced.totalMinor : 0,
+      extraShippingMinor: available ? (product?.extraShippingMinor ?? 0) * quantity : 0,
       maxQuantity,
-      minOrderQty: Math.max(1, product.minOrderQty),
-      quantityStep: Math.max(1, product.quantityStep),
-      estimatedDelivery: toCartDelivery(product.estimatedDelivery),
-      available: true,
+      minOrderQty: Math.max(1, product?.minOrderQty ?? 1),
+      quantityStep: Math.max(1, product?.quantityStep ?? 1),
+      estimatedDelivery: toCartDelivery(product?.estimatedDelivery ?? null),
+      available,
+      issue,
+      priceChange,
+      qtyAdjustedFrom,
     });
   }
 
@@ -201,18 +303,24 @@ export async function loadCheckoutAddresses(userId: string): Promise<CheckoutAdd
 }
 
 export async function loadCheckoutCarriers(extraShippingMinor: number): Promise<CheckoutCarrier[]> {
-  const rows = await prisma.shippingCarrier.findMany({
-    where: { isActive: true },
-    orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
-    select: { id: true, name: true, logo: true },
-  });
+  const settings = await getSettingsMap().catch(() => ({}) as Record<string, string>);
+  const perf = parsePerformance(settings);
+  const ttl = checkoutDataCacheSeconds(perf);
+  const rows =
+    ttl <= 0
+      ? await loadActiveCarriers()
+      : await unstable_cache(
+          () => loadActiveCarriers(),
+          ["checkout-carriers-v1"],
+          { tags: [CHECKOUT_CACHE_TAG], revalidate: ttl },
+        )();
   if (rows.length === 0) {
     return [{ id: "standard", name: "Standart kargo", logo: null, priceMinor: extraShippingMinor }];
   }
   return rows.map((row) => ({
     id: row.id,
     name: row.name,
-    logo: row.logo,
+    logo: withCdnUrl(row.logo, perf.cdnUrl),
     priceMinor: extraShippingMinor,
   }));
 }

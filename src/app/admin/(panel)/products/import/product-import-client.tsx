@@ -6,12 +6,10 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
-  Code2,
   Download,
   FileSpreadsheet,
   Loader2,
   Upload,
-  Webhook,
   XCircle,
 } from "lucide-react";
 import { Can } from "@/components/admin/admin-permissions";
@@ -28,24 +26,6 @@ import {
   type ProductImportPreviewState,
 } from "./actions";
 
-const TABS = ["excel", "xml", "api"] as const;
-type ImportTab = (typeof TABS)[number];
-
-function importTabLabel(tab: ImportTab) {
-  switch (tab) {
-    case "excel":
-      return "Excel";
-    case "xml":
-      return "XML";
-    case "api":
-      return "API";
-    default: {
-      const _exhaustive: never = tab;
-      return _exhaustive;
-    }
-  }
-}
-
 const previewInitial: ProductImportPreviewState = {};
 
 export function ProductImportClient({
@@ -53,7 +33,6 @@ export function ProductImportClient({
 }: {
   initialJob: ProductImportJobSummary | null;
 }) {
-  const [tab, setTab] = useState<ImportTab>("excel");
   const fileRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [previewState, previewAction, previewPending] = useActionState(
@@ -134,27 +113,6 @@ export function ProductImportClient({
 
   return (
     <div className="space-y-6">
-      <div className="overflow-x-auto rounded-lg border border-[#e9ebec] bg-white shadow-sm">
-        <div className="flex min-w-max gap-1 px-2">
-          {TABS.map((id) => (
-            <button
-              key={id}
-              type="button"
-              onClick={() => setTab(id)}
-              className={`border-b-2 px-4 py-3 text-sm font-medium transition ${
-                tab === id
-                  ? "border-[#0ab39c] text-[#0ab39c]"
-                  : "border-transparent text-slate-500 hover:text-slate-700"
-              }`}
-            >
-              {importTabLabel(id)}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {tab === "excel" ? (
-        <section className="space-y-6">
           {job && (job.status === "QUEUED" || job.status === "RUNNING" || job.status === "COMPLETED") ? (
             <ImportProgressBar job={job} />
           ) : null}
@@ -170,7 +128,9 @@ export function ProductImportClient({
                   tamamı atlanır. Renk + beden için aynı <strong>Ürün kodu</strong>nu tekrarlayın;
                   her satır bir kombinasyondur (Özellik 1 = Beden, Özellik 2 = Renk). Özellik
                   adları Varyantlar menüsünde kayıtlı olmalıdır; yeni değerler otomatik eklenir.
-                  Fiyatı 0 olan ürünler yüklenir ama satışa kapanır. Excel’deki görsel
+                  Satış fiyatı 0 olan ürünler yüklenir ama satışa kapanır. İndirimli satış
+                  doluysa sitede satış üstü çizili, müşteri indirimli tutarı öder. Aynı barkod
+                  veya aynı ürün kodu başka bir üründe varsa o ürün yüklenmez. Excel’deki görsel
                   linkleri sunucuya indirilir; uzak dosya yoksa o ürün atlanır.
                 </p>
                 <Can resource="products" action="create">
@@ -277,24 +237,6 @@ export function ProductImportClient({
               onPage={setPage}
             />
           ) : null}
-        </section>
-      ) : null}
-
-      {tab === "xml" ? (
-        <ComingSoon
-          icon={Code2}
-          title="XML ürün yükleme"
-          text="XML beslemesi ile ürün aktarımı bir sonraki adımda eklenecek."
-        />
-      ) : null}
-
-      {tab === "api" ? (
-        <ComingSoon
-          icon={Webhook}
-          title="API ürün yükleme"
-          text="Harici API üzerinden ürün aktarımı bir sonraki adımda eklenecek."
-        />
-      ) : null}
     </div>
   );
 }
@@ -581,7 +523,8 @@ function PreviewGroup({
                   <th className="px-4 py-3">Kategori</th>
                   <th className="px-4 py-3">Barkod</th>
                   <th className="px-4 py-3">SKU</th>
-                  <th className="px-4 py-3">Fiyat</th>
+                  <th className="px-4 py-3">Satış</th>
+                  <th className="px-4 py-3">İndirimli</th>
                   <th className="px-4 py-3">Stok</th>
                   <th className="px-4 py-3">Durum</th>
                 </tr>
@@ -596,6 +539,7 @@ function PreviewGroup({
                     <td className="px-4 py-3 text-slate-600">{row.barcode || "—"}</td>
                     <td className="px-4 py-3 text-slate-600">{row.sku || "—"}</td>
                     <td className="px-4 py-3 text-slate-600">{row.price || "—"}</td>
+                    <td className="px-4 py-3 text-slate-600">{row.discount || "—"}</td>
                     <td className="px-4 py-3 text-slate-600">{row.stock || "—"}</td>
                     <td className="px-4 py-3 text-slate-600">
                       {row.ok ? (row.zeroPrice ? "Satışa kapalı" : "Hazır") : row.errors.join(" ")}
@@ -633,24 +577,6 @@ function PreviewGroup({
           </div>
         </>
       )}
-    </div>
-  );
-}
-
-function ComingSoon({
-  icon: Icon,
-  title,
-  text,
-}: {
-  icon: typeof Code2;
-  title: string;
-  text: string;
-}) {
-  return (
-    <div className="rounded-lg border border-dashed border-[#e9ebec] bg-white px-5 py-12 text-center shadow-sm">
-      <Icon className="mx-auto h-8 w-8 text-slate-300" />
-      <h2 className="mt-3 text-base font-semibold text-slate-800">{title}</h2>
-      <p className="mt-2 text-sm text-slate-500">{text}</p>
     </div>
   );
 }

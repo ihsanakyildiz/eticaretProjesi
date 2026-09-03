@@ -44,18 +44,12 @@ export function SidebarProvider({
   initialCollapsed = false,
 }: SidebarProviderProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const [mode, setModeState] = useState<SidebarMode>(() => {
-    if (typeof window !== "undefined") return readStoredSidebarMode();
-    // SSR: cookie ile aynı görünümü üret
-    return initialCollapsed ? "collapsed" : "expanded";
-  });
-  // Sunucu ile aynı ilk görünüm — menü boşalıp dolmasın
-  const [viewportWidth, setViewportWidth] = useState(() => {
-    if (typeof window !== "undefined") return window.innerWidth;
-    return initialCollapsed
-      ? SIDEBAR_DESKTOP_MIN
-      : SIDEBAR_AUTO_COLLAPSE_MAX;
-  });
+  const [mode, setModeState] = useState<SidebarMode>(() =>
+    initialCollapsed ? "collapsed" : "expanded",
+  );
+  const [viewportWidth, setViewportWidth] = useState(() =>
+    initialCollapsed ? SIDEBAR_DESKTOP_MIN : SIDEBAR_AUTO_COLLAPSE_MAX,
+  );
   const [allowTransition, setAllowTransition] = useState(false);
 
   useLayoutEffect(() => {

@@ -1,0 +1,2 @@
+ALTER TABLE `xml_product_feeds`
+    MODIFY `matchBy` ENUM('BARCODE', 'SKU', 'PRODUCT_CODE', 'PRODUCT_ID') NOT NULL DEFAULT 'BARCODE';

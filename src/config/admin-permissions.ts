@@ -6,6 +6,7 @@ export type PermissionResource = {
   label: string;
   href: string;
   group: string;
+  hint?: string;
 };
 
 export const ADMIN_PERMISSION_RESOURCES: PermissionResource[] = [
@@ -26,8 +27,23 @@ export const ADMIN_PERMISSION_RESOURCES: PermissionResource[] = [
   { id: "suppliers", label: "Tedarikçiler", href: "/admin/products/suppliers", group: "Mağaza" },
   { id: "tax_rates", label: "KDV oranları", href: "/admin/products/tax-rates", group: "Mağaza" },
   { id: "shipping", label: "Kargo firmaları", href: "/admin/shipping", group: "Mağaza" },
+  {
+    id: "warehouse",
+    label: "Depo kargo transfer",
+    href: "/admin/warehouse",
+    group: "Mağaza",
+    hint: "Sipariş paketleme ve kargo çıkışı. Stok/raf için ayrı yetki gerekir.",
+  },
+  {
+    id: "inventory",
+    label: "Stok ve depolar",
+    href: "/admin/inventory",
+    group: "Mağaza",
+    hint: "Ayarlar → Gelişmiş → Gelişmiş stok sistemi açıkken menüde görünür. Görme: stok ve raf. Ekleme: depo, raf, irsaliye. Düzenleme: raf ata ve belge onayla. Silme: boş raf ve taslak. Depo silme yalnız tam yönetici.",
+  },
   { id: "customers", label: "Müşteriler", href: "/admin/members", group: "Mağaza" },
   { id: "orders", label: "Siparişler", href: "/admin/orders", group: "Mağaza" },
+  { id: "reviews", label: "Ürün yorumları", href: "/admin/reviews", group: "Mağaza" },
   { id: "works_categories", label: "İş kategorileri", href: "/admin/works/categories", group: "İçerik" },
   { id: "works", label: "Çalışmalar", href: "/admin/works", group: "İçerik" },
   { id: "project_categories", label: "Proje kategorileri", href: "/admin/projects/categories", group: "İçerik" },
@@ -38,6 +54,7 @@ export const ADMIN_PERMISSION_RESOURCES: PermissionResource[] = [
   { id: "blog_posts", label: "Blog yazıları", href: "/admin/blog/posts", group: "İçerik" },
   { id: "settings", label: "Genel ayarlar", href: "/admin/settings", group: "Sistem" },
   { id: "settings_membership", label: "Müşteri hesapları", href: "/admin/settings/membership", group: "Sistem" },
+  { id: "settings_payments", label: "Ödeme", href: "/admin/settings/payments", group: "Sistem" },
   { id: "settings_performance", label: "Performans", href: "/admin/settings/performance", group: "Sistem" },
   { id: "settings_theme", label: "Tema tasarımı", href: "/admin/settings/theme", group: "Sistem" },
   { id: "settings_system", label: "Sistem sağlığı", href: "/admin/settings/system", group: "Sistem" },
@@ -84,10 +101,15 @@ export function resourceFromPath(pathname: string): string | null {
 
 export const ADMIN_NO_ACCESS_HREF = "/admin/no-access";
 
-export function firstViewableHref(map: StaffPermissionMap, isAdmin: boolean): string {
+export function firstViewableHref(
+  map: StaffPermissionMap,
+  isAdmin: boolean,
+  skipResources: ReadonlySet<string> = new Set(),
+): string {
   if (isAdmin) return "/admin";
   const found = ADMIN_PERMISSION_RESOURCES.find((resource) => {
     if (resource.id === "staff") return false;
+    if (skipResources.has(resource.id)) return false;
     return map[resource.id]?.view;
   });
   return found?.href ?? ADMIN_NO_ACCESS_HREF;
@@ -97,18 +119,30 @@ export function hrefToResourceId(href: string): string | null {
   return ADMIN_PERMISSION_RESOURCES.find((resource) => resource.href === href)?.id ?? null;
 }
 
+export type AdminFeatureFlags = {
+  advancedInventory: boolean;
+};
+
+export function isInventoryNavHref(href: string) {
+  return href === "/admin/inventory" || href.startsWith("/admin/inventory/");
+}
+
 export function filterNavByView<T extends { href?: string; children?: T[] }>(
   items: T[],
   role: string | undefined,
   map: StaffPermissionMap,
+  features: AdminFeatureFlags = { advancedInventory: true },
 ): T[] {
   return items
     .map((item) => {
-      const children = item.children ? filterNavByView(item.children, role, map) : undefined;
+      const children = item.children
+        ? filterNavByView(item.children, role, map, features)
+        : undefined;
       if (children && children.length > 0) {
         return { ...item, children };
       }
       if (item.href) {
+        if (!features.advancedInventory && isInventoryNavHref(item.href)) return null;
         const resource =
           ADMIN_PERMISSION_RESOURCES.find((entry) => entry.href === item.href)?.id ??
           resourceFromPath(item.href);
@@ -119,15 +153,11 @@ export function filterNavByView<T extends { href?: string; children?: T[] }>(
     .filter((item): item is T => item !== null);
 }
 
-export function can(
-  role: string | undefined,
+function staffHasAction(
   map: StaffPermissionMap,
   resource: string,
   action: PermissionAction,
 ): boolean {
-  if (role === "ADMIN") return true;
-  if (role !== "STAFF") return false;
-  if (resource === "staff") return false;
   const flags = map[resource];
   if (!flags) return false;
   switch (action) {
@@ -144,4 +174,18 @@ export function can(
       return _exhaustive;
     }
   }
+}
+
+export function can(
+  role: string | undefined,
+  map: StaffPermissionMap,
+  resource: string,
+  action: PermissionAction,
+): boolean {
+  if (role === "ADMIN") return true;
+  if (role !== "STAFF") return false;
+  if (resource === "staff") return false;
+  if (staffHasAction(map, resource, action)) return true;
+  if (resource === "warehouse") return staffHasAction(map, "orders", action);
+  return false;
 }

@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import dynamic from "next/dynamic";
 import { notFound } from "next/navigation";
 import { JsonLd } from "@/components/site/json-ld";
 import { ProjectCard } from "@/components/site/project/project-card";
@@ -21,9 +20,6 @@ import { getSettingsMap } from "@/lib/settings";
 export const revalidate = 60;
 export const dynamicParams = true;
 
-const HomeCta = dynamic(() =>
-  import("@/components/site/home/home-cta").then((mod) => mod.HomeCta),
-);
 
 type ProjectTagPageProps = {
   params: Promise<{ slug: string }>;
@@ -185,7 +181,6 @@ export default async function ProjectTagPage({
         </div>
       </section>
 
-      <HomeCta />
     </>
   );
 }

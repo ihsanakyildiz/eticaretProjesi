@@ -2,8 +2,15 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { LayoutGrid, Plus } from "lucide-react";
 import { Can } from "@/components/admin/admin-permissions";
+import { DuplicateBarcodeAlert } from "@/components/admin/duplicate-barcode-alert";
 import { loadAdminProductPage, parseAdminProductListQuery } from "@/lib/admin-product-list";
+import { countDuplicateBarcodes } from "@/lib/product-barcode-db";
+import { isAdvancedInventoryEnabledInMap } from "@/lib/advanced-inventory";
+import { getSettingsMap } from "@/lib/settings";
+import { parseUrlStructure } from "@/lib/url-structure";
 import { ProductsTable } from "./products-table";
+
+export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: "Ürün kataloğu",
@@ -13,10 +20,14 @@ export const metadata: Metadata = {
 export default async function ProductsCatalogPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string; q?: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const params = await searchParams;
-  const list = await loadAdminProductPage(parseAdminProductListQuery(params));
+  const [list, settings, duplicateBarcodeCount] = await Promise.all([
+    loadAdminProductPage(parseAdminProductListQuery(params)),
+    getSettingsMap().catch(() => ({}) as Record<string, string>),
+    countDuplicateBarcodes().catch(() => 0),
+  ]);
 
   return (
     <div className="space-y-6">
@@ -27,11 +38,13 @@ export default async function ProductsCatalogPage({
             <h1 className="mt-1 flex items-center gap-2 text-xl font-semibold text-slate-800 sm:text-2xl">
               <LayoutGrid className="h-6 w-6 text-[#405189]" />
               Ürün kataloğu
-              <span className="text-base font-medium text-slate-400">({list.total})</span>
+              <span className="text-base font-medium text-slate-400">
+                ({list.total.toLocaleString("tr-TR")})
+              </span>
             </h1>
             <p className="mt-2 max-w-2xl text-sm text-slate-500">
-              Görsel, fiyat, stok ve kombinasyonları tek kayıttan yönetin. Liste sayfalıdır;
-              arama sunucuda yapılır.
+              Görsel, fiyat, stok ve kombinasyonları tek kayıttan yönetin. En son eklenen
+              ürünler üsttedir; filtreler sunucuda çalışır.
             </p>
           </div>
           <Can resource="products" action="create">
@@ -46,13 +59,18 @@ export default async function ProductsCatalogPage({
         </div>
       </div>
 
+      <DuplicateBarcodeAlert count={duplicateBarcodeCount} />
+
       <ProductsTable
         products={list.products}
-        q={list.q}
+        query={list.query}
+        lookups={list.lookups}
         page={list.page}
         pageCount={list.pageCount}
         total={list.total}
         pageSize={list.pageSize}
+        urlStructure={parseUrlStructure(settings)}
+        advancedInventory={isAdvancedInventoryEnabledInMap(settings)}
       />
     </div>
   );

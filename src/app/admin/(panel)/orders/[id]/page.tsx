@@ -11,6 +11,8 @@ import {
   parseOrderPaymentMethod,
   parseOrderStatus,
 } from "@/lib/orders";
+import { parseOrderPaymentProvider } from "@/lib/checkout-payment-choice";
+import { toOrderCaseView } from "@/lib/order-case-workflow";
 import { OrderDetail } from "./order-detail";
 
 type Props = { params: Promise<{ id: string }> };
@@ -48,6 +50,14 @@ export default async function OrderDetailPage({ params }: Props) {
       addresses: true,
       statusHistory: { orderBy: { createdAt: "desc" } },
       payments: { orderBy: { paidAt: "desc" } },
+      refunds: { orderBy: { createdAt: "desc" } },
+      cases: {
+        orderBy: { createdAt: "desc" },
+        include: {
+          items: { include: { orderItem: { select: { title: true, variantTitle: true } } } },
+          events: { orderBy: { createdAt: "asc" } },
+        },
+      },
       messages: { orderBy: { createdAt: "desc" } },
       documents: { orderBy: { createdAt: "desc" } },
     },
@@ -137,6 +147,7 @@ export default async function OrderDetailPage({ params }: Props) {
           reference: order.reference,
           status: parseOrderStatus(order.status),
           paymentMethod: parseOrderPaymentMethod(order.paymentMethod),
+          paymentProvider: parseOrderPaymentProvider(order.paymentProvider),
           productsMinor: order.productsMinor,
           shippingMinor: order.shippingMinor,
           taxMinor: order.taxMinor,
@@ -232,6 +243,15 @@ export default async function OrderDetailPage({ params }: Props) {
             transactionId: payment.transactionId,
             paidAt: payment.paidAt.toISOString(),
           })),
+          refunds: order.refunds.map((refund) => ({
+            id: refund.id,
+            amountMinor: refund.amountMinor,
+            provider: refund.provider,
+            transactionId: refund.transactionId,
+            note: refund.note,
+            createdAt: refund.createdAt.toISOString(),
+          })),
+          cases: order.cases.map(toOrderCaseView),
           messages: order.messages.map((message) => ({
             id: message.id,
             body: message.body,

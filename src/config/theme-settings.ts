@@ -2,7 +2,7 @@ import type { SettingGroupDef } from "@/config/settings";
 
 export type ThemeMode = "light" | "dark" | "system";
 export type ThemeRadius = "sm" | "md" | "lg";
-export type ThemeFont = "plus-jakarta" | "geist" | "system";
+export type ThemeFont = "inter" | "plus-jakarta" | "geist" | "system";
 
 export type ThemeColorTokens = {
   bg: string;
@@ -252,7 +252,7 @@ export function presetToSettings(preset: ThemePreset): Record<string, string> {
     theme_preset: preset.id,
     theme_default_mode: "light",
     theme_radius: "md",
-    theme_font: "plus-jakarta",
+    theme_font: "inter",
   });
 }
 
@@ -286,8 +286,8 @@ export const themeSettingGroups: SettingGroupDef[] = [
         key: "theme_font",
         label: "Site Yazı Tipi",
         type: "text",
-        defaultValue: "plus-jakarta",
-        hint: "plus-jakarta | geist | system",
+        defaultValue: "inter",
+        hint: "inter | plus-jakarta | geist | system",
       },
     ],
   },

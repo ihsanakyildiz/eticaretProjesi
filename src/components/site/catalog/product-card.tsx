@@ -3,7 +3,8 @@
 import { SiteImage, SiteImageFallback } from "@/components/site/site-image";
 import { SiteLink } from "@/components/site/site-link";
 import { useCatalogUrls } from "@/components/site/site-url-provider";
-import { recordProductClickAction } from "@/app/(site)/urunler/actions";
+import { trackProductEvent } from "@/components/site/catalog/catalog-client-api";
+import { SaleCountdown, useTickingNow } from "@/components/site/catalog/sale-countdown";
 import {
   catalogCardAvailability,
   catalogCardAvailabilityLabel,
@@ -20,10 +21,19 @@ export function ProductCard({
   product: CatalogProductCard;
   imagePriority?: boolean;
 }) {
-  const { priceMinor } = catalogCardPrice(product);
+  const hasWindow = Boolean(
+    product.saleStartsAt ||
+      product.saleEndsAt ||
+      product.variants.some((item) => item.saleStartsAt || item.saleEndsAt),
+  );
+  const now = useTickingNow(hasWindow);
+  const { priceMinor, compareAtMinor, onSale, saleEndsAt } = catalogCardPrice(
+    product,
+    now ?? undefined,
+  );
   const displayPrice = taxIncludedMinor(priceMinor, product.taxRatePercent);
-  const compareAt = product.compareAtMinor
-    ? taxIncludedMinor(product.compareAtMinor, product.taxRatePercent)
+  const compareAt = compareAtMinor
+    ? taxIncludedMinor(compareAtMinor, product.taxRatePercent)
     : null;
   const discount =
     compareAt && compareAt > displayPrice
@@ -37,7 +47,7 @@ export function ProductCard({
     <SiteLink
       href={productHref(product.slug, product.urlId)}
       onClick={() => {
-        void recordProductClickAction(product.id);
+        trackProductEvent(product.id, "click");
       }}
       className="group flex flex-col overflow-hidden rounded-lg border border-site-border bg-site-card transition hover:border-site-primary/40 hover:shadow-md"
     >
@@ -65,38 +75,48 @@ export function ProductCard({
         ) : (
           <SiteImageFallback fill />
         )}
-        {discount ? (
-          <span className="absolute top-2 left-2 rounded bg-rose-600 px-1.5 py-0.5 text-[11px] font-bold text-white">
-            %{discount}
-          </span>
-        ) : product.onSale ? (
-          <span className="absolute top-2 left-2 rounded bg-rose-600 px-1.5 py-0.5 text-[11px] font-bold text-white">
-            İndirim
+        {onSale || discount ? (
+          <span className="absolute top-2 left-2 z-10 flex max-w-[calc(100%-1rem)] flex-col items-start gap-1">
+            <span className="rounded-md bg-rose-600 px-2 py-1 text-[11px] font-bold tracking-wide text-white uppercase shadow-sm">
+              İndirim
+            </span>
+            {discount ? (
+              <span className="rounded-md bg-rose-700/95 px-2 py-0.5 text-[11px] font-bold text-white shadow-sm">
+                %{discount}
+              </span>
+            ) : null}
           </span>
         ) : null}
       </div>
       <div className="flex flex-1 flex-col gap-1 p-3">
         {product.brand?.name ? (
-          <p className="text-[11px] font-medium tracking-wide text-site-muted uppercase">
+          <p className="text-[11px] font-normal tracking-wide text-site-muted uppercase">
             {product.brand.name}
           </p>
         ) : null}
-        <h2 className="line-clamp-2 text-sm font-semibold text-site-fg group-hover:text-site-primary">
+        <h2 className="line-clamp-2 text-sm font-normal leading-snug text-site-fg">
           {product.title}
         </h2>
         <div className="mt-auto pt-2">
           {product.showPrice ? (
             <div className="flex flex-wrap items-baseline gap-2">
-              <span className="text-base font-bold text-site-fg">{formatMinorTry(displayPrice)}</span>
               {compareAt && compareAt > displayPrice ? (
                 <span className="text-xs text-site-muted line-through">
                   {formatMinorTry(compareAt)}
                 </span>
               ) : null}
+              <span
+                className={`text-base font-semibold ${
+                  compareAt && compareAt > displayPrice ? "text-rose-600" : "text-site-primary"
+                }`}
+              >
+                {formatMinorTry(displayPrice)}
+              </span>
             </div>
           ) : (
             <p className="text-xs text-site-muted">Fiyat için iletişime geçin</p>
           )}
+          {onSale && saleEndsAt ? <SaleCountdown endsAt={saleEndsAt} compact /> : null}
           <p
             className={`mt-1 text-[11px] ${
               availability === "out_of_stock" ? "text-site-muted" : "text-emerald-600"

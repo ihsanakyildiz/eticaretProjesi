@@ -3,6 +3,8 @@ import Link from "next/link";
 import { Plus, Truck } from "lucide-react";
 import { Can } from "@/components/admin/admin-permissions";
 import { prisma } from "@/lib/prisma";
+import { parseArasApiSettings, arasCredentialsReady } from "@/lib/aras-kargo";
+import { parseYurticiApiSettings, yurticiCredentialsReady } from "@/lib/yurtici-kargo";
 import { ShippingCarriersTable } from "./shipping-table";
 
 export const metadata: Metadata = {
@@ -25,6 +27,7 @@ async function loadCarriers() {
           logo: true,
           isActive: true,
           sortOrder: true,
+          apiSettings: true,
         },
       }),
     };
@@ -51,8 +54,8 @@ export default async function ShippingCarriersPage() {
               Kargo firmaları
             </h1>
             <p className="mt-2 max-w-2xl text-sm text-slate-500">
-              Siparişlerde kullanılacak kargo firmalarını ekleyin. Bilinen sağlayıcılar için API
-              bağlantısı sonraki adımda eklenecek.
+              Siparişlerde kullanılacak kargo firmalarını ekleyin. Yurtiçi ve Aras Kargo için web
+              servis bilgilerini firma kartından kaydedin.
             </p>
           </div>
           <Can resource="shipping" action="create">
@@ -76,7 +79,24 @@ export default async function ShippingCarriersPage() {
         </div>
       ) : null}
 
-      <ShippingCarriersTable carriers={carriers} />
+      <ShippingCarriersTable
+        carriers={carriers.map((carrier) => ({
+          id: carrier.id,
+          name: carrier.name,
+          slug: carrier.slug,
+          provider: carrier.provider,
+          phone: carrier.phone,
+          website: carrier.website,
+          logo: carrier.logo,
+          isActive: carrier.isActive,
+          sortOrder: carrier.sortOrder,
+          apiConfigured:
+            (carrier.provider === "YURTICI" &&
+              yurticiCredentialsReady(parseYurticiApiSettings(carrier.apiSettings))) ||
+            (carrier.provider === "ARAS" &&
+              arasCredentialsReady(parseArasApiSettings(carrier.apiSettings))),
+        }))}
+      />
     </div>
   );
 }

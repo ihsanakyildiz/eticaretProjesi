@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { ProductCard } from "@/components/site/catalog/product-card";
-import { getRecentlyViewedProductsAction } from "@/app/(site)/urunler/actions";
+import { fetchRecentlyViewedProducts } from "@/components/site/catalog/catalog-client-api";
 import type { CatalogProductCard } from "@/lib/catalog-storefront";
 import { RECENTLY_VIEWED_KEY } from "@/lib/recently-viewed";
 
@@ -69,7 +69,7 @@ export function RecentlyViewedRail({
       setStatus("empty");
       return;
     }
-    void getRecentlyViewedProductsAction(ids).then((rows) => {
+    void fetchRecentlyViewedProducts(ids).then((rows) => {
       setProducts(rows);
       setStatus(rows.length > 0 ? "ready" : "empty");
     });

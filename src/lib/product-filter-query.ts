@@ -9,6 +9,7 @@ import {
   filterAppliesToCategory,
   type StorefrontFilterSelection,
 } from "@/lib/product-filters";
+import { storefrontListingWhere } from "@/lib/storefront-product-where";
 
 export type ProductFilterCatalogRow = CategoryNodeBase;
 
@@ -339,7 +340,7 @@ function buildProductWhere(
   clauses: ResolvedClause[],
   categoryIds: string[] | undefined,
 ): Prisma.ProductWhereInput {
-  const and: Prisma.ProductWhereInput[] = [{ isActive: true }];
+  const and: Prisma.ProductWhereInput[] = [];
 
   if (categoryIds) {
     and.push({ categoryId: { in: categoryIds } });
@@ -402,7 +403,7 @@ function buildProductWhere(
     and.push({ variants: { some: variantWhere } });
   }
 
-  return { AND: and };
+  return storefrontListingWhere(and.length > 0 ? { AND: and } : undefined);
 }
 
 export type StorefrontProductFilterQuery = {

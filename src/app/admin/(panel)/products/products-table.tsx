@@ -1,38 +1,82 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
   Check,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Copy,
   Loader2,
   Pencil,
   Power,
+  RotateCcw,
   Search,
   Trash2,
   X,
 } from "lucide-react";
 import { Can, useCan } from "@/components/admin/admin-permissions";
-import type { ProductRow } from "@/lib/admin-product-list";
-import { formatMinorTry } from "@/lib/product-money";
+import { AdminPublicTextLink } from "@/components/admin/admin-public-link";
+import { SearchableSelect } from "@/components/admin/searchable-select";
+import {
+  ADMIN_PRODUCT_ADDED,
+  ADMIN_PRODUCT_IMAGES,
+  ADMIN_PRODUCT_NONE,
+  ADMIN_PRODUCT_ON_SALES,
+  ADMIN_PRODUCT_SALES,
+  ADMIN_PRODUCT_STATUSES,
+  ADMIN_PRODUCT_STOCKS,
+  ADMIN_PRODUCT_VISIBILITIES,
+  adminProductAddedLabel,
+  adminProductCatalogHref,
+  adminProductImageLabel,
+  adminProductListHasFilters,
+  adminProductOnSaleLabel,
+  adminProductSaleLabel,
+  adminProductStatusLabel,
+  adminProductStockLabel,
+  adminProductVisibilityLabel,
+  emptyAdminProductListQuery,
+  parseAdminProductListQuery,
+  type AdminProductListLookups,
+  type AdminProductListQuery,
+  type ProductRow,
+} from "@/lib/admin-product-list";
+import { formatMinorToMajorInput, formatMinorTry, parseMajorToMinor } from "@/lib/product-money";
+import { hasStoredCampaign } from "@/lib/product-sale";
+import { publicProductHref } from "@/lib/public-urls";
+import { DEFAULT_URL_STRUCTURE, type UrlStructure } from "@/lib/url-structure";
 import {
   deleteProductAction,
   duplicateProductAction,
   toggleProductActiveAction,
+  updateProductVariantQuickAction,
+  type ProductSaleResult,
 } from "./actions";
+import { ProductListVariantsPanel } from "./product-list-expand";
+import { ProductSaleModal, SalePlusButton, type ProductSaleTarget } from "./product-list-sale-modal";
+import { QuickEditCell } from "./product-list-quick-edit";
 
 export type { ProductRow };
 
-function catalogHref(page: number, q: string) {
-  const params = new URLSearchParams();
-  if (q) params.set("q", q);
-  if (page > 1) params.set("page", String(page));
-  const query = params.toString();
-  return query ? `/admin/products?${query}` : "/admin/products";
+const selectClass =
+  "w-full rounded-md border border-[#e9ebec] bg-white px-3 py-2.5 text-sm text-slate-800 outline-none transition focus:border-[#0ab39c] focus:ring-2 focus:ring-[#0ab39c]/20";
+
+function formatAddedAt(iso: string) {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  const now = new Date();
+  const sameDay =
+    date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate();
+  if (sameDay) {
+    return date.toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" });
+  }
+  return date.toLocaleDateString("tr-TR");
 }
 
 function DeleteProductModal({
@@ -130,20 +174,318 @@ function DeleteProductModal({
   );
 }
 
+function ProductsFilterBar({
+  query,
+  lookups,
+}: {
+  query: AdminProductListQuery;
+  lookups: AdminProductListLookups;
+}) {
+  const router = useRouter();
+  const [draft, setDraft] = useState(query);
+  const hasFilters = adminProductListHasFilters(draft);
+
+  useEffect(() => {
+    setDraft(query);
+  }, [query]);
+
+  const categoryOptions = useMemo(
+    () => [
+      { id: ADMIN_PRODUCT_NONE, label: "Kategorisiz" },
+      ...lookups.categories.map((item) => ({
+        id: item.id,
+        label: item.label,
+        depth: item.depth,
+      })),
+    ],
+    [lookups.categories],
+  );
+  const brandOptions = useMemo(
+    () => [
+      { id: ADMIN_PRODUCT_NONE, label: "Markasız" },
+      ...lookups.brands.map((item) => ({ id: item.id, label: item.label })),
+    ],
+    [lookups.brands],
+  );
+  const supplierOptions = useMemo(
+    () => [
+      { id: ADMIN_PRODUCT_NONE, label: "Tedarikçisiz" },
+      ...lookups.suppliers.map((item) => ({ id: item.id, label: item.label })),
+    ],
+    [lookups.suppliers],
+  );
+
+  function apply(next: AdminProductListQuery) {
+    setDraft(next);
+    router.push(adminProductCatalogHref({ ...next, page: 1 }, 1));
+  }
+
+  function submitForm(form: HTMLFormElement) {
+    const data = new FormData(form);
+    apply(
+      parseAdminProductListQuery({
+        q: String(data.get("q") ?? ""),
+        code: String(data.get("code") ?? ""),
+        categoryId: String(data.get("categoryId") ?? ""),
+        brandId: String(data.get("brandId") ?? ""),
+        supplierId: String(data.get("supplierId") ?? ""),
+        status: String(data.get("status") ?? ""),
+        sale: String(data.get("sale") ?? ""),
+        stock: String(data.get("stock") ?? ""),
+        visibility: String(data.get("visibility") ?? ""),
+        image: String(data.get("image") ?? ""),
+        onSale: String(data.get("onSale") ?? ""),
+        added: String(data.get("added") ?? ""),
+      }),
+    );
+  }
+
+  return (
+    <form
+      action="/admin/products"
+      method="get"
+      onSubmit={(event) => {
+        event.preventDefault();
+        submitForm(event.currentTarget);
+      }}
+      className="space-y-4 border-b border-[#e9ebec] px-4 py-4"
+    >
+      <div className="grid gap-3 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
+        <label className="block">
+          <span className="mb-1.5 block text-xs font-medium text-slate-500">Arama</span>
+          <div className="relative">
+            <Search className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <input
+              type="search"
+              name="q"
+              value={draft.q}
+              onChange={(event) => setDraft((prev) => ({ ...prev, q: event.target.value }))}
+              placeholder="Ürün adı, marka, kategori veya tedarikçi…"
+              className="w-full rounded-md border border-[#e9ebec] bg-white py-2.5 pr-3 pl-9 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-[#0ab39c] focus:ring-2 focus:ring-[#0ab39c]/20"
+            />
+          </div>
+        </label>
+        <label className="block">
+          <span className="mb-1.5 block text-xs font-medium text-slate-500">SKU / barkod / kod</span>
+          <input
+            type="search"
+            name="code"
+            value={draft.code}
+            onChange={(event) => setDraft((prev) => ({ ...prev, code: event.target.value }))}
+            placeholder="SKU, barkod, XML kodu, GTIN veya ürün no"
+            className="w-full rounded-md border border-[#e9ebec] bg-white px-3 py-2.5 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-[#0ab39c] focus:ring-2 focus:ring-[#0ab39c]/20"
+          />
+        </label>
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        <div>
+          <span className="mb-1.5 block text-xs font-medium text-slate-500">Kategori</span>
+          <SearchableSelect
+            name="categoryId"
+            value={draft.categoryId}
+            onChange={(categoryId) => apply({ ...draft, categoryId, page: 1 })}
+            options={categoryOptions}
+            placeholder="Kategori ara veya seçin…"
+            emptyLabel="— Tüm kategoriler —"
+            searchPlaceholder="Kategori ara…"
+            noResultsLabel="Eşleşen kategori yok"
+          />
+        </div>
+        <div>
+          <span className="mb-1.5 block text-xs font-medium text-slate-500">Marka</span>
+          <SearchableSelect
+            name="brandId"
+            value={draft.brandId}
+            onChange={(brandId) => apply({ ...draft, brandId, page: 1 })}
+            options={brandOptions}
+            placeholder="Marka ara veya seçin…"
+            emptyLabel="— Tüm markalar —"
+            searchPlaceholder="Marka ara…"
+            noResultsLabel="Eşleşen marka yok"
+          />
+        </div>
+        <div>
+          <span className="mb-1.5 block text-xs font-medium text-slate-500">Tedarikçi</span>
+          <SearchableSelect
+            name="supplierId"
+            value={draft.supplierId}
+            onChange={(supplierId) => apply({ ...draft, supplierId, page: 1 })}
+            options={supplierOptions}
+            placeholder="Tedarikçi ara veya seçin…"
+            emptyLabel="— Tüm tedarikçiler —"
+            searchPlaceholder="Tedarikçi ara…"
+            noResultsLabel="Eşleşen tedarikçi yok"
+          />
+        </div>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <label className="block">
+          <span className="mb-1.5 block text-xs font-medium text-slate-500">Durum</span>
+          <select
+            name="status"
+            className={selectClass}
+            value={draft.status}
+            onChange={(event) =>
+              apply({ ...draft, status: parseAdminProductListQuery({ status: event.target.value }).status })
+            }
+          >
+            {ADMIN_PRODUCT_STATUSES.map((value) => (
+              <option key={value} value={value}>
+                {adminProductStatusLabel(value)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="block">
+          <span className="mb-1.5 block text-xs font-medium text-slate-500">Satış</span>
+          <select
+            name="sale"
+            className={selectClass}
+            value={draft.sale}
+            onChange={(event) =>
+              apply({ ...draft, sale: parseAdminProductListQuery({ sale: event.target.value }).sale })
+            }
+          >
+            {ADMIN_PRODUCT_SALES.map((value) => (
+              <option key={value} value={value}>
+                {adminProductSaleLabel(value)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="block">
+          <span className="mb-1.5 block text-xs font-medium text-slate-500">Stok</span>
+          <select
+            name="stock"
+            className={selectClass}
+            value={draft.stock}
+            onChange={(event) =>
+              apply({ ...draft, stock: parseAdminProductListQuery({ stock: event.target.value }).stock })
+            }
+          >
+            {ADMIN_PRODUCT_STOCKS.map((value) => (
+              <option key={value} value={value}>
+                {adminProductStockLabel(value)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="block">
+          <span className="mb-1.5 block text-xs font-medium text-slate-500">Eklenme</span>
+          <select
+            name="added"
+            className={selectClass}
+            value={draft.added}
+            onChange={(event) =>
+              apply({ ...draft, added: parseAdminProductListQuery({ added: event.target.value }).added })
+            }
+          >
+            {ADMIN_PRODUCT_ADDED.map((value) => (
+              <option key={value} value={value}>
+                {adminProductAddedLabel(value)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="block">
+          <span className="mb-1.5 block text-xs font-medium text-slate-500">Görünürlük</span>
+          <select
+            name="visibility"
+            className={selectClass}
+            value={draft.visibility}
+            onChange={(event) =>
+              apply({
+                ...draft,
+                visibility: parseAdminProductListQuery({ visibility: event.target.value }).visibility,
+              })
+            }
+          >
+            {ADMIN_PRODUCT_VISIBILITIES.map((value) => (
+              <option key={value} value={value}>
+                {adminProductVisibilityLabel(value)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="block">
+          <span className="mb-1.5 block text-xs font-medium text-slate-500">Görsel</span>
+          <select
+            name="image"
+            className={selectClass}
+            value={draft.image}
+            onChange={(event) =>
+              apply({ ...draft, image: parseAdminProductListQuery({ image: event.target.value }).image })
+            }
+          >
+            {ADMIN_PRODUCT_IMAGES.map((value) => (
+              <option key={value} value={value}>
+                {adminProductImageLabel(value)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="block">
+          <span className="mb-1.5 block text-xs font-medium text-slate-500">İndirim</span>
+          <select
+            name="onSale"
+            className={selectClass}
+            value={draft.onSale}
+            onChange={(event) =>
+              apply({ ...draft, onSale: parseAdminProductListQuery({ onSale: event.target.value }).onSale })
+            }
+          >
+            {ADMIN_PRODUCT_ON_SALES.map((value) => (
+              <option key={value} value={value}>
+                {adminProductOnSaleLabel(value)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className="flex items-end gap-2">
+          <button
+            type="submit"
+            className="inline-flex flex-1 items-center justify-center gap-2 rounded-md bg-[#405189] px-3 py-2.5 text-sm font-semibold text-white transition hover:bg-[#364574]"
+          >
+            <Search className="h-4 w-4" />
+            Ara
+          </button>
+          <button
+            type="button"
+            disabled={!hasFilters}
+            onClick={() => apply(emptyAdminProductListQuery())}
+            className="inline-flex items-center justify-center gap-2 rounded-md border border-[#e9ebec] px-3 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <RotateCcw className="h-4 w-4" />
+            Sıfırla
+          </button>
+        </div>
+      </div>
+    </form>
+  );
+}
+
 export function ProductsTable({
   products,
-  q,
+  query,
+  lookups,
   page,
   pageCount,
   total,
   pageSize,
+  urlStructure = DEFAULT_URL_STRUCTURE,
+  advancedInventory = false,
 }: {
   products: ProductRow[];
-  q: string;
+  query: AdminProductListQuery;
+  lookups: AdminProductListLookups;
   page: number;
   pageCount: number;
   total: number;
   pageSize: number;
+  urlStructure?: UrlStructure;
+  advancedInventory?: boolean;
 }) {
   const canCreate = useCan("products", "create");
   const canUpdate = useCan("products", "update");
@@ -152,6 +494,21 @@ export function ProductsTable({
   const [isPending, startTransition] = useTransition();
   const [deleteTarget, setDeleteTarget] = useState<ProductRow | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set());
+  const [stockOverrides, setStockOverrides] = useState<Record<string, number>>({});
+  const [priceOverrides, setPriceOverrides] = useState<Record<string, number>>({});
+  const [salePatches, setSalePatches] = useState<
+    Record<
+      string,
+      {
+        priceMinor: number;
+        compareAtMinor: number | null;
+        saleStartsAt: string | null;
+        saleEndsAt: string | null;
+      }
+    >
+  >({});
+  const [saleTarget, setSaleTarget] = useState<ProductSaleTarget | null>(null);
   const from = total === 0 ? 0 : (page - 1) * pageSize + 1;
   const to = Math.min(page * pageSize, total);
 
@@ -200,36 +557,78 @@ export function ProductsTable({
     });
   };
 
+  const toggleExpanded = (productId: string) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(productId)) next.delete(productId);
+      else next.add(productId);
+      return next;
+    });
+  };
+
+  const saveSimpleVariant = (
+    product: ProductRow,
+    patch: { priceMinor?: number; stockQuantity?: number },
+  ) => {
+    if (!product.defaultVariantId) {
+      return Promise.resolve({ error: "Bu ürünün stok kaydı yok." });
+    }
+    return updateProductVariantQuickAction({
+      variantId: product.defaultVariantId,
+      ...patch,
+    })
+      .then((result) => {
+        if (result.error || !result.variant) {
+          return { error: result.error ?? "Kayıt güncellenemedi." };
+        }
+        if (patch.priceMinor !== undefined) {
+          setPriceOverrides((prev) => ({ ...prev, [product.id]: result.variant!.priceMinor }));
+          setSalePatches((prev) => {
+            const current = prev[product.id];
+            if (!current) return prev;
+            return {
+              ...prev,
+              [product.id]: { ...current, priceMinor: result.variant!.priceMinor },
+            };
+          });
+          return { savedValue: formatMinorToMajorInput(result.variant.priceMinor) };
+        }
+        if (patch.stockQuantity !== undefined) {
+          setStockOverrides((prev) => ({ ...prev, [product.id]: result.variant!.stockQuantity }));
+          return { savedValue: String(result.variant.stockQuantity) };
+        }
+        return {};
+      })
+      .catch(() => ({ error: "Kayıt güncellenemedi." }));
+  };
+
+  const applySaleResult = (result: ProductSaleResult) => {
+    if (!result.product) return;
+    setPriceOverrides((prev) => ({ ...prev, [result.product!.id]: result.product!.basePriceMinor }));
+    setSalePatches((prev) => ({
+      ...prev,
+      [result.product!.id]: {
+        priceMinor: result.product!.basePriceMinor,
+        compareAtMinor: result.product!.compareAtMinor,
+        saleStartsAt: result.product!.saleStartsAt,
+        saleEndsAt: result.product!.saleEndsAt,
+      },
+    }));
+  };
+
+  const productGridClass =
+    "grid grid-cols-[minmax(0,2fr)_110px_minmax(0,1fr)_130px_100px_44px_176px_40px] gap-2";
+
   return (
     <>
       <div className="rounded-lg border border-[#e9ebec] bg-white shadow-sm">
-        <form
-          action="/admin/products"
-          method="get"
-          className="flex flex-col gap-3 border-b border-[#e9ebec] px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
-        >
-          <div className="relative max-w-md flex-1">
-            <Search className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            <input
-              type="search"
-              name="q"
-              defaultValue={q}
-              placeholder="Ürün, SKU, barkod veya kategori ara…"
-              className="w-full rounded-md border border-[#e9ebec] bg-white py-2 pr-3 pl-9 text-sm text-slate-700 outline-none focus:border-[#0ab39c]"
-            />
-          </div>
-          <div className="flex items-center gap-3">
-            <p className="text-xs text-slate-400">
-              {total === 0 ? "0 ürün" : `${from}–${to} / ${total} ürün`}
-            </p>
-            <button
-              type="submit"
-              className="rounded-md border border-[#e9ebec] bg-white px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50"
-            >
-              Ara
-            </button>
-          </div>
-        </form>
+        <ProductsFilterBar query={query} lookups={lookups} />
+        <div className="flex items-center justify-between border-b border-[#e9ebec] px-4 py-2.5">
+          <p className="text-xs text-slate-400">
+            {total === 0 ? "0 ürün" : `${from}–${to} / ${total.toLocaleString("tr-TR")} ürün`}
+          </p>
+          <p className="text-xs text-slate-400">En yeni üstte</p>
+        </div>
 
         {actionError ? (
           <div className="border-b border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700">
@@ -240,9 +639,11 @@ export function ProductsTable({
         {products.length === 0 ? (
           <div className="px-4 py-12 text-center">
             <p className="text-sm text-slate-500">
-              {q ? "Aramanızla eşleşen ürün yok." : "Henüz ürün eklenmemiş."}
+              {adminProductListHasFilters(query)
+                ? "Filtrelere uygun ürün yok."
+                : "Henüz ürün eklenmemiş."}
             </p>
-            {!q && canCreate ? (
+            {!adminProductListHasFilters(query) && canCreate ? (
               <Link
                 href="/admin/products/new"
                 className="mt-4 inline-flex text-sm font-medium text-[#405189] hover:underline"
@@ -254,7 +655,7 @@ export function ProductsTable({
         ) : (
           <div className="overflow-x-auto">
             <div className="min-w-[980px]">
-              <div className="grid grid-cols-[minmax(0,2fr)_110px_minmax(0,1fr)_110px_90px_90px_190px] gap-2 border-b border-[#e9ebec] bg-[#f3f6f9] px-4 py-2.5 text-xs font-semibold tracking-wide text-slate-500 uppercase">
+              <div className={`${productGridClass} border-b border-[#e9ebec] bg-[#f3f6f9] px-4 py-2.5 text-xs font-semibold tracking-wide text-slate-500 uppercase`}>
                 <span>Ürün</span>
                 <span>SKU</span>
                 <span>Kategori</span>
@@ -262,12 +663,42 @@ export function ProductsTable({
                 <span>Stok</span>
                 <span>Durum</span>
                 <span className="text-right">İşlem</span>
+                <span className="sr-only">Varyantlar</span>
               </div>
 
-              {products.map((product) => (
+              {products.map((product) => {
+                const hasVariants = product.variantCount > 1;
+                const expanded = expandedIds.has(product.id);
+                const stockQuantity = stockOverrides[product.id] ?? product.stockQuantity;
+                const salePatch = salePatches[product.id];
+                const priceMinor = salePatch?.priceMinor ?? priceOverrides[product.id] ?? product.basePriceMinor;
+                const compareAtMinor = salePatch?.compareAtMinor ?? product.compareAtMinor;
+                const saleStartsAt = salePatch?.saleStartsAt ?? product.saleStartsAt;
+                const saleEndsAt = salePatch?.saleEndsAt ?? product.saleEndsAt;
+                const canQuickEdit = Boolean(product.defaultVariantId) && canUpdate;
+                const campaignOn = hasStoredCampaign({
+                  priceMinor,
+                  compareAtMinor,
+                  saleStartsAt,
+                  saleEndsAt,
+                });
+                const openSale = () => {
+                  if (!product.defaultVariantId || !canUpdate) return;
+                  setSaleTarget({
+                    variantId: product.defaultVariantId,
+                    productId: product.id,
+                    title: product.title,
+                    priceMinor,
+                    compareAtMinor,
+                    saleStartsAt,
+                    saleEndsAt,
+                    canApplyAll: product.variantCount > 1,
+                  });
+                };
+                return (
+                <div key={product.id}>
                 <div
-                  key={product.id}
-                  className="grid grid-cols-[minmax(0,2fr)_110px_minmax(0,1fr)_110px_90px_90px_190px] items-center gap-2 border-b border-[#e9ebec] px-4 py-3 text-sm last:border-0"
+                  className={`${productGridClass} items-start border-b border-[#e9ebec] px-4 py-3 text-sm ${expanded ? "" : "last:border-0"}`}
                 >
                   <div className="flex min-w-0 items-center gap-3">
                     <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-md bg-[#f3f6f9]">
@@ -281,40 +712,115 @@ export function ProductsTable({
                       )}
                     </div>
                     <div className="min-w-0">
-                      <p className="truncate font-medium text-slate-800">{product.title}</p>
+                      <p className="truncate font-medium text-slate-800">
+                        <AdminPublicTextLink
+                          href={publicProductHref(product.slug, urlStructure, product.urlId)}
+                        >
+                          {product.title}
+                        </AdminPublicTextLink>
+                      </p>
                       <p className="truncate text-xs text-slate-400">
                         {product.brandName || product.slug}
+                        {product.supplierName ? ` · ${product.supplierName}` : ""}
                         {product.variantCount > 1 ? ` · ${product.variantCount} kombinasyon` : ""}
+                        {` · ${formatAddedAt(product.createdAt)}`}
                       </p>
                     </div>
                   </div>
-                  <span className="truncate font-mono text-xs text-slate-500">
+                  <span className="truncate pt-1.5 font-mono text-xs text-slate-500">
                     {product.sku || "—"}
                   </span>
-                  <span className="truncate text-slate-500">{product.categoryName || "—"}</span>
-                  <span className="text-slate-700">{formatMinorTry(product.basePriceMinor)}</span>
+                  <span className="truncate pt-1.5 text-slate-500">{product.categoryName || "—"}</span>
+                  {hasVariants ? (
+                  <div className="flex items-start gap-1 pt-1.5 text-slate-700">
+                    <span className="min-w-0 truncate font-medium">{formatMinorTry(priceMinor)}</span>
+                    <SalePlusButton
+                      active={campaignOn}
+                      disabled={!canQuickEdit}
+                      label={`${product.title} indirim`}
+                      onClick={openSale}
+                    />
+                  </div>
+                  ) : (
+                    <div>
+                      <QuickEditCell
+                        savedValue={formatMinorToMajorInput(priceMinor)}
+                        ariaLabel={`${product.title} fiyat`}
+                        inputMode="decimal"
+                        disabled={!canQuickEdit}
+                        trailing={
+                          <SalePlusButton
+                            active={campaignOn}
+                            disabled={!canQuickEdit}
+                            label={`${product.title} indirim`}
+                            onClick={openSale}
+                          />
+                        }
+                        formatGhost={(value) => {
+                          const minor = parseMajorToMinor(value);
+                          return minor == null ? value : formatMinorTry(minor);
+                        }}
+                        normalize={(raw) => {
+                          const minor = parseMajorToMinor(raw);
+                          if (minor == null) return { ok: false, error: "Geçerli fiyat girin" };
+                          return { ok: true, value: formatMinorToMajorInput(minor) };
+                        }}
+                        onCommit={(value) => {
+                          const minor = parseMajorToMinor(value);
+                          if (minor == null) return Promise.resolve({ error: "Geçerli fiyat girin" });
+                          return saveSimpleVariant(product, { priceMinor: minor });
+                        }}
+                      />
+                    </div>
+                  )}
+                  {hasVariants ? (
                   <span
-                    className={
-                      product.stockQuantity > 0
+                    className={`pt-1.5 ${
+                      stockQuantity > 0
                         ? "font-medium text-[#0ab39c]"
                         : "font-medium text-rose-600"
-                    }
+                    }`}
                   >
-                    {product.stockQuantity}
+                    {stockQuantity}
                   </span>
-                  <span>
+                  ) : (
+                    <QuickEditCell
+                      savedValue={String(stockQuantity)}
+                      ariaLabel={`${product.title} stok`}
+                      inputMode="numeric"
+                      disabled={!canQuickEdit || advancedInventory}
+                      formatGhost={(value) => value}
+                      normalize={(raw) => {
+                        const parsed = Number.parseInt(raw.trim(), 10);
+                        if (!Number.isFinite(parsed) || parsed < 0) {
+                          return { ok: false, error: "Geçerli stok girin" };
+                        }
+                        return { ok: true, value: String(parsed) };
+                      }}
+                      onCommit={(value) =>
+                        saveSimpleVariant(product, {
+                          stockQuantity: Number.parseInt(value, 10),
+                        })
+                      }
+                    />
+                  )}
+                  <span className="flex items-center gap-1 pt-1.5">
                     {product.isActive ? (
-                      <span className="inline-flex items-center gap-1 rounded-md bg-[#0ab39c]/10 px-2 py-0.5 text-xs font-semibold text-[#0ab39c]">
-                        <Check className="h-3 w-3" />
-                        Çevrimiçi
+                      <span
+                        className="inline-flex text-[#0ab39c]"
+                        title={product.availableForOrder ? "Çevrimiçi" : "Çevrimiçi · satış kapalı"}
+                      >
+                        <Check className="h-4 w-4" strokeWidth={2.5} />
+                        <span className="sr-only">Çevrimiçi</span>
                       </span>
                     ) : (
-                      <span className="inline-flex rounded-md bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-500">
-                        Taslak
+                      <span className="inline-flex text-rose-600" title="Pasif">
+                        <X className="h-4 w-4" strokeWidth={2.5} />
+                        <span className="sr-only">Pasif</span>
                       </span>
                     )}
                   </span>
-                  <div className="flex items-center justify-end gap-1">
+                  <div className="flex items-center justify-end gap-1 pt-0.5">
                     <Can resource="products" action="update">
                       <Link
                         href={`/admin/products/${product.id}/edit`}
@@ -361,8 +867,42 @@ export function ProductsTable({
                       </button>
                     ) : null}
                   </div>
+                  {hasVariants ? (
+                    <button
+                      type="button"
+                      aria-expanded={expanded}
+                      aria-label={expanded ? "Varyantları gizle" : "Varyantları göster"}
+                      onClick={() => toggleExpanded(product.id)}
+                      className={`inline-flex h-8 w-8 items-center justify-center justify-self-end rounded-md border text-slate-500 transition hover:bg-slate-50 hover:text-[#405189] ${
+                        expanded
+                          ? "border-[#0ab39c] bg-[#0ab39c]/10 text-[#0ab39c]"
+                          : "border-[#e9ebec]"
+                      }`}
+                      title={expanded ? "Varyantları gizle" : "Varyantları göster"}
+                    >
+                      <ChevronDown
+                        className={`h-4 w-4 transition-transform ${expanded ? "rotate-180" : ""}`}
+                      />
+                    </button>
+                  ) : (
+                    <span />
+                  )}
                 </div>
-              ))}
+                {hasVariants && expanded ? (
+                  <ProductListVariantsPanel
+                    productId={product.id}
+                    productImage={product.image}
+                    canUpdate={canUpdate}
+                    lockStock={advancedInventory}
+                    onStockChange={(nextStock) =>
+                      setStockOverrides((prev) => ({ ...prev, [product.id]: nextStock }))
+                    }
+                    onSaleChange={applySaleResult}
+                  />
+                ) : null}
+                </div>
+                );
+              })}
             </div>
           </div>
         )}
@@ -380,7 +920,7 @@ export function ProductsTable({
                 </span>
               ) : (
                 <Link
-                  href={catalogHref(page - 1, q)}
+                  href={adminProductCatalogHref(query, page - 1)}
                   className="inline-flex items-center gap-1 rounded-md border border-[#e9ebec] px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
                 >
                   <ChevronLeft className="h-4 w-4" />
@@ -394,7 +934,7 @@ export function ProductsTable({
                 </span>
               ) : (
                 <Link
-                  href={catalogHref(page + 1, q)}
+                  href={adminProductCatalogHref(query, page + 1)}
                   className="inline-flex items-center gap-1 rounded-md border border-[#e9ebec] px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
                 >
                   Sonraki
@@ -417,6 +957,13 @@ export function ProductsTable({
             setActionError(null);
           }}
           onConfirm={confirmDelete}
+        />
+      ) : null}
+      {saleTarget ? (
+        <ProductSaleModal
+          target={saleTarget}
+          onClose={() => setSaleTarget(null)}
+          onSaved={applySaleResult}
         />
       ) : null}
     </>

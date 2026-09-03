@@ -2,16 +2,13 @@
 
 import { useEffect, useRef, useState } from "react";
 import { ChevronDown, Trash2, Truck } from "lucide-react";
-import { resolveCartAction } from "@/app/(site)/sepet/actions";
+import { CartNotices } from "@/components/site/cart/cart-notices";
 import { useCart } from "@/components/site/cart/cart-provider";
+import { usePerformance } from "@/components/site/performance-provider";
 import { SiteImage, SiteImageFallback } from "@/components/site/site-image";
 import { SiteLink } from "@/components/site/site-link";
-import {
-  applyLineQuantities,
-  loadHydratedCart,
-  readHydratedCartCache,
-} from "@/lib/cart-hydrate-cache";
-import type { CartDeliveryCode, HydratedCart, HydratedCartLine } from "@/lib/checkout-types";
+import { cartLineIssueLabel } from "@/lib/cart-sync";
+import type { CartDeliveryCode, HydratedCartLine } from "@/lib/checkout-types";
 import { formatMinorTl, formatMinorTry, taxExcludedMinor } from "@/lib/product-money";
 
 const CART_ORANGE = "text-[#f27a1a]";
@@ -54,38 +51,28 @@ const checkboxClass =
   "h-4 w-4 shrink-0 rounded border-site-border text-[#f27a1a] accent-[#f27a1a]";
 
 export function CartPage() {
-  const { ready, lines, selectedIds, setQuantity, removeItem, toggleSelected, setAllSelected } =
-    useCart();
-  const [cart, setCart] = useState<HydratedCart | null>(null);
+  const perf = usePerformance();
+  const {
+    ready,
+    lines,
+    hydrated,
+    notices,
+    dismissNotice,
+    selectedIds,
+    setQuantity,
+    removeItem,
+    toggleSelected,
+    setAllSelected,
+  } = useCart();
   const [openSavings, setOpenSavings] = useState<string | null>(null);
   const selectAllRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    if (!ready) return;
-    if (lines.length === 0) {
-      setCart(null);
-      return;
-    }
-    const cached = readHydratedCartCache(lines);
-    if (cached) setCart(cached);
-    else {
-      setCart((current) => (current ? applyLineQuantities(current, lines) : null));
-    }
-    let cancelled = false;
-    void loadHydratedCart(lines, resolveCartAction).then((next) => {
-      if (cancelled) return;
-      setCart(next);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [lines, ready]);
-
-  const displayCart =
-    cart ?? (ready && lines.length > 0 ? readHydratedCartCache(lines) : null);
-  const visibleLines = displayCart?.lines ?? [];
-  const selectedLines = visibleLines.filter((line) => selectedIds.includes(line.variantId));
-  const allSelected = visibleLines.length > 0 && selectedLines.length === visibleLines.length;
+  const visibleLines = hydrated?.lines ?? [];
+  const selectedLines = visibleLines.filter(
+    (line) => line.available && selectedIds.includes(line.variantId),
+  );
+  const selectable = visibleLines.filter((line) => line.available);
+  const allSelected = selectable.length > 0 && selectedLines.length === selectable.length;
   const selectedTotal = selectedLines.reduce((sum, line) => sum + line.totalMinor, 0);
   const selectedTax = selectedTaxMinor(selectedLines);
 
@@ -94,27 +81,33 @@ export function CartPage() {
     selectAllRef.current.indeterminate = selectedLines.length > 0 && !allSelected;
   }, [allSelected, selectedLines.length]);
 
-  if (!ready || (lines.length > 0 && !displayCart)) {
+  if (!ready || (lines.length > 0 && !hydrated)) {
     return <CartPending rowCount={Math.max(lines.length, 2)} />;
   }
 
   if (lines.length === 0) {
     return (
-      <div className="rounded-xl border border-site-border bg-site-card px-6 py-16 text-center">
-        <p className="font-display text-xl font-semibold text-site-fg">Sepetiniz boş</p>
-        <p className="mt-2 text-sm text-site-muted">Ürün ekleyip alışverişe devam edebilirsiniz.</p>
-        <SiteLink
-          href="/katalog"
-          className="mt-6 inline-flex rounded-md bg-site-primary px-5 py-2.5 text-sm font-semibold text-white"
-        >
-          Alışverişe başla
-        </SiteLink>
+      <div>
+        <CartNotices notices={notices} onDismiss={dismissNotice} />
+        <div className="rounded-xl border border-site-border bg-site-card px-6 py-16 text-center">
+          <p className="font-display text-xl font-semibold text-site-fg">Sepetiniz boş</p>
+          <p className="mt-2 text-sm text-site-muted">Ürün ekleyip alışverişe devam edebilirsiniz.</p>
+          <SiteLink
+            href="/katalog"
+            prefetch={perf.prefetchLinks}
+            className="mt-6 inline-flex rounded-md bg-site-primary px-5 py-2.5 text-sm font-semibold text-white"
+          >
+            Alışverişe başla
+          </SiteLink>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="grid gap-8 lg:grid-cols-[1fr_20rem]">
+    <div>
+      <CartNotices notices={notices} onDismiss={dismissNotice} />
+      <div className="grid gap-8 lg:grid-cols-[1fr_20rem]">
       <div className="overflow-hidden rounded-xl border border-site-border bg-site-card">
         <div className="border-b border-site-border px-4 py-3 sm:px-5">
           <label className="inline-flex items-center gap-2 text-sm text-site-muted">
@@ -122,6 +115,7 @@ export function CartPage() {
               ref={selectAllRef}
               type="checkbox"
               checked={allSelected}
+              disabled={selectable.length === 0}
               onChange={(event) => setAllSelected(event.target.checked)}
               className={checkboxClass}
               aria-label="Tümünü seç"
@@ -129,13 +123,18 @@ export function CartPage() {
           </label>
         </div>
         <ul>
-          {visibleLines.map((line) => (
+          {visibleLines.map((line, index) => (
             <CartLineRow
               key={line.variantId}
               line={line}
-              selected={selectedIds.includes(line.variantId)}
+              selected={line.available && selectedIds.includes(line.variantId)}
               savingsOpen={openSavings === line.variantId}
-              onToggle={() => toggleSelected(line.variantId)}
+              imagePriority={index < perf.checkoutImageEager}
+              prefetch={perf.prefetchLinks}
+              onToggle={() => {
+                if (!line.available) return;
+                toggleSelected(line.variantId);
+              }}
               onQuantity={(quantity) => setQuantity(line.variantId, quantity)}
               onRemove={() => removeItem(line.variantId)}
               onToggleSavings={() =>
@@ -163,16 +162,22 @@ export function CartPage() {
         </p>
         <p className="mt-1 text-xs text-site-muted">Kargo ücreti sonraki adımda hesaplanır.</p>
         {selectedLines.length === 0 ? (
-          <p className="mt-4 text-sm text-site-muted">Ödemeye geçmek için ürün seçin.</p>
+          <p className="mt-4 text-sm text-site-muted">
+            {selectable.length === 0
+              ? "Sepette ödenebilir ürün yok. Stokta olmayanları çıkarın veya bekleyin."
+              : "Ödemeye geçmek için ürün seçin."}
+          </p>
         ) : (
           <SiteLink
             href="/odeme?adim=adres"
+            prefetch={perf.checkoutPrefetch}
             className="mt-5 flex w-full items-center justify-center rounded-md bg-site-primary px-4 py-2.5 text-sm font-semibold text-white"
           >
             Ödemeye geç
           </SiteLink>
         )}
       </aside>
+    </div>
     </div>
   );
 }
@@ -214,6 +219,8 @@ function CartLineRow({
   line,
   selected,
   savingsOpen,
+  imagePriority,
+  prefetch,
   onToggle,
   onQuantity,
   onRemove,
@@ -222,6 +229,8 @@ function CartLineRow({
   line: HydratedCartLine;
   selected: boolean;
   savingsOpen: boolean;
+  imagePriority: boolean;
+  prefetch: boolean;
   onToggle: () => void;
   onQuantity: (quantity: number) => void;
   onRemove: () => void;
@@ -231,8 +240,10 @@ function CartLineRow({
   const minQty = line.minOrderQty;
   const step = line.quantityStep;
   const maxQty = line.maxQuantity;
-  const canDecrease = line.quantity - step >= minQty;
-  const canIncrease = maxQty == null || line.quantity + step <= maxQty;
+  const canDecrease = line.available && line.quantity - step >= minQty;
+  const canIncrease =
+    line.available && (maxQty == null || line.quantity + step <= maxQty);
+  const issueLabel = line.issue ? cartLineIssueLabel(line.issue) : null;
 
   const quantityPicker = (
     <div className="flex flex-col items-center">
@@ -269,7 +280,24 @@ function CartLineRow({
 
   const priceBlock = (
     <div className="text-right">
-      <p className={`text-xl font-bold ${CART_ORANGE}`}>{formatMinorTl(line.totalMinor)}</p>
+      {line.priceChange ? (
+        <p className="text-xs text-site-muted line-through">
+          {formatMinorTl(line.priceChange.fromMinor * line.quantity)}
+        </p>
+      ) : null}
+      <p className={`text-xl font-bold ${line.available ? CART_ORANGE : "text-site-muted"}`}>
+        {formatMinorTl(line.available ? line.totalMinor : line.unitPriceMinor * line.quantity)}
+      </p>
+      {line.priceChange ? (
+        <p
+          className={`mt-0.5 text-xs font-medium ${
+            line.priceChange.toMinor > line.priceChange.fromMinor ? "text-amber-700" : "text-emerald-700"
+          }`}
+        >
+          {line.priceChange.toMinor > line.priceChange.fromMinor ? "Fiyat arttı" : "Fiyat düştü"}:{" "}
+          {formatMinorTry(line.priceChange.fromMinor)} → {formatMinorTry(line.priceChange.toMinor)}
+        </p>
+      ) : null}
       {line.savingsMinor > 0 ? (
         <button
           type="button"
@@ -289,22 +317,31 @@ function CartLineRow({
   );
 
   return (
-    <li className="border-b border-site-border px-4 py-5 last:border-b-0 sm:px-5">
+    <li className={`border-b border-site-border px-4 py-5 last:border-b-0 sm:px-5 ${line.available ? "" : "bg-site-surface/60"}`}>
       <div className="flex items-start gap-3 sm:gap-4">
         <input
           type="checkbox"
           checked={selected}
+          disabled={!line.available}
           onChange={onToggle}
-          className={`${checkboxClass} mt-8`}
+          className={`${checkboxClass} mt-8 disabled:opacity-40`}
           aria-label={`${line.title} seç`}
         />
 
         <SiteLink
           href={line.href}
+          prefetch={prefetch}
           className="relative h-[88px] w-[88px] shrink-0 overflow-hidden rounded-lg border border-site-border bg-site-surface"
         >
           {line.image ? (
-            <SiteImage src={line.image} alt={line.title} fill className="object-cover" sizes="88px" />
+            <SiteImage
+              src={line.image}
+              alt={line.title}
+              fill
+              priority={imagePriority}
+              className="object-cover"
+              sizes="88px"
+            />
           ) : (
             <SiteImageFallback fill />
           )}
@@ -314,6 +351,7 @@ function CartLineRow({
           <div className="min-w-0 flex-1">
             <SiteLink
               href={line.href}
+              prefetch={prefetch}
               className="text-sm leading-snug text-site-fg hover:text-site-primary"
             >
               {brand ? <span className="font-bold">{brand} </span> : null}
@@ -322,10 +360,14 @@ function CartLineRow({
             {line.variantTitle ? (
               <p className="mt-1 text-xs text-site-muted">{line.variantTitle}</p>
             ) : null}
-            <p className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-emerald-600">
-              <Truck className="h-3.5 w-3.5" />
-              {cartDeliveryLabel(line.estimatedDelivery)}
-            </p>
+            {issueLabel ? (
+              <p className="mt-2 text-xs font-medium text-rose-600">{issueLabel}</p>
+            ) : (
+              <p className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-emerald-600">
+                <Truck className="h-3.5 w-3.5" />
+                {cartDeliveryLabel(line.estimatedDelivery)}
+              </p>
+            )}
           </div>
 
           <div className="flex items-end justify-between gap-4 md:min-w-[17rem] md:items-stretch md:justify-end md:gap-8">

@@ -62,8 +62,10 @@ export function parseThemeRadius(value?: string): ThemeRadius {
 }
 
 export function parseThemeFont(value?: string): ThemeFont {
-  if (value === "geist" || value === "system") return value;
-  return "plus-jakarta";
+  if (value === "inter" || value === "plus-jakarta" || value === "geist" || value === "system") {
+    return value;
+  }
+  return "inter";
 }
 
 const RADIUS_MAP: Record<ThemeRadius, string> = {
@@ -73,6 +75,7 @@ const RADIUS_MAP: Record<ThemeRadius, string> = {
 };
 
 const FONT_MAP: Record<ThemeFont, string> = {
+  inter: "var(--font-inter), var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif",
   "plus-jakarta":
     "var(--font-plus-jakarta), var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif",
   geist: "var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif",
@@ -124,7 +127,10 @@ export function buildSiteThemeCss(settings: Record<string, string>): string {
   return [
     cssBlock(":root", theme.light, radius, font),
     cssBlock("html.site-dark", theme.dark, radius, font),
-    `.site-shell{font-family:var(--site-font);}`,
+    `.site-shell{font-family:var(--site-font);font-weight:400;letter-spacing:0;-webkit-font-smoothing:antialiased;}`,
+    `.site-shell .font-display{font-family:var(--site-font);letter-spacing:-.02em;}`,
+    `.site-shell .font-medium,.site-shell .font-semibold{font-weight:500;}`,
+    `.site-shell .font-bold,.site-shell .font-extrabold{font-weight:600;}`,
     `.site-themed-radius{border-radius:var(--site-radius);}`,
     `.site-themed-radius-lg{border-radius:calc(var(--site-radius)*1.5);}`,
   ].join("\n");

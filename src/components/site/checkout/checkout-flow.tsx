@@ -3,11 +3,13 @@
 import { useActionState, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { placeOrderAction, type PlaceOrderState } from "@/app/(site)/odeme/actions";
-import { resolveCartAction } from "@/app/(site)/sepet/actions";
+import { CartNotices } from "@/components/site/cart/cart-notices";
 import { useCart } from "@/components/site/cart/cart-provider";
 import { CheckoutAddressForm } from "@/components/site/checkout/checkout-address-form";
+import { usePerformance } from "@/components/site/performance-provider";
+import { SiteImage } from "@/components/site/site-image";
 import { SiteLink } from "@/components/site/site-link";
-import { loadHydratedCart } from "@/lib/cart-hydrate-cache";
+import type { CheckoutCardOption, CheckoutPaymentChoice } from "@/lib/checkout-payment-choice";
 import type { CheckoutAddress, CheckoutCarrier, HydratedCart } from "@/lib/checkout-types";
 import {
   CHECKOUT_STEPS,
@@ -18,7 +20,7 @@ import {
   type CheckoutQuery,
   type CheckoutStep,
 } from "@/lib/checkout-steps";
-import { formatMinorTry } from "@/lib/product-money";
+import { formatMinorTry, taxExcludedMinor } from "@/lib/product-money";
 
 const initialOrderState: PlaceOrderState = {};
 
@@ -35,25 +37,45 @@ function formatAddress(address: CheckoutAddress) {
 export function CheckoutFlow({
   initialAddresses,
   initialCarriers,
-  cardEnabled,
+  cardOptions,
   canceled,
   step: requestedStep,
   query,
 }: {
   initialAddresses: CheckoutAddress[];
   initialCarriers: Array<{ id: string; name: string; logo: string | null }>;
-  cardEnabled: boolean;
+  cardOptions: CheckoutCardOption[];
   canceled?: boolean;
   step: CheckoutStep;
   query: CheckoutQuery;
 }) {
   const router = useRouter();
-  const { ready, lines, selectedIds } = useCart();
+  const perf = usePerformance();
+  const { ready, lines, selectedIds, hydrated, notices, dismissNotice } = useCart();
   const checkoutLines = useMemo(
-    () => lines.filter((line) => selectedIds.includes(line.variantId)),
-    [lines, selectedIds],
+    () =>
+      lines.filter((line) => {
+        if (!selectedIds.includes(line.variantId)) return false;
+        if (!hydrated) return true;
+        return hydrated.lines.some((row) => row.variantId === line.variantId && row.available);
+      }),
+    [hydrated, lines, selectedIds],
   );
-  const [cart, setCart] = useState<HydratedCart | null>(null);
+  const cart = useMemo<HydratedCart | null>(() => {
+    if (!hydrated) return null;
+    const selected = hydrated.lines.filter(
+      (line) => line.available && selectedIds.includes(line.variantId),
+    );
+    return {
+      ...hydrated,
+      lines: selected,
+      productsMinor: selected.reduce((sum, line) => sum + line.totalMinor, 0),
+      taxMinor: selected.reduce((sum, line) => {
+        return sum + (line.totalMinor - taxExcludedMinor(line.totalMinor, line.taxRatePercent));
+      }, 0),
+      extraShippingMinor: selected.reduce((sum, line) => sum + line.extraShippingMinor, 0),
+    };
+  }, [hydrated, selectedIds]);
   const carriers = useMemo<CheckoutCarrier[]>(
     () =>
       initialCarriers.map((row) => ({
@@ -71,9 +93,7 @@ export function CheckoutFlow({
   );
   const [sameBilling, setSameBilling] = useState(true);
   const [carrierId, setCarrierId] = useState(initialCarriers[0]?.id ?? "");
-  const [paymentMethod, setPaymentMethod] = useState<"BANK_WIRE" | "CASH_ON_DELIVERY" | "CREDIT_CARD">(
-    "BANK_WIRE",
-  );
+  const [paymentMethod, setPaymentMethod] = useState<CheckoutPaymentChoice>("BANK_WIRE");
   const [showForm, setShowForm] = useState(initialAddresses.length === 0);
   const [orderState, formAction, pending] = useActionState(placeOrderAction, initialOrderState);
   const step = clampCheckoutStep(requestedStep, shippingId, carrierId);
@@ -89,18 +109,6 @@ export function CheckoutFlow({
     if (current === step) return;
     router.replace(checkoutStepHref(step, query));
   }, [query, queryKey, router, step]);
-
-  useEffect(() => {
-    if (!ready) return;
-    let cancelled = false;
-    void loadHydratedCart(checkoutLines, resolveCartAction).then((next) => {
-      if (cancelled) return;
-      setCart(next);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [checkoutLines, ready]);
 
   useEffect(() => {
     if (orderState.redirectUrl) {
@@ -152,9 +160,13 @@ export function CheckoutFlow({
     return (
       <div className="rounded-lg border border-site-border bg-site-card px-6 py-16 text-center">
         <p className="font-display text-xl font-semibold text-site-fg">
-          {lines.length === 0 ? "Sepetiniz boş" : "Ödeme için ürün seçilmedi"}
+          {lines.length === 0 ? "Sepetiniz boş" : "Ödeme için satılabilir ürün seçilmedi"}
         </p>
-        <SiteLink href="/sepet" className="mt-4 inline-flex text-sm font-semibold text-site-primary">
+        <SiteLink
+          href="/sepet"
+          prefetch={perf.checkoutPrefetch}
+          className="mt-4 inline-flex text-sm font-semibold text-site-primary"
+        >
           Sepete dön
         </SiteLink>
       </div>
@@ -187,6 +199,7 @@ export function CheckoutFlow({
             Kart ödemesi iptal edildi. Başka bir yöntem seçebilirsiniz.
           </p>
         ) : null}
+        <CartNotices notices={notices} onDismiss={dismissNotice} />
         {orderState.error ? (
           <p className="mb-4 rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
             {orderState.error}
@@ -297,6 +310,17 @@ export function CheckoutFlow({
                         checked={carrierId === item.id}
                         onChange={() => setCarrierId(item.id)}
                       />
+                      {item.logo ? (
+                        <span className="relative h-8 w-8 overflow-hidden rounded bg-site-surface">
+                          <SiteImage
+                            src={item.logo}
+                            alt=""
+                            fill
+                            className="object-contain"
+                            sizes="32px"
+                          />
+                        </span>
+                      ) : null}
                       <span className="font-medium text-site-fg">{item.name}</span>
                     </span>
                     <span className="text-sm text-site-fg">
@@ -352,21 +376,21 @@ export function CheckoutFlow({
                   </span>
                 </label>
               </li>
-              {cardEnabled ? (
-                <li>
+              {cardOptions.map((option) => (
+                <li key={option.id}>
                   <label className="flex cursor-pointer gap-3 rounded-md border border-site-border p-3 has-[:checked]:border-site-primary">
                     <input
                       type="radio"
-                      checked={paymentMethod === "CREDIT_CARD"}
-                      onChange={() => setPaymentMethod("CREDIT_CARD")}
+                      checked={paymentMethod === option.id}
+                      onChange={() => setPaymentMethod(option.id)}
                     />
                     <span>
-                      <span className="block font-medium text-site-fg">Kredi kartı</span>
-                      <span className="text-sm text-site-muted">Güvenli Stripe ödeme sayfası</span>
+                      <span className="block font-medium text-site-fg">{option.title}</span>
+                      <span className="text-sm text-site-muted">{option.hint}</span>
                     </span>
                   </label>
                 </li>
-              ) : null}
+              ))}
             </ul>
 
             <form action={formAction} className="mt-6">
@@ -395,12 +419,26 @@ export function CheckoutFlow({
       <aside className="h-fit rounded-lg border border-site-border bg-site-card p-5 lg:sticky lg:top-28">
         <h2 className="text-sm font-semibold text-site-fg">Özet</h2>
         <ul className="mt-3 space-y-2 text-sm text-site-muted">
-          {(cart?.lines ?? []).map((line) => (
+          {(cart?.lines ?? []).map((line, index) => (
             <li key={line.variantId} className="flex justify-between gap-3">
-              <span>
-                {line.title} × {line.quantity}
+              <span className="flex min-w-0 items-center gap-2">
+                {line.image ? (
+                  <span className="relative h-8 w-8 shrink-0 overflow-hidden rounded bg-site-surface">
+                    <SiteImage
+                      src={line.image}
+                      alt=""
+                      fill
+                      priority={index < perf.checkoutImageEager}
+                      className="object-cover"
+                      sizes="32px"
+                    />
+                  </span>
+                ) : null}
+                <span className="truncate">
+                  {line.title} × {line.quantity}
+                </span>
               </span>
-              <span className="text-site-fg">{formatMinorTry(line.totalMinor)}</span>
+              <span className="shrink-0 text-site-fg">{formatMinorTry(line.totalMinor)}</span>
             </li>
           ))}
         </ul>

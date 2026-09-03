@@ -1,12 +1,11 @@
 import type { Metadata } from "next";
-import dynamic from "next/dynamic";
 import { notFound } from "next/navigation";
+import { CatalogBreadcrumb } from "@/components/site/catalog/catalog-breadcrumb";
 import { CatalogFacetSidebar } from "@/components/site/catalog/catalog-facet-sidebar";
 import { CatalogToolbar } from "@/components/site/catalog/catalog-toolbar";
 import { ProductCard } from "@/components/site/catalog/product-card";
 import { JsonLd } from "@/components/site/json-ld";
 import { SiteSidebarLayout } from "@/components/site/site-sidebar-layout";
-import { SiteLink } from "@/components/site/site-link";
 import { SitePagination } from "@/components/site/site-pagination";
 import { type CatalogSearchParams } from "@/components/site/catalog/catalog-listing-screen";
 import { catalogListingHref, parseCatalogSearchQuery } from "@/lib/catalog-listing-params";
@@ -16,9 +15,12 @@ import {
   catalogBrandHref,
   getCachedCatalogBrandPage,
   getCachedCatalogCategoryIndex,
-  getCachedCatalogFilterFacets,
-  getFilteredCatalogListing,
+  getCachedFilteredCatalogListing,
 } from "@/lib/catalog-products";
+import {
+  getCachedCatalogListingFacets,
+  redirectIfUnavailableFilters,
+} from "@/lib/catalog-facets";
 import { buildCollectionJsonLd } from "@/lib/json-ld";
 import { parsePerformance, withCdnUrl } from "@/lib/performance";
 import { buildPublicMetadata, resolveProductSeo } from "@/lib/seo";
@@ -30,9 +32,6 @@ import {
   type UrlStructure,
 } from "@/lib/url-structure";
 
-const HomeCta = dynamic(() =>
-  import("@/components/site/home/home-cta").then((mod) => mod.HomeCta),
-);
 
 export async function catalogBrandMetadata(slug: string): Promise<Metadata> {
   const payload = await getCachedCatalogBrandPage(slug).catch(() => null);
@@ -73,16 +72,20 @@ export async function CatalogBrandScreen({
     brandSlugs: [slug],
   };
 
-  const [payload, categories, filterGroups, settings] = await Promise.all([
+  const [payload, categories, settings] = await Promise.all([
     getCachedCatalogBrandPage(slug),
     getCachedCatalogCategoryIndex().catch(() => []),
-    getCachedCatalogFilterFacets().catch(() => []),
     getSettingsMap().catch(() => ({}) as Record<string, string>),
   ]);
   if (!payload) notFound();
 
   const { brand } = payload;
-  const listing = await getFilteredCatalogListing(filters, parsed.page);
+  const [listing, facets] = await Promise.all([
+    getCachedFilteredCatalogListing(filters, parsed.page),
+    getCachedCatalogListingFacets(filters),
+  ]);
+  const path = catalogBrandHref(brand.slug, urls, brand.urlId);
+  redirectIfUnavailableFilters(path, filters, facets, { preserveBrandSlugs: true });
   const perf = parsePerformance(settings);
   const totalPages = Math.max(1, Math.ceil(listing.total / CATALOG_GRID_PAGE_SIZE));
   const page = Math.min(parsed.page, totalPages);
@@ -91,7 +94,6 @@ export async function CatalogBrandScreen({
     lazyIframes: perf.lazyIframes,
     disableThirdParty: perf.disableThirdParty,
   });
-  const path = catalogBrandHref(brand.slug, urls, brand.urlId);
   const catalogPath = publicCatalogPath(urls);
   const hubTitle = catalogHubTitle(urls);
 
@@ -104,51 +106,40 @@ export async function CatalogBrandScreen({
           description: stripHtml(brand.tagline || brand.description) || brand.name,
           path,
           crumbs: [
-            { name: "Ana Sayfa", path: "/" },
+            { name: settings.site_name?.trim() || "Ana Sayfa", path: "/" },
             { name: hubTitle, path: catalogPath },
             { name: brand.name, path },
           ],
         })}
       />
-      <section className="border-b border-site-border bg-site-surface py-6">
+      <section className="py-5 sm:py-6">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <nav className="text-sm text-site-muted">
-            <SiteLink href="/" className="hover:text-site-primary">
-              Ana Sayfa
-            </SiteLink>
-            <span className="mx-2">/</span>
-            <SiteLink href={catalogPath} className="hover:text-site-primary">
-              {hubTitle}
-            </SiteLink>
-            <span className="mx-2">/</span>
-            <span className="text-site-fg">{brand.name}</span>
-          </nav>
-          <h1 className="mt-2 font-display text-2xl font-bold text-site-fg sm:text-3xl">
-            {brand.name}
-          </h1>
-          {brand.tagline ? <p className="mt-1 text-sm text-site-muted">{brand.tagline}</p> : null}
+          <CatalogBreadcrumb
+            items={[
+              { name: settings.site_name?.trim() || "Ana Sayfa", href: "/" },
+              { name: hubTitle, href: catalogPath },
+              { name: brand.name },
+            ]}
+          />
         </div>
-      </section>
-
-      <section className="py-8 sm:py-10">
         <SiteSidebarLayout
+          compactSidebar
           sidebar={
             <CatalogFacetSidebar
               basePath={path}
               categories={categories}
               brands={[]}
               filters={filters}
-              filterGroups={filterGroups}
+              filterGroups={facets.filterGroups}
             />
           }
         >
-          {description ? (
-            <div
-              className="prose prose-slate mb-6 max-w-none dark:prose-invert"
-              dangerouslySetInnerHTML={{ __html: description }}
-            />
-          ) : null}
-          <CatalogToolbar basePath={path} filters={filters} total={listing.total} />
+          <CatalogToolbar
+            basePath={path}
+            filters={filters}
+            total={listing.total}
+            heading={brand.name}
+          />
           {listing.products.length === 0 ? (
             <p className="py-10 text-sm text-site-muted">Bu markada yayınlanmış ürün yok.</p>
           ) : (
@@ -174,9 +165,14 @@ export async function CatalogBrandScreen({
               />
             </>
           )}
+          {description ? (
+            <div
+              className="prose prose-slate mt-10 max-w-none text-sm dark:prose-invert"
+              dangerouslySetInnerHTML={{ __html: description }}
+            />
+          ) : null}
         </SiteSidebarLayout>
       </section>
-      <HomeCta />
     </>
   );
 }

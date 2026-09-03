@@ -38,6 +38,8 @@ function parseScope(formData: FormData): SettingsScope {
     raw === "general" ||
     raw === "theme" ||
     raw === "membership" ||
+    raw === "payments" ||
+    raw === "pricing" ||
     raw === "all"
   ) {
     return raw;
@@ -133,8 +135,8 @@ async function resolveFieldValue(
   }
 
   if (def.key === "theme_font") {
-    if (raw === "geist" || raw === "system") return raw;
-    return "plus-jakarta";
+    if (raw === "inter" || raw === "plus-jakarta" || raw === "geist" || raw === "system") return raw;
+    return "inter";
   }
 
   if (
@@ -167,6 +169,8 @@ function settingsResourceForScope(scope: SettingsScope) {
   switch (scope) {
     case "membership":
       return "settings_membership";
+    case "payments":
+      return "settings_payments";
     case "performance":
       return "settings_performance";
     case "theme":
@@ -284,15 +288,27 @@ export async function saveSettingsAction(
     revalidateTag("settings");
     revalidateTag("site");
     revalidateTag("pages");
+    revalidateTag("products");
+    revalidateTag("checkout");
     revalidatePath("/");
     revalidatePath("/", "layout");
+    revalidatePath("/c");
     revalidatePath("/katalog");
     revalidatePath("/kategori");
     revalidatePath("/marka");
+    revalidatePath("/urunler");
+    revalidatePath("/magaza");
+    revalidatePath("/arama");
+    revalidatePath("/sepet");
+    revalidatePath("/odeme");
+    revalidatePath("/admin/products");
+    revalidatePath("/admin", "layout");
+    revalidatePath("/admin/inventory");
     revalidatePath("/admin/settings");
     revalidatePath("/admin/settings/performance");
     revalidatePath("/admin/settings/theme");
     revalidatePath("/admin/settings/membership");
+    revalidatePath("/admin/settings/payments");
     return {
       success: true,
       message:
@@ -302,7 +318,9 @@ export async function saveSettingsAction(
             ? "Tema ayarları kaydedildi. Site renkleri güncellendi."
             : scope === "membership"
               ? "Üyelik ayarları kaydedildi."
-              : "Ayarlar kaydedildi. Görseller optimize edildi; eski dosyalar temizlendi.",
+              : scope === "payments"
+                ? "Ödeme ayarları kaydedildi."
+                : "Ayarlar kaydedildi. Görseller optimize edildi; eski dosyalar temizlendi.",
     };
   } catch (error) {
     console.error(error);

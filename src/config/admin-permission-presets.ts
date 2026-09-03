@@ -7,7 +7,7 @@ import {
 
 export type PermissionGrant = "none" | "view" | "write" | "full";
 
-export type PermissionPresetId = "manager" | "editor" | "support" | "store";
+export type PermissionPresetId = "manager" | "editor" | "support" | "store" | "depot";
 
 export type PermissionPreset = {
   id: PermissionPresetId;
@@ -51,6 +51,7 @@ const STORE_IDS = [
   "shipping",
   "customers",
   "orders",
+  "reviews",
 ] as const;
 
 function grantMap(
@@ -87,7 +88,7 @@ export const STAFF_PERMISSION_PRESETS: PermissionPreset[] = [
   {
     id: "manager",
     label: "Yönetici",
-    description: "Personel hariç tüm sayfalarda tam yetki",
+    description: "Personel yönetimi ve depo silme hariç tam yetki",
   },
   {
     id: "editor",
@@ -102,7 +103,12 @@ export const STAFF_PERMISSION_PRESETS: PermissionPreset[] = [
   {
     id: "store",
     label: "Mağaza sorumlusu",
-    description: "Ürün, sipariş ve müşteri işlemleri",
+    description: "Ürün, sipariş, stok ve müşteri; depo/raf silme yok",
+  },
+  {
+    id: "depot",
+    label: "Depo sorumlusu",
+    description: "Paketleme, irsaliye ve raf atama; silme yok",
   },
 ];
 
@@ -119,6 +125,7 @@ export function permissionMapForPreset(presetId: PermissionPresetId): StaffPermi
         email: "write",
         customers: "write",
         orders: "write",
+        reviews: "write",
         products: "view",
       });
     case "store":
@@ -126,8 +133,19 @@ export function permissionMapForPreset(presetId: PermissionPresetId): StaffPermi
         grantsForIds(STORE_IDS, "full", {
           dashboard: "view",
           email: "write",
+          inventory: "write",
+          warehouse: "write",
         }),
       );
+    case "depot":
+      return grantMap({
+        "*": "none",
+        dashboard: "view",
+        products: "view",
+        orders: "view",
+        inventory: "write",
+        warehouse: "write",
+      });
     default: {
       const _exhaustive: never = presetId;
       return _exhaustive;

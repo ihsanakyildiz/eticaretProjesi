@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import dynamic from "next/dynamic";
 import { JsonLd } from "@/components/site/json-ld";
 import { SiteLink } from "@/components/site/site-link";
 import { LucideIconByName } from "@/lib/lucide-icons";
@@ -20,9 +19,6 @@ export async function generateMetadata(): Promise<Metadata> {
   });
 }
 
-const HomeCta = dynamic(() =>
-  import("@/components/site/home/home-cta").then((mod) => mod.HomeCta),
-);
 
 export default async function ProjectTagsIndexPage() {
   const [tags, settings] = await Promise.all([
@@ -112,7 +108,6 @@ export default async function ProjectTagsIndexPage() {
         </div>
       </section>
 
-      <HomeCta />
     </>
   );
 }

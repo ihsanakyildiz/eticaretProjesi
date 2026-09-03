@@ -1,14 +1,17 @@
 import "server-only";
 
+import { randomBytes } from "crypto";
 import { lookup } from "dns/promises";
+import { access, mkdir, unlink, writeFile } from "fs/promises";
 import { isIP } from "net";
-import { access } from "fs/promises";
+import path from "path";
+import { yieldToEventLoop } from "@/lib/background-yield";
 import type { ProductImportDraft } from "@/lib/product-import";
 
 const FETCH_TIMEOUT_MS = 10000;
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 const IMPORT_IMAGE_DIR = "uploads/products/catalog";
-const IMPORT_IMAGE_CONCURRENCY = 16;
+const IMPORT_IMAGE_CONCURRENCY = 3;
 
 export type ImportImageCache = {
   saved: Map<string, string>;
@@ -94,23 +97,6 @@ function sniffImageExt(buffer: Buffer) {
   return null;
 }
 
-function mimeFromExt(ext: string) {
-  switch (ext) {
-    case "jpg":
-      return "image/jpeg";
-    case "png":
-      return "image/png";
-    case "webp":
-      return "image/webp";
-    case "gif":
-      return "image/gif";
-    case "avif":
-      return "image/avif";
-    default:
-      return "application/octet-stream";
-  }
-}
-
 async function ensureLocalUpload(url: string) {
   // sharp instrumentation paketini kırmamak için uploads yalnızca burada yüklenir.
   const { resolvePublicUploadFile } = await import("@/lib/uploads");
@@ -127,7 +113,7 @@ async function downloadRemoteImage(url: string) {
     redirect: "follow",
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     headers: {
-      Accept: "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+      Accept: "image/jpeg,image/png,image/webp,image/*,*/*;q=0.8",
     },
   });
   if (!response.ok) {
@@ -143,19 +129,30 @@ async function downloadRemoteImage(url: string) {
   const ext = sniffImageExt(buffer);
   if (!ext) throw new Error("Adres bir görsel dosyası değil.");
 
-  // sharp instrumentation paketini kırmamak için uploads yalnızca burada yüklenir.
-  const { saveOptimizedImage } = await import("@/lib/uploads");
-  const file = new File([new Uint8Array(buffer)], `import.${ext}`, {
-    type: mimeFromExt(ext),
-  });
-  const saved = await saveOptimizedImage(file, {
-    uploadDir: IMPORT_IMAGE_DIR,
-    maxBytes: MAX_IMAGE_BYTES,
-    mode: "webp",
-    quality: 80,
-    effort: 2,
-  });
-  return saved.publicPath;
+  const dir = path.join(process.cwd(), "public", IMPORT_IMAGE_DIR);
+  await mkdir(dir, { recursive: true });
+  const fileName = `import-${randomBytes(6).toString("hex")}.webp`;
+  const absolute = path.join(dir, fileName);
+  try {
+    const sharp = (await import("sharp")).default;
+    await sharp(buffer, { failOn: "none", unlimited: true })
+      .rotate()
+      .toColourspace("srgb")
+      .resize({
+        width: 2000,
+        height: 2000,
+        fit: "inside",
+        withoutEnlargement: true,
+      })
+      .webp({ quality: 80, effort: 4, smartSubsample: true })
+      .toFile(absolute);
+  } catch {
+    await unlink(absolute).catch(() => undefined);
+    const fallbackName = `import-${randomBytes(6).toString("hex")}.${ext}`;
+    await writeFile(path.join(dir, fallbackName), buffer);
+    return `/${IMPORT_IMAGE_DIR}/${fallbackName}`.replace(/\\/g, "/");
+  }
+  return `/${IMPORT_IMAGE_DIR}/${fileName}`.replace(/\\/g, "/");
 }
 
 export async function localizeImportImageUrl(url: string, cache: ImportImageCache) {
@@ -189,19 +186,26 @@ export async function localizeImportImageUrl(url: string, cache: ImportImageCach
 function applyLocalizedImages(
   draft: ProductImportDraft,
   cache: ImportImageCache,
+  keepOnFailure = false,
 ): { draft: ProductImportDraft } | { error: string } {
   try {
-    const localized = draft.imageUrls.map((url) => {
+    const localized: string[] = [];
+    for (const url of draft.imageUrls) {
       const key = url.trim();
       const saved = cache.saved.get(key);
-      if (saved) return saved;
+      if (saved) {
+        localized.push(saved);
+        continue;
+      }
+      if (keepOnFailure) continue;
       throw new Error(cache.failed.get(key) || "Görsel indirilemedi.");
-    });
+    }
     const variants = draft.variants.map((variant) => {
       if (!variant.imageUrl) return variant;
       const key = variant.imageUrl.trim();
       const saved = cache.saved.get(key);
       if (saved) return { ...variant, imageUrl: saved };
+      if (keepOnFailure) return { ...variant, imageUrl: null };
       throw new Error(cache.failed.get(key) || "Görsel indirilemedi.");
     });
     return {
@@ -228,6 +232,7 @@ export async function localizeImportedProductImages(
 export async function localizeImportedProductImagesBatch(
   drafts: ProductImportDraft[],
   cache: ImportImageCache,
+  options?: { keepOnFailure?: boolean; concurrency?: number },
 ): Promise<Array<{ draft: ProductImportDraft } | { error: string }>> {
   const urls = new Set<string>();
   for (const draft of drafts) {
@@ -236,12 +241,14 @@ export async function localizeImportedProductImagesBatch(
       if (variant.imageUrl) urls.add(variant.imageUrl.trim());
     }
   }
-  await runPool([...urls], IMPORT_IMAGE_CONCURRENCY, async (url) => {
+  const concurrency = Math.max(1, Math.min(6, options?.concurrency ?? IMPORT_IMAGE_CONCURRENCY));
+  await runPool([...urls], concurrency, async (url) => {
     try {
       await localizeImportImageUrl(url, cache);
     } catch {
-      /* cache.failed doldurulur; ürün sonra atlanır */
+      /* cache.failed doldurulur; ürün sonra atlanır veya görselsiz devam eder */
     }
+    await yieldToEventLoop();
   });
-  return drafts.map((draft) => applyLocalizedImages(draft, cache));
+  return drafts.map((draft) => applyLocalizedImages(draft, cache, options?.keepOnFailure === true));
 }
