@@ -213,9 +213,9 @@ export function SearchableSelect({
       </button>
 
       {open ? (
-        <div className="absolute z-40 mt-1 w-full overflow-hidden rounded-md border border-[#e9ebec] bg-white shadow-lg">
-          <div className="border-b border-[#e9ebec] p-2">
-            <div className="relative">
+        <div className="absolute z-50 mt-1 w-full overflow-hidden rounded-md border border-[#e9ebec] bg-white shadow-lg">
+          <div className="border-b border-[#e9ebec] bg-white p-2">
+            <div className="relative bg-white">
               <Search className="pointer-events-none absolute top-1/2 left-2.5 h-4 w-4 -translate-y-1/2 text-slate-400" />
               <input
                 ref={searchRef}
@@ -224,7 +224,7 @@ export function SearchableSelect({
                 onChange={(e) => setQuery(e.target.value)}
                 onKeyDown={onSearchKeyDown}
                 placeholder={searchPlaceholder}
-                className="w-full rounded-md border border-[#e9ebec] bg-[#f3f6f9] py-2 pr-3 pl-9 text-sm text-slate-800 outline-none placeholder:text-slate-400 focus:border-[#0ab39c] focus:bg-white focus:ring-2 focus:ring-[#0ab39c]/20"
+                className="w-full rounded-md border border-[#e9ebec] bg-white py-2 pr-3 pl-9 text-sm text-slate-800 outline-none placeholder:text-slate-400 focus:border-[#0ab39c] focus:ring-2 focus:ring-[#0ab39c]/20"
               />
             </div>
           </div>

@@ -725,6 +725,13 @@ export function ProductsTable({
                         {product.variantCount > 1 ? ` · ${product.variantCount} kombinasyon` : ""}
                         {` · ${formatAddedAt(product.createdAt)}`}
                       </p>
+                      {product.campaignName ? (
+                        <p className="mt-1 truncate">
+                          <span className="inline-flex max-w-full items-center rounded bg-rose-50 px-1.5 py-0.5 text-[11px] font-semibold text-rose-700">
+                            {product.campaignLabel || product.campaignName}
+                          </span>
+                        </p>
+                      ) : null}
                     </div>
                   </div>
                   <span className="truncate pt-1.5 font-mono text-xs text-slate-500">

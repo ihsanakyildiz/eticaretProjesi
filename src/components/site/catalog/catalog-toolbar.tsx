@@ -38,6 +38,7 @@ export function CatalogToolbar({
                   minMajor: filters.minMajor,
                   maxMajor: filters.maxMajor,
                   filterValueIds: filters.filterValueIds,
+                  campaignIds: filters.campaignIds,
                   query: filters.query,
                 })}
                 className={`rounded-md px-2.5 py-1.5 text-[11px] font-medium ${

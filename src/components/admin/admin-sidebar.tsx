@@ -298,7 +298,8 @@ function NavLink({
     return (
       <details
         className="group"
-        open={expanded}
+        open={expanded ? true : undefined}
+        suppressHydrationWarning
         onToggle={(event) => {
           setExpanded(event.currentTarget.open);
         }}
@@ -362,11 +363,11 @@ function NavLink({
 }
 
 export function AdminSidebar() {
-  const { role, map, advancedInventory } = usePermissions();
+  const { role, map, advancedInventory, supportChat } = usePermissions();
   const visibleSections = adminNavSections
     .map((section) => ({
       ...section,
-      items: filterNavByView(section.items, role, map, { advancedInventory }),
+      items: filterNavByView(section.items, role, map, { advancedInventory, supportChat }),
     }))
     .filter((section) => section.items.length > 0);
   const { isOpen, close, isCollapsed, isDesktop, allowTransition, toggleCollapsed } =

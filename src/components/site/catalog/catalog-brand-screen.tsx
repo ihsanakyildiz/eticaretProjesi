@@ -129,6 +129,7 @@ export async function CatalogBrandScreen({
               basePath={path}
               categories={categories}
               brands={[]}
+              campaigns={facets.campaigns}
               filters={filters}
               filterGroups={facets.filterGroups}
             />
@@ -157,6 +158,7 @@ export async function CatalogBrandScreen({
                     page: next,
                     sort: filters.sort,
                     filterValueIds: filters.filterValueIds,
+                    campaignIds: filters.campaignIds,
                     minMajor: filters.minMajor,
                     maxMajor: filters.maxMajor,
                     query: filters.query,

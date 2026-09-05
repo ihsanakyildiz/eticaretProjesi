@@ -26,9 +26,16 @@ const inputClass =
 
 const initialState: StaffFormState = {};
 
+export type StaffDepartmentOption = {
+  id: string;
+  name: string;
+  color: string;
+};
+
 export function StaffForm({
   mode,
   staff,
+  departments = [],
 }: {
   mode: "create" | "edit";
   staff?: {
@@ -38,7 +45,9 @@ export function StaffForm({
     email: string;
     isActive: boolean;
     permissions: StaffPermissionMap;
+    departmentIds?: string[];
   };
+  departments?: StaffDepartmentOption[];
 }) {
   const router = useRouter();
   const action = mode === "create" ? createStaffAction : updateStaffAction;
@@ -46,6 +55,7 @@ export function StaffForm({
   const [permissions, setPermissions] = useState<StaffPermissionMap>(
     staff?.permissions ?? emptyPermissionMap(),
   );
+  const [departmentIds, setDepartmentIds] = useState<string[]>(staff?.departmentIds ?? []);
 
   useEffect(() => {
     if (state.success && state.redirectId) {
@@ -103,6 +113,7 @@ export function StaffForm({
     <form action={formAction} className="space-y-5">
       {mode === "edit" && staff ? <input type="hidden" name="id" value={staff.id} /> : null}
       <input type="hidden" name="permissionsJson" value={JSON.stringify(permissions)} />
+      <input type="hidden" name="departmentIdsJson" value={JSON.stringify(departmentIds)} />
 
       {state.error ? (
         <div className="rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
@@ -143,6 +154,51 @@ export function StaffForm({
           </label>
           <AdminSwitch name="isActive" label="Hesap etkin" defaultChecked={staff?.isActive ?? true} />
         </div>
+      </section>
+
+      <section className="space-y-4 rounded-lg border border-[#e9ebec] bg-white p-5 shadow-sm">
+        <div>
+          <h2 className="text-base font-semibold text-slate-800">Sohbet departmanları</h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Bu personelin bağlı olduğu sohbet departmanlarını işaretleyin. Departman listesi Sohbet
+            ayarlarından yönetilir.
+          </p>
+        </div>
+        {departments.length === 0 ? (
+          <p className="rounded-md border border-dashed border-[#e9ebec] px-4 py-6 text-center text-sm text-slate-500">
+            Henüz departman yok. Önce Sohbet ayarları → Ayarlar sayfasından ekleyin.
+          </p>
+        ) : (
+          <ul className="grid gap-2 sm:grid-cols-2">
+            {departments.map((department) => {
+              const checked = departmentIds.includes(department.id);
+              return (
+                <li key={department.id}>
+                  <label className="flex cursor-pointer items-center gap-3 rounded-md border border-[#e9ebec] px-3 py-2.5 hover:bg-[#f8f9fa]">
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={(event) => {
+                        const next = event.target.checked;
+                        setDepartmentIds((current) =>
+                          next
+                            ? [...current, department.id]
+                            : current.filter((id) => id !== department.id),
+                        );
+                      }}
+                    />
+                    <span
+                      className="h-3 w-3 shrink-0 rounded-full"
+                      style={{ backgroundColor: department.color }}
+                      aria-hidden
+                    />
+                    <span className="text-sm font-medium text-slate-800">{department.name}</span>
+                  </label>
+                </li>
+              );
+            })}
+          </ul>
+        )}
       </section>
 
       <section className="overflow-hidden rounded-lg border border-[#e9ebec] bg-white shadow-sm">

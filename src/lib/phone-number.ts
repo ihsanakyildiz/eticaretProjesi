@@ -11,6 +11,24 @@ export function digitsOnly(value: string): string {
   return value.replace(/\D/g, "");
 }
 
+export function phoneLookupNeedles(raw: string): string[] {
+  const digits = digitsOnly(raw);
+  if (digits.length < 7) return [];
+  const needles = new Set<string>([digits]);
+  if (digits.startsWith("90") && digits.length >= 12) needles.add(digits.slice(2));
+  if (digits.startsWith("0")) needles.add(digits.slice(1));
+  if (digits.length >= 10) needles.add(digits.slice(-10));
+  return [...needles];
+}
+
+export function composeStoredPhone(raw: string): string | null {
+  const digits = digitsOnly(raw);
+  if (digits.length < 7) return null;
+  if (digits.startsWith("90") && digits.length >= 12) return `+${digits}`;
+  if (digits.length === 10) return `+90${digits}`;
+  return `+${digits}`;
+}
+
 export function composePhone(code: string, national: string): string {
   const number = digitsOnly(national);
   if (!number) return "";

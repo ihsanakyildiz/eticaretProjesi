@@ -1,4 +1,5 @@
-import type { Prisma, ProductVisibility } from "@prisma/client";
+import { Prisma, type ProductVisibility } from "@prisma/client";
+import { isCampaignKind } from "@/lib/campaign-kinds";
 import {
   buildCategoryTree,
   collectDescendantIds,
@@ -6,6 +7,7 @@ import {
   type CategoryNodeBase,
 } from "@/lib/category-tree";
 import { prisma } from "@/lib/prisma";
+import { campaignOfferLabel } from "@/lib/campaign-kinds";
 import { toIsoOrNull } from "@/lib/product-sale";
 import { DEFAULT_VARIANT_COMBINATION_KEY } from "@/lib/product-variants";
 
@@ -29,6 +31,8 @@ export type ProductRow = {
   variantCount: number;
   defaultVariantId: string | null;
   createdAt: string;
+  campaignName: string | null;
+  campaignLabel: string | null;
 };
 
 export type ProductListVariantRow = {
@@ -656,9 +660,9 @@ export async function loadAdminProductPage(
         });
 
   const productIds = products.map((product) => product.id);
-  const [variantStats, defaultVariants] =
+  const [variantStats, defaultVariants, campaignNames] =
     productIds.length === 0
-      ? [[], []]
+      ? [[], [], new Map<string, { name: string; label: string }>()]
       : await Promise.all([
           prisma.productVariant.groupBy({
             by: ["productId"],
@@ -673,6 +677,30 @@ export async function loadAdminProductPage(
             },
             select: { id: true, productId: true, isDefault: true },
           }),
+          prisma
+            .$queryRaw<
+              Array<{ productId: string; name: string; kind: string; valueInt: number }>
+            >`
+              SELECT cp.productId, c.name, c.kind, c.valueInt
+              FROM campaign_products cp
+              INNER JOIN campaigns c ON c.id = cp.campaignId
+              WHERE cp.productId IN (${Prisma.join(productIds)})
+                AND cp.restoredAt IS NULL
+                AND c.status = 'ACTIVE'
+                AND (c.endsAt IS NULL OR c.endsAt > NOW(3))
+            `
+            .then((rows) => {
+              const map = new Map<string, { name: string; label: string }>();
+              for (const row of rows) {
+                if (map.has(row.productId) || !isCampaignKind(row.kind)) continue;
+                map.set(row.productId, {
+                  name: row.name,
+                  label: campaignOfferLabel(row.kind, row.valueInt),
+                });
+              }
+              return map;
+            })
+            .catch(() => new Map<string, { name: string; label: string }>()),
         ]);
   const statsByProduct = new Map(
     variantStats.map((row) => [
@@ -719,6 +747,8 @@ export async function loadAdminProductPage(
         variantCount: stats?.variants ?? 0,
         defaultVariantId: defaultVariantByProduct.get(product.id) ?? null,
         createdAt: product.createdAt.toISOString(),
+        campaignName: campaignNames.get(product.id)?.name ?? null,
+        campaignLabel: campaignNames.get(product.id)?.label ?? null,
       };
     }),
   };

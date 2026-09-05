@@ -13,6 +13,7 @@ type PermissionsContextValue = {
   isAdmin: boolean;
   map: StaffPermissionMap;
   advancedInventory: boolean;
+  supportChat: boolean;
 };
 
 const PermissionsContext = createContext<PermissionsContextValue>({
@@ -20,6 +21,7 @@ const PermissionsContext = createContext<PermissionsContextValue>({
   isAdmin: false,
   map: emptyPermissionMap(),
   advancedInventory: false,
+  supportChat: false,
 });
 
 export function AdminPermissionsProvider({
@@ -27,10 +29,13 @@ export function AdminPermissionsProvider({
   isAdmin,
   map,
   advancedInventory,
+  supportChat,
   children,
 }: PermissionsContextValue & { children: ReactNode }) {
   return (
-    <PermissionsContext.Provider value={{ role, isAdmin, map, advancedInventory }}>
+    <PermissionsContext.Provider
+      value={{ role, isAdmin, map, advancedInventory, supportChat }}
+    >
       {children}
     </PermissionsContext.Provider>
   );

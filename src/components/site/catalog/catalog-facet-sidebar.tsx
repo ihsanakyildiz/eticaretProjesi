@@ -10,6 +10,7 @@ import {
 import type { CatalogSidebarCategory } from "@/components/site/catalog/catalog-category-sidebar";
 import { useCatalogUrls } from "@/components/site/site-url-provider";
 import { catalogActiveFilterChips } from "@/lib/catalog-active-filters";
+import type { CatalogCampaignFacet } from "@/lib/campaign-kinds";
 import type { CatalogFacetBrand, CatalogFacetGroup } from "@/lib/catalog-facets";
 import { catalogFiltersHref } from "@/lib/catalog-listing-params";
 import type { CatalogListingFilters } from "@/lib/catalog-storefront";
@@ -19,6 +20,7 @@ export function CatalogFacetSidebar({
   categories,
   activeCategorySlug,
   brands,
+  campaigns = [],
   filters,
   filterGroups,
 }: {
@@ -26,6 +28,7 @@ export function CatalogFacetSidebar({
   categories: CatalogSidebarCategory[];
   activeCategorySlug?: string | null;
   brands: CatalogFacetBrand[];
+  campaigns?: CatalogCampaignFacet[];
   filters: CatalogListingFilters;
   filterGroups: CatalogFacetGroup[];
 }) {
@@ -51,6 +54,14 @@ export function CatalogFacetSidebar({
       brandSlugs: has
         ? filters.brandSlugs.filter((item) => item !== slug)
         : [...filters.brandSlugs, slug],
+    });
+  };
+
+  const toggleCampaign = (campaignId: string) => {
+    const selected = filters.campaignIds ?? [];
+    const has = selected.includes(campaignId);
+    return hrefFor({
+      campaignIds: has ? selected.filter((id) => id !== campaignId) : [...selected, campaignId],
     });
   };
 
@@ -97,6 +108,7 @@ export function CatalogFacetSidebar({
     basePath,
     filters,
     brands,
+    campaigns,
     filterGroups,
     activeCategory: activeCategory
       ? {
@@ -110,6 +122,7 @@ export function CatalogFacetSidebar({
   const hasQueryFilters =
     filters.brandSlugs.length > 0 ||
     filters.filterValueIds.length > 0 ||
+    (filters.campaignIds ?? []).length > 0 ||
     filters.minMajor != null ||
     filters.maxMajor != null ||
     Boolean(filters.query);
@@ -117,6 +130,7 @@ export function CatalogFacetSidebar({
     ? hrefFor({
         brandSlugs: [],
         filterValueIds: [],
+        campaignIds: [],
         minMajor: null,
         maxMajor: null,
         query: null,
@@ -144,6 +158,21 @@ export function CatalogFacetSidebar({
           </FilterAccordion>
         ) : null}
 
+        {campaigns.length > 0 ? (
+          <FilterAccordion title="Kampanyalar" pinned>
+            <CatalogFilterSearchList
+              placeholder="Kampanya Ara"
+              options={campaigns.map((campaign) => ({
+                id: campaign.id,
+                name: `${campaign.name} · ${campaign.label}`,
+                href: toggleCampaign(campaign.id),
+                active: (filters.campaignIds ?? []).includes(campaign.id),
+              }))}
+              searchable={campaigns.length > 6}
+            />
+          </FilterAccordion>
+        ) : null}
+
         <FilterAccordion title="Fiyat" pinned>
           <form action={basePath} method="get" className="space-y-1.5">
             {filters.sort !== "yeni" ? (
@@ -154,6 +183,9 @@ export function CatalogFacetSidebar({
             ) : null}
             {filters.filterValueIds.length > 0 ? (
               <input type="hidden" name="filtre" value={filters.filterValueIds.join(",")} />
+            ) : null}
+            {(filters.campaignIds ?? []).length > 0 ? (
+              <input type="hidden" name="kampanya" value={filters.campaignIds.join(",")} />
             ) : null}
             {filters.query ? <input type="hidden" name="q" value={filters.query} /> : null}
             <div className="grid grid-cols-2 gap-1.5">

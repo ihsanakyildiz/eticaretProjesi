@@ -10,7 +10,7 @@ import {
   prepareAddressDrafts,
   replaceCustomerAddresses,
 } from "@/lib/customer-addresses";
-import { emptyAddressDraft, normalizeAddressDefaults } from "@/lib/customers";
+import { emptyAddressDraft, normalizeAddressDefaults, splitFullName } from "@/lib/customers";
 import { requireMember } from "@/lib/membership";
 import { prisma } from "@/lib/prisma";
 import {
@@ -51,9 +51,16 @@ export async function updateMemberProfileAction(
     return { error: "Bu e-posta başka bir hesapta kullanılıyor." };
   }
 
+  const names = splitFullName(name);
   await prisma.user.update({
     where: { id: session.user.id },
-    data: { name, email, phone: phone || null },
+    data: {
+      name,
+      firstName: names.firstName || null,
+      lastName: names.lastName || null,
+      email,
+      phone: phone || null,
+    },
   });
 
   revalidatePath("/uye");

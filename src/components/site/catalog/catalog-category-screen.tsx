@@ -133,6 +133,7 @@ export async function CatalogCategoryScreen({
               categories={categories}
               activeCategorySlug={category.slug}
               brands={facets.brands}
+              campaigns={facets.campaigns}
               filters={filters}
               filterGroups={facets.filterGroups}
             />
@@ -148,6 +149,7 @@ export async function CatalogCategoryScreen({
             <p className="py-10 text-sm text-site-muted">
               {filters.filterValueIds.length > 0 ||
               filters.brandSlugs.length > 0 ||
+              (filters.campaignIds ?? []).length > 0 ||
               filters.minMajor != null ||
               filters.maxMajor != null
                 ? "Bu filtrelere uygun ürün yok."
@@ -171,6 +173,7 @@ export async function CatalogCategoryScreen({
                     minMajor: filters.minMajor,
                     maxMajor: filters.maxMajor,
                     filterValueIds: filters.filterValueIds,
+                    campaignIds: filters.campaignIds,
                     query: filters.query,
                   })
                 }

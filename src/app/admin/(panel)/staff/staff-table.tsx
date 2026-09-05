@@ -14,6 +14,7 @@ export type StaffRow = {
   email: string;
   isActive: boolean;
   lastLoginAt: string | null;
+  departments: Array<{ name: string; color: string }>;
 };
 
 export function StaffTable({ staff }: { staff: StaffRow[] }) {
@@ -45,6 +46,7 @@ export function StaffTable({ staff }: { staff: StaffRow[] }) {
             <tr>
               <th className="px-4 py-2.5">Ad</th>
               <th className="px-4 py-2.5">E-posta</th>
+              <th className="px-4 py-2.5">Departman</th>
               <th className="px-4 py-2.5">Durum</th>
               <th className="px-4 py-2.5">Son giriş</th>
               <th className="px-4 py-2.5 text-right">Eylemler</th>
@@ -53,7 +55,7 @@ export function StaffTable({ staff }: { staff: StaffRow[] }) {
           <tbody>
             {staff.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-4 py-12 text-center text-slate-500">
+                <td colSpan={6} className="px-4 py-12 text-center text-slate-500">
                   Henüz personel yok.
                 </td>
               </tr>
@@ -62,6 +64,27 @@ export function StaffTable({ staff }: { staff: StaffRow[] }) {
                 <tr key={row.id} className="border-t border-[#e9ebec]">
                   <td className="px-4 py-2.5 font-medium text-slate-800">{row.name}</td>
                   <td className="px-4 py-2.5 text-slate-600">{row.email}</td>
+                  <td className="px-4 py-2.5">
+                    {row.departments.length === 0 ? (
+                      <span className="text-slate-400">—</span>
+                    ) : (
+                      <div className="flex flex-wrap gap-1">
+                        {row.departments.map((department) => (
+                          <span
+                            key={department.name}
+                            className="inline-flex items-center gap-1.5 rounded-full bg-[#f3f6f9] px-2 py-0.5 text-[11px] font-medium text-slate-600"
+                          >
+                            <span
+                              className="h-1.5 w-1.5 rounded-full"
+                              style={{ backgroundColor: department.color }}
+                              aria-hidden
+                            />
+                            {department.name}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </td>
                   <td className="px-4 py-2.5">
                     <span
                       className={`rounded px-2 py-0.5 text-[11px] font-semibold ${

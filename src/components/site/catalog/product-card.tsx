@@ -12,6 +12,7 @@ import {
   catalogCardPrice,
   type CatalogProductCard,
 } from "@/lib/catalog-storefront";
+import { campaignCartPriceMinor } from "@/lib/campaign-kinds";
 import { formatMinorTry, taxIncludedMinor } from "@/lib/product-money";
 
 export function ProductCard({
@@ -21,9 +22,11 @@ export function ProductCard({
   product: CatalogProductCard;
   imagePriority?: boolean;
 }) {
+  const campaign = product.campaign ?? null;
   const hasWindow = Boolean(
     product.saleStartsAt ||
       product.saleEndsAt ||
+      campaign?.endsAt ||
       product.variants.some((item) => item.saleStartsAt || item.saleEndsAt),
   );
   const now = useTickingNow(hasWindow);
@@ -35,6 +38,10 @@ export function ProductCard({
   const compareAt = compareAtMinor
     ? taxIncludedMinor(compareAtMinor, product.taxRatePercent)
     : null;
+  const cartExcl = campaign
+    ? campaignCartPriceMinor(campaign.kind, campaign.valueInt, priceMinor)
+    : null;
+  const cartPrice = cartExcl != null ? taxIncludedMinor(cartExcl, product.taxRatePercent) : null;
   const discount =
     compareAt && compareAt > displayPrice
       ? Math.round(((compareAt - displayPrice) / compareAt) * 100)
@@ -42,6 +49,7 @@ export function ProductCard({
   const hoverImage = catalogCardHoverImage(product);
   const availability = catalogCardAvailability(product);
   const { productHref } = useCatalogUrls();
+  const countdownAt = onSale ? saleEndsAt : campaign?.countdown ? campaign.endsAt : null;
 
   return (
     <SiteLink
@@ -75,11 +83,17 @@ export function ProductCard({
         ) : (
           <SiteImageFallback fill />
         )}
-        {onSale || discount ? (
+        {campaign || onSale || discount ? (
           <span className="absolute top-2 left-2 z-10 flex max-w-[calc(100%-1rem)] flex-col items-start gap-1">
-            <span className="rounded-md bg-rose-600 px-2 py-1 text-[11px] font-bold tracking-wide text-white uppercase shadow-sm">
-              İndirim
-            </span>
+            {campaign ? (
+              <span className="rounded-md bg-rose-600 px-2 py-1 text-[11px] font-bold text-white shadow-sm">
+                {campaign.label}
+              </span>
+            ) : onSale || discount ? (
+              <span className="rounded-md bg-rose-600 px-2 py-1 text-[11px] font-bold tracking-wide text-white uppercase shadow-sm">
+                İndirim
+              </span>
+            ) : null}
             {discount ? (
               <span className="rounded-md bg-rose-700/95 px-2 py-0.5 text-[11px] font-bold text-white shadow-sm">
                 %{discount}
@@ -112,11 +126,22 @@ export function ProductCard({
               >
                 {formatMinorTry(displayPrice)}
               </span>
+              {cartPrice != null && cartPrice < displayPrice ? (
+                <span className="text-sm font-semibold text-rose-600">
+                  Sepette {formatMinorTry(cartPrice)}
+                </span>
+              ) : null}
             </div>
           ) : (
             <p className="text-xs text-site-muted">Fiyat için iletişime geçin</p>
           )}
-          {onSale && saleEndsAt ? <SaleCountdown endsAt={saleEndsAt} compact /> : null}
+          {campaign ? (
+            <p className="mt-1 line-clamp-2 text-[11px] font-semibold text-rose-600">
+              {campaign.name}
+              {campaign.label !== campaign.name ? ` · ${campaign.label}` : ""}
+            </p>
+          ) : null}
+          {countdownAt ? <SaleCountdown endsAt={countdownAt} compact /> : null}
           <p
             className={`mt-1 text-[11px] ${
               availability === "out_of_stock" ? "text-site-muted" : "text-emerald-600"

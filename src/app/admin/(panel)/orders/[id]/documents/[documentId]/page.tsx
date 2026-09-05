@@ -56,9 +56,16 @@ export default async function OrderDocumentPage({ params }: Props) {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
-        <Link href={`/admin/orders/${order.id}`} className="text-sm font-medium text-[#405189] hover:underline">
-          ← Siparişe dön
-        </Link>
+        <div className="flex flex-wrap items-center gap-3">
+          <Link href={`/admin/orders/${order.id}`} className="text-sm font-medium text-[#405189] hover:underline">
+            ← Siparişe dön
+          </Link>
+          {kind === "INVOICE" ? (
+            <Link href="/admin/orders/invoices" className="text-sm font-medium text-slate-500 hover:underline">
+              Faturalar
+            </Link>
+          ) : null}
+        </div>
         <PrintButton />
       </div>
 
@@ -83,6 +90,12 @@ export default async function OrderDocumentPage({ params }: Props) {
               billing
                 ? [
                     billing.isCorporateInvoice ? billing.company : null,
+                    billing.isCorporateInvoice && billing.taxOffice
+                      ? `Vergi dairesi: ${billing.taxOffice}`
+                      : null,
+                    billing.isCorporateInvoice && billing.taxNumber
+                      ? `Vergi no: ${billing.taxNumber}`
+                      : null,
                     billing.line1,
                     [billing.neighborhood, billing.district, billing.city].filter(Boolean).join(" / "),
                     [billing.postalCode, billing.country].filter(Boolean).join(" "),

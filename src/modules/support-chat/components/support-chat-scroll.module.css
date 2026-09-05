@@ -1,0 +1,48 @@
+.scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #c3cad6 transparent;
+  scrollbar-gutter: stable;
+}
+
+.scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.scroll::-webkit-scrollbar-track {
+  background: transparent;
+  margin-block: 6px;
+}
+
+.scroll::-webkit-scrollbar-thumb {
+  background: #d0d5de;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  border-radius: 999px;
+}
+
+.scroll::-webkit-scrollbar-thumb:hover {
+  background: #405189;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.thread {
+  overflow-anchor: none;
+}
+
+:global(html.admin-dark) .scroll {
+  scrollbar-color: #4b5563 transparent;
+}
+
+:global(html.admin-dark) .scroll::-webkit-scrollbar-thumb {
+  background: #4b5563;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+:global(html.admin-dark) .scroll::-webkit-scrollbar-thumb:hover {
+  background: #8b9cd6;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}

@@ -4,6 +4,7 @@ import { Plus, UserRoundCog } from "lucide-react";
 import { Role } from "@prisma/client";
 import { Can } from "@/components/admin/admin-permissions";
 import { prisma } from "@/lib/prisma";
+import { listSupportChatStaffDepartmentNamesByUser } from "@/modules/support-chat/db";
 import { StaffTable } from "./staff-table";
 
 export const metadata: Metadata = {
@@ -24,6 +25,7 @@ export default async function StaffPage() {
       lastLoginAt: true,
     },
   });
+  const departmentsByUser = await listSupportChatStaffDepartmentNamesByUser(staff.map((row) => row.id));
 
   return (
     <div className="space-y-6">
@@ -36,7 +38,7 @@ export default async function StaffPage() {
               Personel ({staff.length})
             </h1>
             <p className="mt-2 max-w-2xl text-sm text-slate-500">
-              Çalışan hesaplarına sayfa bazında görme, ekleme, düzenleme ve silme yetkisi verin.
+              Çalışan hesaplarına sohbet sayfası / sohbet ayarları yetkisi ve departman ataması verin.
             </p>
           </div>
           <Can resource="staff" action="create">
@@ -57,6 +59,7 @@ export default async function StaffPage() {
           email: row.email,
           isActive: row.isActive,
           lastLoginAt: row.lastLoginAt?.toISOString() ?? null,
+          departments: departmentsByUser[row.id] ?? [],
         }))}
       />
     </div>

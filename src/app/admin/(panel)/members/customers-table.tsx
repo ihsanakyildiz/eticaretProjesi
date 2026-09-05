@@ -5,25 +5,30 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
+  ChevronLeft,
+  ChevronRight,
   Loader2,
   MoreVertical,
   Pencil,
-  Search,
   Trash2,
   X,
 } from "lucide-react";
 import {
-  CUSTOMER_GROUPS,
-  CUSTOMER_TITLES,
-  customerGroupLabel,
-  customerTitleLabel,
+  CUSTOMER_SOURCES,
+  customerSourceLabel,
   dateOnly,
   formatCustomerDateTime,
   type CustomerBulkAction,
   type CustomerFlagField,
   type CustomerGroupCode,
+  type CustomerSource,
   type CustomerTitleCode,
 } from "@/lib/customers";
+import {
+  SUPPORT_CHAT_CHANNELS,
+  supportChatChannelLabel,
+  type SupportChatChannel,
+} from "@/modules/support-chat/kinds";
 import { Can, useCan } from "@/components/admin/admin-permissions";
 import {
   bulkCustomersAction,
@@ -38,8 +43,13 @@ export type CustomerRow = {
   firstName: string;
   lastName: string;
   email: string;
+  phone: string;
   customerGroup: CustomerGroupCode;
+  customerSource: CustomerSource;
+  supportChannel: SupportChatChannel | null;
   addressCount: number;
+  orderCount: number;
+  chatCount: number;
   isActive: boolean;
   newsletter: boolean;
   partnerOffers: boolean;
@@ -47,8 +57,10 @@ export type CustomerRow = {
   lastLoginAt: string | null;
 };
 
+const PAGE_SIZE = 25;
+
 const filterInputClass =
-  "w-full min-w-[5.5rem] rounded border border-[#ced4da] bg-white px-1.5 py-1 text-[11px] text-slate-700 outline-none focus:border-[#0ab39c]";
+  "w-full min-w-0 rounded border border-[#ced4da] bg-white px-1.5 py-1 text-[11px] text-slate-700 outline-none focus:border-[#0ab39c]";
 
 const filterSelectClass = `${filterInputClass} appearance-none`;
 
@@ -168,28 +180,28 @@ function DeleteModal({
 
 type Filters = {
   customerNo: string;
-  title: "all" | CustomerTitleCode;
   firstName: string;
   lastName: string;
   email: string;
-  group: "all" | CustomerGroupCode;
+  phone: string;
+  source: "all" | CustomerSource;
+  channel: "all" | "none" | SupportChatChannel;
+  hasOrders: "all" | "on" | "off";
   isActive: "all" | "on" | "off";
-  newsletter: "all" | "on" | "off";
-  partnerOffers: "all" | "on" | "off";
   registeredFrom: string;
   registeredTo: string;
 };
 
 const emptyFilters: Filters = {
   customerNo: "",
-  title: "all",
   firstName: "",
   lastName: "",
   email: "",
-  group: "all",
+  phone: "",
+  source: "all",
+  channel: "all",
+  hasOrders: "all",
   isActive: "all",
-  newsletter: "all",
-  partnerOffers: "all",
   registeredFrom: "",
   registeredTo: "",
 };
@@ -203,8 +215,8 @@ export function CustomersTable({ customers }: { customers: CustomerRow[] }) {
   const router = useRouter();
   const canUpdate = useCan("customers", "update");
   const canDelete = useCan("customers", "delete");
-  const [draft, setDraft] = useState<Filters>(emptyFilters);
-  const [applied, setApplied] = useState<Filters>(emptyFilters);
+  const [filters, setFilters] = useState<Filters>(emptyFilters);
+  const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<string[]>([]);
   const [bulkAction, setBulkAction] = useState<CustomerBulkAction | "">("");
   const [menuId, setMenuId] = useState<string | null>(null);
@@ -227,41 +239,65 @@ export function CustomersTable({ customers }: { customers: CustomerRow[] }) {
 
   const filtered = useMemo(() => {
     return customers.filter((customer) => {
-      if (applied.customerNo && !String(customer.customerNo).includes(applied.customerNo.trim())) {
+      if (filters.customerNo && !String(customer.customerNo).includes(filters.customerNo.trim())) {
         return false;
       }
-      if (applied.title !== "all" && customer.title !== applied.title) return false;
       if (
-        applied.firstName &&
-        !customer.firstName.toLocaleLowerCase("tr-TR").includes(applied.firstName.toLocaleLowerCase("tr-TR"))
+        filters.firstName &&
+        !customer.firstName.toLocaleLowerCase("tr-TR").includes(filters.firstName.toLocaleLowerCase("tr-TR"))
       ) {
         return false;
       }
       if (
-        applied.lastName &&
-        !customer.lastName.toLocaleLowerCase("tr-TR").includes(applied.lastName.toLocaleLowerCase("tr-TR"))
+        filters.lastName &&
+        !customer.lastName.toLocaleLowerCase("tr-TR").includes(filters.lastName.toLocaleLowerCase("tr-TR"))
       ) {
         return false;
       }
       if (
-        applied.email &&
-        !customer.email.toLocaleLowerCase("tr-TR").includes(applied.email.toLocaleLowerCase("tr-TR"))
+        filters.email &&
+        !customer.email.toLocaleLowerCase("tr-TR").includes(filters.email.toLocaleLowerCase("tr-TR"))
       ) {
         return false;
       }
-      if (applied.group !== "all" && customer.customerGroup !== applied.group) return false;
-      if (!matchesFlag(applied.isActive, customer.isActive)) return false;
-      if (!matchesFlag(applied.newsletter, customer.newsletter)) return false;
-      if (!matchesFlag(applied.partnerOffers, customer.partnerOffers)) return false;
+      if (
+        filters.phone &&
+        !customer.phone.replace(/\D/g, "").includes(filters.phone.replace(/\D/g, "")) &&
+        !customer.phone.toLocaleLowerCase("tr-TR").includes(filters.phone.toLocaleLowerCase("tr-TR"))
+      ) {
+        return false;
+      }
+      if (filters.source !== "all" && customer.customerSource !== filters.source) return false;
+      if (filters.channel === "none" && customer.supportChannel) return false;
+      if (filters.channel !== "all" && filters.channel !== "none" && customer.supportChannel !== filters.channel) {
+        return false;
+      }
+      if (!matchesFlag(filters.hasOrders, customer.orderCount > 0)) return false;
+      if (!matchesFlag(filters.isActive, customer.isActive)) return false;
       const created = dateOnly(customer.createdAt);
-      if (applied.registeredFrom && created < applied.registeredFrom) return false;
-      if (applied.registeredTo && created > applied.registeredTo) return false;
+      if (filters.registeredFrom && created < filters.registeredFrom) return false;
+      if (filters.registeredTo && created > filters.registeredTo) return false;
       return true;
     });
-  }, [customers, applied]);
+  }, [customers, filters]);
 
-  const visibleIds = filtered.map((customer) => customer.id);
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const safePage = Math.min(page, pageCount);
+
+  useEffect(() => {
+    if (page !== safePage) setPage(safePage);
+  }, [page, safePage]);
+
+  const paged = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  const visibleIds = paged.map((customer) => customer.id);
   const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selected.includes(id));
+  const rangeStart = filtered.length === 0 ? 0 : (safePage - 1) * PAGE_SIZE + 1;
+  const rangeEnd = filtered.length === 0 ? 0 : rangeStart + paged.length - 1;
+
+  const updateFilter = <K extends keyof Filters>(key: K, value: Filters[K]) => {
+    setFilters((current) => ({ ...current, [key]: value }));
+    setPage(1);
+  };
 
   const patchFlag = (customer: CustomerRow, field: CustomerFlagField, value: boolean) => {
     startTransition(async () => {
@@ -347,7 +383,19 @@ export function CustomersTable({ customers }: { customers: CustomerRow[] }) {
                 <span className="text-xs text-slate-500">{selected.length} seçili</span>
               ) : null}
             </div>
-          ) : null}
+          ) : (
+            <span />
+          )}
+          <select
+            value={filters.hasOrders}
+            onChange={(event) => updateFilter("hasOrders", event.target.value as Filters["hasOrders"])}
+            className="rounded-md border border-[#e9ebec] bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-[#0ab39c]"
+            aria-label="Sipariş filtresi"
+          >
+            <option value="all">Tüm siparişler</option>
+            <option value="on">Siparişi var</option>
+            <option value="off">Siparişi yok</option>
+          </select>
         </div>
 
         {actionError ? (
@@ -357,7 +405,7 @@ export function CustomersTable({ customers }: { customers: CustomerRow[] }) {
         ) : null}
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1280px] border-collapse text-left text-sm">
+          <table className="w-full border-collapse text-left text-sm">
             <thead>
               <tr className="border-b border-[#e9ebec] bg-[#f3f6f9] text-[11px] font-semibold tracking-wide text-slate-500 uppercase">
                 <th className="w-10 px-3 py-2">
@@ -372,109 +420,97 @@ export function CustomersTable({ customers }: { customers: CustomerRow[] }) {
                         return current.filter((id) => !visibleIds.includes(id));
                       });
                     }}
-                    aria-label="Tümünü seç"
+                    aria-label="Sayfadakileri seç"
                   />
                 </th>
                 <th className="px-2 py-2">Kimlik</th>
-                <th className="px-2 py-2">Sosyal unvan</th>
                 <th className="px-2 py-2">Ad</th>
                 <th className="px-2 py-2">Soyad</th>
-                <th className="px-2 py-2">E-posta adresi</th>
-                <th className="px-2 py-2">Grup</th>
-                <th className="px-2 py-2">Adresler</th>
-                <th className="px-2 py-2">Satışlar</th>
+                <th className="px-2 py-2">E-posta</th>
+                <th className="px-2 py-2">Telefon</th>
+                <th className="px-2 py-2">Kaynak</th>
+                <th className="px-2 py-2">Kanal</th>
                 <th className="px-2 py-2">Etkin</th>
-                <th className="px-2 py-2">Haber Bülteni</th>
-                <th className="px-2 py-2">Ortakların teklifleri</th>
                 <th className="px-2 py-2">Kayıt</th>
-                <th className="px-2 py-2">Son ziyaret</th>
                 <th className="px-2 py-2 text-right">Eylemler</th>
               </tr>
               <tr className="border-b border-[#e9ebec] bg-[#f8f9fa]">
                 <td className="px-3 py-1.5" />
                 <td className="px-2 py-1.5">
                   <input
-                    value={draft.customerNo}
-                    onChange={(event) => setDraft((current) => ({ ...current, customerNo: event.target.value }))}
+                    value={filters.customerNo}
+                    onChange={(event) => updateFilter("customerNo", event.target.value)}
                     placeholder="ID ara"
                     className={filterInputClass}
                   />
                 </td>
                 <td className="px-2 py-1.5">
-                  <select
-                    value={draft.title}
-                    onChange={(event) =>
-                      setDraft((current) => ({
-                        ...current,
-                        title: event.target.value as Filters["title"],
-                      }))
-                    }
-                    className={filterSelectClass}
-                    aria-label="Unvan filtresi"
-                  >
-                    <option value="all">Hepsi</option>
-                    {CUSTOMER_TITLES.map((title) => (
-                      <option key={title} value={title}>
-                        {customerTitleLabel(title)}
-                      </option>
-                    ))}
-                  </select>
-                </td>
-                <td className="px-2 py-1.5">
                   <input
-                    value={draft.firstName}
-                    onChange={(event) => setDraft((current) => ({ ...current, firstName: event.target.value }))}
+                    value={filters.firstName}
+                    onChange={(event) => updateFilter("firstName", event.target.value)}
                     placeholder="Ad ara"
                     className={filterInputClass}
                   />
                 </td>
                 <td className="px-2 py-1.5">
                   <input
-                    value={draft.lastName}
-                    onChange={(event) => setDraft((current) => ({ ...current, lastName: event.target.value }))}
+                    value={filters.lastName}
+                    onChange={(event) => updateFilter("lastName", event.target.value)}
                     placeholder="Soyad ara"
                     className={filterInputClass}
                   />
                 </td>
                 <td className="px-2 py-1.5">
                   <input
-                    value={draft.email}
-                    onChange={(event) => setDraft((current) => ({ ...current, email: event.target.value }))}
+                    value={filters.email}
+                    onChange={(event) => updateFilter("email", event.target.value)}
                     placeholder="Eposta ara"
                     className={filterInputClass}
                   />
                 </td>
                 <td className="px-2 py-1.5">
+                  <input
+                    value={filters.phone}
+                    onChange={(event) => updateFilter("phone", event.target.value)}
+                    placeholder="Telefon ara"
+                    className={filterInputClass}
+                  />
+                </td>
+                <td className="px-2 py-1.5">
                   <select
-                    value={draft.group}
-                    onChange={(event) =>
-                      setDraft((current) => ({
-                        ...current,
-                        group: event.target.value as Filters["group"],
-                      }))
-                    }
+                    value={filters.source}
+                    onChange={(event) => updateFilter("source", event.target.value as Filters["source"])}
                     className={filterSelectClass}
-                    aria-label="Grup filtresi"
+                    aria-label="Kaynak filtresi"
                   >
                     <option value="all">Hepsi</option>
-                    {CUSTOMER_GROUPS.map((group) => (
-                      <option key={group} value={group}>
-                        {customerGroupLabel(group)}
+                    {CUSTOMER_SOURCES.map((source) => (
+                      <option key={source} value={source}>
+                        {customerSourceLabel(source)}
                       </option>
                     ))}
                   </select>
                 </td>
-                <td className="px-2 py-1.5" />
-                <td className="px-2 py-1.5" />
                 <td className="px-2 py-1.5">
                   <select
-                    value={draft.isActive}
-                    onChange={(event) =>
-                      setDraft((current) => ({
-                        ...current,
-                        isActive: event.target.value as Filters["isActive"],
-                      }))
-                    }
+                    value={filters.channel}
+                    onChange={(event) => updateFilter("channel", event.target.value as Filters["channel"])}
+                    className={filterSelectClass}
+                    aria-label="Kanal filtresi"
+                  >
+                    <option value="all">Hepsi</option>
+                    <option value="none">Sohbet yok</option>
+                    {SUPPORT_CHAT_CHANNELS.map((channel) => (
+                      <option key={channel} value={channel}>
+                        {supportChatChannelLabel(channel)}
+                      </option>
+                    ))}
+                  </select>
+                </td>
+                <td className="px-2 py-1.5">
+                  <select
+                    value={filters.isActive}
+                    onChange={(event) => updateFilter("isActive", event.target.value as Filters["isActive"])}
                     className={filterSelectClass}
                     aria-label="Etkin filtresi"
                   >
@@ -484,83 +520,35 @@ export function CustomersTable({ customers }: { customers: CustomerRow[] }) {
                   </select>
                 </td>
                 <td className="px-2 py-1.5">
-                  <select
-                    value={draft.newsletter}
-                    onChange={(event) =>
-                      setDraft((current) => ({
-                        ...current,
-                        newsletter: event.target.value as Filters["newsletter"],
-                      }))
-                    }
-                    className={filterSelectClass}
-                    aria-label="Bülten filtresi"
-                  >
-                    <option value="all">Hepsi</option>
-                    <option value="on">Evet</option>
-                    <option value="off">Hayır</option>
-                  </select>
-                </td>
-                <td className="px-2 py-1.5">
-                  <select
-                    value={draft.partnerOffers}
-                    onChange={(event) =>
-                      setDraft((current) => ({
-                        ...current,
-                        partnerOffers: event.target.value as Filters["partnerOffers"],
-                      }))
-                    }
-                    className={filterSelectClass}
-                    aria-label="Ortak teklifleri filtresi"
-                  >
-                    <option value="all">Hepsi</option>
-                    <option value="on">Evet</option>
-                    <option value="off">Hayır</option>
-                  </select>
-                </td>
-                <td className="px-2 py-1.5">
-                  <div className="flex min-w-[11rem] gap-1">
+                  <div className="flex min-w-[10rem] gap-1">
                     <input
                       type="date"
-                      value={draft.registeredFrom}
-                      onChange={(event) =>
-                        setDraft((current) => ({ ...current, registeredFrom: event.target.value }))
-                      }
+                      value={filters.registeredFrom}
+                      onChange={(event) => updateFilter("registeredFrom", event.target.value)}
                       className={filterInputClass}
                       aria-label="Kayıt başlangıç"
                     />
                     <input
                       type="date"
-                      value={draft.registeredTo}
-                      onChange={(event) =>
-                        setDraft((current) => ({ ...current, registeredTo: event.target.value }))
-                      }
+                      value={filters.registeredTo}
+                      onChange={(event) => updateFilter("registeredTo", event.target.value)}
                       className={filterInputClass}
                       aria-label="Kayıt bitiş"
                     />
                   </div>
                 </td>
                 <td className="px-2 py-1.5" />
-                <td className="px-2 py-1.5 text-right">
-                  <button
-                    type="button"
-                    onClick={() => setApplied(draft)}
-                    className="inline-flex items-center gap-1 rounded border border-[#ced4da] bg-[#e9ebec] px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:bg-[#dee2e6]"
-                  >
-                    <Search className="h-3 w-3" />
-                    Ara
-                  </button>
-                </td>
               </tr>
             </thead>
             <tbody>
-              {filtered.length === 0 ? (
+              {paged.length === 0 ? (
                 <tr>
-                  <td colSpan={15} className="px-4 py-12 text-center text-sm text-slate-500">
+                  <td colSpan={11} className="px-4 py-12 text-center text-sm text-slate-500">
                     {customers.length === 0 ? "Henüz müşteri yok." : "Aramanızla eşleşen müşteri yok."}
                   </td>
                 </tr>
               ) : (
-                filtered.map((customer) => (
+                paged.map((customer) => (
                   <tr key={customer.id} className="border-b border-[#e9ebec] last:border-0 hover:bg-[#f8f9fa]">
                     <td className="px-3 py-2.5">
                       <input
@@ -577,13 +565,14 @@ export function CustomersTable({ customers }: { customers: CustomerRow[] }) {
                       />
                     </td>
                     <td className="px-2 py-2.5 tabular-nums text-slate-700">{customer.customerNo}</td>
-                    <td className="px-2 py-2.5 text-slate-700">{customerTitleLabel(customer.title)}</td>
                     <td className="px-2 py-2.5 font-medium text-slate-800">{customer.firstName || "—"}</td>
                     <td className="px-2 py-2.5 text-slate-800">{customer.lastName || "—"}</td>
                     <td className="px-2 py-2.5 text-slate-600">{customer.email}</td>
-                    <td className="px-2 py-2.5 text-slate-700">{customerGroupLabel(customer.customerGroup)}</td>
-                    <td className="px-2 py-2.5 tabular-nums text-slate-600">{customer.addressCount}</td>
-                    <td className="px-2 py-2.5 text-slate-400">—</td>
+                    <td className="px-2 py-2.5 whitespace-nowrap text-slate-600">{customer.phone || "—"}</td>
+                    <td className="px-2 py-2.5 text-slate-700">{customerSourceLabel(customer.customerSource)}</td>
+                    <td className="px-2 py-2.5 text-slate-600">
+                      {customer.supportChannel ? supportChatChannelLabel(customer.supportChannel) : "—"}
+                    </td>
                     <td className="px-2 py-2.5">
                       <CompactToggle
                         on={customer.isActive}
@@ -592,27 +581,8 @@ export function CustomersTable({ customers }: { customers: CustomerRow[] }) {
                         onClick={() => patchFlag(customer, "isActive", !customer.isActive)}
                       />
                     </td>
-                    <td className="px-2 py-2.5">
-                      <CompactToggle
-                        on={customer.newsletter}
-                        disabled={isPending || !canUpdate}
-                        label="Haber bülteni"
-                        onClick={() => patchFlag(customer, "newsletter", !customer.newsletter)}
-                      />
-                    </td>
-                    <td className="px-2 py-2.5">
-                      <CompactToggle
-                        on={customer.partnerOffers}
-                        disabled={isPending || !canUpdate}
-                        label="Ortak teklifleri"
-                        onClick={() => patchFlag(customer, "partnerOffers", !customer.partnerOffers)}
-                      />
-                    </td>
                     <td className="px-2 py-2.5 whitespace-nowrap text-slate-600">
                       {formatCustomerDateTime(customer.createdAt)}
-                    </td>
-                    <td className="px-2 py-2.5 whitespace-nowrap text-slate-600">
-                      {formatCustomerDateTime(customer.lastLoginAt)}
                     </td>
                     <td className="px-2 py-2.5">
                       <div className="relative flex items-center justify-end gap-1" ref={menuId === customer.id ? menuRef : undefined}>
@@ -661,8 +631,37 @@ export function CustomersTable({ customers }: { customers: CustomerRow[] }) {
             </tbody>
           </table>
         </div>
-        <div className="border-t border-[#e9ebec] px-4 py-2 text-xs text-slate-400">
-          {filtered.length} / {customers.length} müşteri
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#e9ebec] px-4 py-3">
+          <p className="text-xs text-slate-500">
+            {filtered.length === 0
+              ? `0 / ${customers.length} müşteri`
+              : `${rangeStart}–${rangeEnd} / ${filtered.length} müşteri`}
+          </p>
+          {pageCount > 1 ? (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-500">
+                Sayfa {safePage} / {pageCount}
+              </span>
+              <button
+                type="button"
+                disabled={safePage <= 1}
+                onClick={() => setPage((current) => Math.max(1, current - 1))}
+                className="inline-flex items-center gap-1 rounded-md border border-[#e9ebec] px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400 disabled:hover:bg-transparent"
+              >
+                <ChevronLeft className="h-4 w-4" />
+                Önceki
+              </button>
+              <button
+                type="button"
+                disabled={safePage >= pageCount}
+                onClick={() => setPage((current) => Math.min(pageCount, current + 1))}
+                className="inline-flex items-center gap-1 rounded-md border border-[#e9ebec] px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400 disabled:hover:bg-transparent"
+              >
+                Sonraki
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+          ) : null}
         </div>
       </div>
 

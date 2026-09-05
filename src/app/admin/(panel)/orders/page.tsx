@@ -6,6 +6,7 @@ import { Can } from "@/components/admin/admin-permissions";
 import { prisma } from "@/lib/prisma";
 import { splitFullName } from "@/lib/customers";
 import { parseOrderPaymentMethod, parseOrderStatus } from "@/lib/orders";
+import { OrdersSubnav } from "./orders-subnav";
 import { OrdersTable } from "./orders-table";
 
 export const metadata: Metadata = {
@@ -98,6 +99,7 @@ export default async function OrdersPage() {
 
   return (
     <div className="space-y-6">
+      <OrdersSubnav />
       <div className="rounded-lg border border-[#e9ebec] bg-white p-5 shadow-sm">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>

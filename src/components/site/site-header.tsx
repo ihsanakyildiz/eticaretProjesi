@@ -14,6 +14,7 @@ import {
   X,
 } from "lucide-react";
 import { CartIcon } from "@/components/site/cart/cart-icon";
+import { SiteAccountMenu, SiteAccountMobileLinks } from "@/components/site/site-account-menu";
 import { SiteCategoryNav, SiteMobileCategoryList } from "./site-category-nav";
 import { SiteHeaderSearch } from "./site-header-search";
 import { useSiteTheme } from "./site-theme-provider";
@@ -103,13 +104,7 @@ export function SiteHeader({
             {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
           </button>
           {memberLoggedIn ? (
-            <SiteLink
-              href="/uye"
-              className="hidden items-center gap-1.5 rounded-full border border-site-border px-3 py-2 text-sm font-semibold text-site-fg transition hover:bg-site-surface sm:inline-flex"
-            >
-              <User className="h-4 w-4" />
-              Hesabım
-            </SiteLink>
+            <SiteAccountMenu showSubscriptions={membershipEnabled} />
           ) : membershipEnabled ? (
             <SiteLink
               href="/giris"
@@ -158,13 +153,7 @@ export function SiteHeader({
           </div>
           <SiteMobileCategoryList items={categoryItems} onNavigate={closeMenu} />
           {memberLoggedIn ? (
-            <SiteLink
-              href="/uye"
-              onClick={closeMenu}
-              className="mt-3 flex items-center justify-center rounded-full border border-site-border px-4 py-3 text-sm font-semibold text-site-fg"
-            >
-              Hesabım
-            </SiteLink>
+            <SiteAccountMobileLinks showSubscriptions={membershipEnabled} onNavigate={closeMenu} />
           ) : membershipEnabled ? (
             <div className="mt-3 grid grid-cols-2 gap-2">
               <SiteLink

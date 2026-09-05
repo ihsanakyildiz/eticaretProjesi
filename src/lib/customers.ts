@@ -4,6 +4,9 @@ export type CustomerTitleCode = (typeof CUSTOMER_TITLES)[number];
 export const CUSTOMER_GROUPS = ["CUSTOMER", "GUEST", "WHOLESALE"] as const;
 export type CustomerGroupCode = (typeof CUSTOMER_GROUPS)[number];
 
+export const CUSTOMER_SOURCES = ["STORE", "OAUTH", "ADMIN", "SUPPORT_CHAT"] as const;
+export type CustomerSource = (typeof CUSTOMER_SOURCES)[number];
+
 export const CUSTOMER_FLAG_FIELDS = ["isActive", "newsletter", "partnerOffers"] as const;
 export type CustomerFlagField = (typeof CUSTOMER_FLAG_FIELDS)[number];
 
@@ -102,6 +105,43 @@ export function parseCustomerGroup(value: string): CustomerGroupCode {
     default:
       return "CUSTOMER";
   }
+}
+
+export function customerSourceLabel(source: CustomerSource): string {
+  switch (source) {
+    case "STORE":
+      return "Mağaza";
+    case "OAUTH":
+      return "Sosyal giriş";
+    case "ADMIN":
+      return "Yönetici";
+    case "SUPPORT_CHAT":
+      return "Destek sohbeti";
+    default: {
+      const _exhaustive: never = source;
+      return _exhaustive;
+    }
+  }
+}
+
+export function parseCustomerSource(value: string | null | undefined): CustomerSource {
+  switch (value) {
+    case "STORE":
+    case "OAUTH":
+    case "ADMIN":
+    case "SUPPORT_CHAT":
+      return value;
+    default:
+      return "STORE";
+  }
+}
+
+export function isSyntheticCustomerEmail(email: string): boolean {
+  return email.toLowerCase().endsWith("@sohbet.local");
+}
+
+export function customerEmailLabel(email: string): string {
+  return isSyntheticCustomerEmail(email) ? "—" : email;
 }
 
 export function emptyAddressDraft(partial?: Partial<AddressDraft>): AddressDraft {

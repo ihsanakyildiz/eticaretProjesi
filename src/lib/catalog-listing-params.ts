@@ -11,6 +11,7 @@ export type CatalogSearchQuery = {
   min?: string;
   max?: string;
   filtre?: string;
+  kampanya?: string;
   q?: string;
 };
 
@@ -41,6 +42,10 @@ export function parseCatalogSearchQuery(query: CatalogSearchQuery): {
         .split(",")
         .map((item) => item.trim())
         .filter(Boolean),
+      campaignIds: String(query.kampanya ?? "")
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean),
       query: parseListingQuery(query.q),
     },
   };
@@ -53,6 +58,7 @@ export type CatalogListingHrefInput = {
   minMajor?: number | null;
   maxMajor?: number | null;
   filterValueIds?: string[];
+  campaignIds?: string[];
   query?: string | null;
 };
 
@@ -67,6 +73,7 @@ export function catalogFiltersHref(
     minMajor: "minMajor" in patch ? (patch.minMajor ?? null) : filters.minMajor,
     maxMajor: "maxMajor" in patch ? (patch.maxMajor ?? null) : filters.maxMajor,
     filterValueIds: patch.filterValueIds ?? filters.filterValueIds,
+    campaignIds: patch.campaignIds ?? filters.campaignIds,
     query: "query" in patch ? (patch.query ?? null) : filters.query,
     page: patch.page,
   });
@@ -82,6 +89,9 @@ export function catalogListingHref(basePath: string, next: CatalogListingHrefInp
   if (next.maxMajor != null) params.set("max", String(next.maxMajor));
   if (next.filterValueIds && next.filterValueIds.length > 0) {
     params.set("filtre", next.filterValueIds.join(","));
+  }
+  if (next.campaignIds && next.campaignIds.length > 0) {
+    params.set("kampanya", next.campaignIds.join(","));
   }
   if (next.query?.trim()) params.set("q", next.query.trim().slice(0, 80));
   if (next.page && next.page > 1) params.set("sayfa", String(next.page));

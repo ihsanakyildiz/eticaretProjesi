@@ -1,3 +1,4 @@
+import type { CatalogCampaignBadge } from "@/lib/campaign-kinds";
 import type { ProductSaleUnit } from "@prisma/client";
 import { isVariantPurchasable, type OutOfStockBehavior } from "@/lib/product-stock";
 import { resolveSalePrice } from "@/lib/product-sale";
@@ -43,6 +44,7 @@ export type CatalogProductCard = {
     trackInventory: boolean;
     allowBackorder: boolean;
   }[];
+  campaign?: CatalogCampaignBadge | null;
 };
 
 export type CatalogCategoryCard = {
@@ -69,6 +71,7 @@ export type CatalogListingFilters = {
   minMajor: number | null;
   maxMajor: number | null;
   filterValueIds: string[];
+  campaignIds: string[];
   categoryIds?: string[];
   query?: string | null;
 };

@@ -2,7 +2,15 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { Role } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { emptyAddressDraft, parseCustomerGroup, parseCustomerTitle, splitFullName } from "@/lib/customers";
+import {
+  customerSourceLabel,
+  emptyAddressDraft,
+  parseCustomerGroup,
+  parseCustomerSource,
+  parseCustomerTitle,
+  splitFullName,
+} from "@/lib/customers";
+import { isSupportChatChannel, supportChatChannelLabel } from "@/modules/support-chat/kinds";
 import { CustomerForm } from "../customer-form";
 
 type Props = { params: Promise<{ id: string }> };
@@ -46,9 +54,15 @@ export default async function CustomerEditPage({ params }: Props) {
         <h1 className="mt-1 text-xl font-semibold text-slate-800 sm:text-2xl">{displayName}</h1>
         <p className="mt-2 text-sm text-slate-500">
           #{customer.customerNo} · {customer.email}
+          {` · ${customerSourceLabel(parseCustomerSource(customer.customerSource))}`}
+          {customer.supportChannel && isSupportChatChannel(customer.supportChannel)
+            ? ` · ${supportChatChannelLabel(customer.supportChannel)}`
+            : ""}
           {customer.accounts.length
             ? ` · ${customer.accounts.map((account) => account.provider).join(", ")} ile bağlı`
-            : " · E-posta hesabı"}
+            : customer.customerSource === "SUPPORT_CHAT"
+              ? " · Sohbet profili"
+              : " · E-posta hesabı"}
         </p>
       </div>
 

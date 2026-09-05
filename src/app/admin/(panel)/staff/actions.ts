@@ -12,6 +12,7 @@ import { nextCustomerNo } from "@/lib/customer-addresses";
 import { joinFullName } from "@/lib/customers";
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/staff-permissions";
+import { replaceSupportChatStaffDepartments } from "@/modules/support-chat/db";
 
 export type StaffFormState = {
   error?: string;
@@ -19,6 +20,23 @@ export type StaffFormState = {
   message?: string;
   redirectId?: string;
 };
+
+function parseDepartmentIds(raw: string): string[] {
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return [
+      ...new Set(
+        parsed
+          .filter((value): value is string => typeof value === "string")
+          .map((value) => value.trim())
+          .filter(Boolean),
+      ),
+    ];
+  } catch {
+    return [];
+  }
+}
 
 function parsePermissionMap(raw: string): StaffPermissionMap {
   const map = emptyPermissionMap();
@@ -63,6 +81,7 @@ async function replaceStaffPermissions(userId: string, map: StaffPermissionMap) 
 
 function revalidateStaff(id?: string) {
   revalidatePath("/admin/staff");
+  revalidatePath("/admin/settings/support/temsilciler");
   if (id) revalidatePath(`/admin/staff/${id}`);
 }
 
@@ -79,6 +98,7 @@ export async function createStaffAction(
   const password = String(formData.get("password") ?? "");
   const isActive = formData.get("isActive") === "on" || formData.get("isActive") === "true";
   const map = parsePermissionMap(String(formData.get("permissionsJson") ?? "{}"));
+  const departmentIds = parseDepartmentIds(String(formData.get("departmentIdsJson") ?? "[]"));
 
   if (!firstName || !lastName) return { error: "Ad ve soyad zorunludur." };
   if (!email || !email.includes("@")) return { error: "Geçerli bir e-posta girin." };
@@ -104,6 +124,7 @@ export async function createStaffAction(
       return user;
     });
     await replaceStaffPermissions(created.id, map);
+    await replaceSupportChatStaffDepartments(created.id, departmentIds);
     revalidateStaff(created.id);
     return { success: true, message: "Personel oluşturuldu.", redirectId: created.id };
   } catch (error) {
@@ -126,6 +147,7 @@ export async function updateStaffAction(
   const password = String(formData.get("password") ?? "");
   const isActive = formData.get("isActive") === "on" || formData.get("isActive") === "true";
   const map = parsePermissionMap(String(formData.get("permissionsJson") ?? "{}"));
+  const departmentIds = parseDepartmentIds(String(formData.get("departmentIdsJson") ?? "[]"));
 
   if (!id) return { error: "Personel bulunamadı." };
   if (!firstName || !lastName) return { error: "Ad ve soyad zorunludur." };
@@ -159,6 +181,7 @@ export async function updateStaffAction(
       },
     });
     await replaceStaffPermissions(id, map);
+    await replaceSupportChatStaffDepartments(id, departmentIds);
     revalidateStaff(id);
     return { success: true, message: "Personel güncellendi." };
   } catch (error) {

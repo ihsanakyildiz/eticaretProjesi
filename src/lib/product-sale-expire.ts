@@ -1,5 +1,6 @@
 import "server-only";
 
+import { expireEndedCampaigns } from "@/lib/campaigns";
 import { bustCatalogCache } from "@/lib/catalog-products";
 import { prisma } from "@/lib/prisma";
 import {
@@ -11,6 +12,7 @@ import {
 const BATCH = 80;
 
 export async function expireEndedProductSales(now = new Date()) {
+  await expireEndedCampaigns(now);
   const due = await prisma.productVariant.findMany({
     where: { saleEndsAt: { lte: now } },
     select: {

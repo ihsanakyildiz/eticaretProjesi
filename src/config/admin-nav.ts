@@ -21,6 +21,8 @@ import {
   LayoutGrid,
   Layers,
   Mail,
+  MessageCircle,
+  Megaphone,
   MapPin,
   Menu,
   ArrowLeftRight,
@@ -89,6 +91,11 @@ export const adminNavSections: AdminNavSection[] = [
         href: "/admin/email",
         icon: Mail,
       },
+      {
+        label: "Destek",
+        href: "/admin/support",
+        icon: MessageCircle,
+      },
     ],
   },
   {
@@ -99,6 +106,7 @@ export const adminNavSections: AdminNavSection[] = [
         icon: ShoppingBag,
         children: [
           { label: "Katalog", href: "/admin/products", icon: LayoutGrid },
+          { label: "Kampanyalar", href: "/admin/campaigns", icon: Megaphone },
           { label: "Tekrarlayan barkodlar", href: "/admin/products/duplicate-barcodes", icon: ScanBarcode },
           {
             label: "Ürün yükle",
@@ -125,8 +133,11 @@ export const adminNavSections: AdminNavSection[] = [
       },
       {
         label: "Siparişler",
-        href: "/admin/orders",
         icon: ShoppingBag,
+        children: [
+          { label: "Siparişler", href: "/admin/orders", icon: ShoppingBag },
+          { label: "Faturalar", href: "/admin/orders/invoices", icon: FileText },
+        ],
       },
       {
         label: "Ürün yorumları",
@@ -246,6 +257,32 @@ export const adminNavSections: AdminNavSection[] = [
             label: "Çeviriler",
             href: "/admin/settings/translations",
             icon: Languages,
+          },
+          {
+            label: "Sohbet Ayarları",
+            href: "/admin/settings/support",
+            icon: MessageCircle,
+            children: [
+              { label: "Ayarlar", href: "/admin/settings/support/ayarlar", icon: Settings },
+              { label: "Otomatik mesajlar", href: "/admin/settings/support/otomatik-mesajlar", icon: Sparkles },
+              { label: "Web sohbet", href: "/admin/settings/support/web", icon: Palette },
+              {
+                label: "Kanallar",
+                href: "/admin/settings/support/kanallar",
+                icon: MessageCircle,
+                children: [
+                  {
+                    label: "Meta",
+                    href: "/admin/settings/support/kanallar/meta-kanallar",
+                    icon: MessageCircle,
+                  },
+                  { label: "Telegram", href: "/admin/settings/support/kanallar/telegram", icon: MessageCircle },
+                  { label: "TikTok", href: "/admin/settings/support/kanallar/tiktok", icon: MessageCircle },
+                  { label: "Web sohbet", href: "/admin/settings/support/kanallar/web", icon: MessageCircle },
+                ],
+              },
+              { label: "Temsilciler", href: "/admin/settings/support/temsilciler", icon: Users },
+            ],
           },
         ],
       },

@@ -37,6 +37,9 @@ model User {
   password         String?
   image            String?                  @db.VarChar(500)
   phone            String?                  @db.VarChar(50)
+  customerSource   String                   @default("STORE") @db.VarChar(32)
+  supportChannel   String?                  @db.VarChar(32)
+  supportIdentity  String?                  @unique @db.VarChar(191)
   companyName      String?                  @db.VarChar(191)
   taxNumber        String?                  @db.VarChar(50)
   notes            String?                  @db.Text
@@ -54,14 +57,17 @@ model User {
   addresses        CustomerAddress[]
   orders           Order[]
   staffPermissions StaffPermission[]
+  supportChatDepartments SupportChatStaffDepartment[]
   stockDocumentsCreated   StockDocument[] @relation("StockDocumentCreatedBy")
   stockDocumentsConfirmed StockDocument[] @relation("StockDocumentConfirmedBy")
   stockMovements          StockMovement[]
   productReviews          ProductReview[]
   orderFeedbacks          OrderFeedback[]
+  supportChatCustomerConversations SupportChatConversation[] @relation("SupportChatCustomer")
 
   @@index([role, isActive])
   @@index([customerGroup])
+  @@index([customerSource])
   @@map("users")
 }
 
@@ -1257,6 +1263,7 @@ model ProductCategory {
   pageSections   PageSection[]
   listedInSections PageSectionProductCategory[]
   menuItems      MenuItem[]
+  campaignLinks  CampaignCategory[]
 
   @@index([parentId])
   @@index([isActive, sortOrder])
@@ -1327,6 +1334,7 @@ model Brand {
   updatedAt      DateTime  @updatedAt
   products       Product[]
   pageSections   PageSection[]
+  campaignLinks  CampaignBrand[]
 
   @@index([isActive, sortOrder])
   @@index([name])
@@ -1599,6 +1607,7 @@ model Product {
   orderItems          OrderItem[]
   reviews             ProductReview[]
   sectionLinks        PageSectionProduct[]
+  campaignItems       CampaignProduct[]
 
   @@index([categoryId])
   @@index([supplierId])
@@ -2389,4 +2398,241 @@ model StockMovement {
   @@index([orderId])
   @@index([kind, createdAt])
   @@map("stock_movements")
+}
+
+enum CampaignKind {
+  PERCENT_OFF
+  FIXED_OFF
+  FREE_SHIPPING
+  CART_PERCENT
+}
+
+enum CampaignStatus {
+  ACTIVE
+  DISABLED
+}
+
+/// Toplu ürün kampanyası (yüzde, tutar, kargo, sepet indirimi)
+model Campaign {
+  id          String         @id @default(cuid())
+  name        String         @db.VarChar(191)
+  kind        CampaignKind
+  valueInt    Int            @default(0)
+  status      CampaignStatus @default(ACTIVE)
+  countdown   Boolean        @default(false)
+  startsAt    DateTime?
+  endsAt      DateTime?
+  inStockOnly Boolean        @default(false)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  products    CampaignProduct[]
+  categories  CampaignCategory[]
+  brands      CampaignBrand[]
+
+  @@index([status, startsAt, endsAt])
+  @@index([createdAt])
+  @@map("campaigns")
+}
+
+model CampaignCategory {
+  campaignId String
+  categoryId String
+  campaign   Campaign        @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  category   ProductCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@id([campaignId, categoryId])
+  @@index([categoryId])
+  @@map("campaign_categories")
+}
+
+model CampaignBrand {
+  campaignId String
+  brandId    String
+  campaign   Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  brand      Brand    @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@id([campaignId, brandId])
+  @@index([brandId])
+  @@map("campaign_brands")
+}
+
+model CampaignProduct {
+  id           String    @id @default(cuid())
+  campaignId   String
+  productId    String
+  snapshotJson String    @db.LongText
+  restoredAt   DateTime?
+  createdAt    DateTime  @default(now())
+  campaign     Campaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  product      Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, productId])
+  @@index([productId])
+  @@index([restoredAt])
+  @@map("campaign_products")
+}
+
+model SiteModule {
+  id          String    @id @default(cuid())
+  moduleId    String    @unique @db.VarChar(64)
+  licenseKey  String    @db.Text
+  status      String    @default("INACTIVE") @db.VarChar(20)
+  activatedAt DateTime?
+  expiresAt   DateTime?
+  payloadJson String?   @db.Text
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([status])
+  @@map("site_modules")
+}
+
+model SupportChatAccount {
+  id              String   @id @default(cuid())
+  channel         String   @db.VarChar(32)
+  name            String   @db.VarChar(191)
+  externalId      String   @default("") @db.VarChar(191)
+  status          String   @default("ACTIVE") @db.VarChar(20)
+  credentialsJson String   @db.LongText
+  webhookSecret   String?  @db.VarChar(191)
+  departmentId    String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([channel])
+  @@index([status])
+  @@index([departmentId])
+  @@map("support_chat_accounts")
+}
+
+model SupportChatTag {
+  id        String   @id @default(cuid())
+  name      String   @unique @db.VarChar(80)
+  color     String   @default("#405189") @db.VarChar(16)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@map("support_chat_tags")
+}
+
+model SupportChatDepartment {
+  id        String   @id @default(cuid())
+  name      String   @unique @db.VarChar(80)
+  color     String   @default("#405189") @db.VarChar(16)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  staff     SupportChatStaffDepartment[]
+
+  @@map("support_chat_departments")
+}
+
+model SupportChatStaffDepartment {
+  userId       String
+  departmentId String
+  user         User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  department   SupportChatDepartment @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+
+  @@id([userId, departmentId])
+  @@index([departmentId])
+  @@map("support_chat_staff_departments")
+}
+
+model SupportChatCannedReply {
+  id        String   @id @default(cuid())
+  title     String   @db.VarChar(120)
+  body      String   @db.Text
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@map("support_chat_canned_replies")
+}
+
+model SupportChatConversation {
+  id                 String    @id @default(cuid())
+  accountId          String
+  channel            String    @db.VarChar(32)
+  externalThreadId   String    @default("") @db.VarChar(191)
+  customerName       String    @db.VarChar(191)
+  customerHandle     String?   @db.VarChar(191)
+  customerAvatar     String?   @db.VarChar(500)
+  lastMessageAt      DateTime?
+  lastMessagePreview String    @default("") @db.VarChar(280)
+  unreadCount        Int       @default(0)
+  assignedUserId     String?
+  departmentId       String?
+  status             String    @default("OPEN") @db.VarChar(20)
+  handledBy          String    @default("HUMAN") @db.VarChar(20)
+  folder             String    @default("INBOX") @db.VarChar(20)
+  sourceUrl          String?   @db.VarChar(500)
+  sourceTitle        String?   @db.VarChar(191)
+  sourceImage        String?   @db.VarChar(500)
+  customerUserId     String?
+  customerUser       User?     @relation("SupportChatCustomer", fields: [customerUserId], references: [id], onDelete: SetNull)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@index([accountId])
+  @@index([accountId, externalThreadId])
+  @@index([assignedUserId])
+  @@index([departmentId])
+  @@index([customerUserId])
+  @@index([lastMessageAt])
+  @@index([folder])
+  @@map("support_chat_conversations")
+}
+
+model SupportChatMessage {
+  id             String   @id @default(cuid())
+  conversationId String
+  direction      String   @db.VarChar(8)
+  body           String   @db.Text
+  mediaJson      String?  @db.LongText
+  externalId     String?  @db.VarChar(191)
+  sentAt         DateTime @default(now())
+  createdAt      DateTime @default(now())
+
+  @@index([conversationId])
+  @@index([externalId])
+  @@map("support_chat_messages")
+}
+
+model SupportChatNote {
+  id             String   @id @default(cuid())
+  conversationId String
+  staffUserId    String?
+  body           String   @db.Text
+  createdAt      DateTime @default(now())
+
+  @@index([conversationId])
+  @@map("support_chat_notes")
+}
+
+model SupportChatConversationTag {
+  conversationId String
+  tagId          String
+
+  @@id([conversationId, tagId])
+  @@index([tagId])
+  @@map("support_chat_conversation_tags")
+}
+
+model SupportChatSetting {
+  settingKey   String   @id @db.VarChar(100)
+  settingValue String   @db.Text
+  updatedAt    DateTime @updatedAt
+
+  @@map("support_chat_settings")
+}
+
+model SupportChatOAuthSession {
+  id           String   @id @default(cuid())
+  state        String   @unique @db.VarChar(191)
+  userId       String   @db.VarChar(191)
+  accessToken  String   @db.Text
+  assetsJson   String   @db.LongText
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+
+  @@index([expiresAt])
+  @@map("support_chat_oauth_sessions")
 }

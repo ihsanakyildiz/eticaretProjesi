@@ -141,6 +141,7 @@ export async function createCustomerAction(
           password: await hash(fields.password, 10),
         },
       });
+      await tx.$executeRaw`UPDATE users SET customerSource = 'ADMIN' WHERE id = ${user.id}`;
       await replaceCustomerAddresses(tx, user.id, prepared.addresses);
       return user;
     });

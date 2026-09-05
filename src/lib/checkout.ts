@@ -6,6 +6,8 @@ import { auth } from "@/auth";
 import { pricedLine } from "@/lib/order-server";
 import { checkoutDataCacheSeconds, parsePerformance, withCdnUrl } from "@/lib/performance";
 import { taxIncludedMinor } from "@/lib/product-money";
+import { applyCartPercentMinor } from "@/lib/campaign-kinds";
+import { loadLiveCampaignsByProductIds } from "@/lib/campaigns";
 import { resolveSalePrice } from "@/lib/product-sale";
 import { prisma } from "@/lib/prisma";
 import { publicProductHref } from "@/lib/public-urls";
@@ -147,6 +149,9 @@ export async function hydrateCart(raw: CartLine[]): Promise<HydratedCart> {
   const ids = [...new Set(lines.map((line) => line.variantId))];
   const variants = await loadCartVariants(ids);
   const byId = new Map(variants.map((row) => [row.id, row]));
+  const campaigns = await loadLiveCampaignsByProductIds(
+    variants.map((row) => row.product.id),
+  );
 
   const hydrated: HydratedCartLine[] = [];
   let productsMinor = 0;
@@ -196,7 +201,18 @@ export async function hydrateCart(raw: CartLine[]): Promise<HydratedCart> {
           saleEndsAt: variant.saleEndsAt ?? product?.saleEndsAt,
         })
       : null;
-    const chargeExcl = resolved?.priceMinor ?? variant?.priceMinor ?? 0;
+    const campaign = product ? campaigns.get(product.id) ?? null : null;
+    let chargeExcl = resolved?.priceMinor ?? variant?.priceMinor ?? 0;
+    let compareAtExcl = resolved?.compareAtMinor ?? null;
+    if (campaign?.kind === "CART_PERCENT" && chargeExcl > 0) {
+      const before = chargeExcl;
+      chargeExcl = applyCartPercentMinor(chargeExcl, campaign.valueInt);
+      if (compareAtExcl == null || compareAtExcl <= chargeExcl) compareAtExcl = before;
+    }
+    const lineExtraShipping =
+      available && campaign?.kind !== "FREE_SHIPPING"
+        ? (product?.extraShippingMinor ?? 0) * quantity
+        : 0;
     const priced =
       variant && chargeExcl > 0
         ? pricedLine({
@@ -223,10 +239,8 @@ export async function hydrateCart(raw: CartLine[]): Promise<HydratedCart> {
     if (available) {
       productsMinor += priced.totalMinor;
       taxMinor += priced.taxMinor;
-      extraShippingMinor += (product?.extraShippingMinor ?? 0) * quantity;
+      extraShippingMinor += lineExtraShipping;
     }
-
-    const compareAtExcl = resolved?.compareAtMinor ?? null;
     const compareAtMinor =
       compareAtExcl != null && compareAtExcl > 0
         ? taxIncludedMinor(compareAtExcl, taxRatePercent)
@@ -258,7 +272,7 @@ export async function hydrateCart(raw: CartLine[]): Promise<HydratedCart> {
       savingsMinor,
       taxRatePercent,
       totalMinor: available ? priced.totalMinor : 0,
-      extraShippingMinor: available ? (product?.extraShippingMinor ?? 0) * quantity : 0,
+      extraShippingMinor: lineExtraShipping,
       maxQuantity,
       minOrderQty: Math.max(1, product?.minOrderQty ?? 1),
       quantityStep: Math.max(1, product?.quantityStep ?? 1),

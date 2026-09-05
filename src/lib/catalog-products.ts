@@ -1,6 +1,7 @@
 import "server-only";
 
 import type { Prisma } from "@prisma/client";
+import { attachCatalogCampaigns } from "@/lib/campaigns";
 import { collectDescendantIds } from "@/lib/category-tree";
 import { unstable_cache, revalidateTag } from "next/cache";
 import {
@@ -85,8 +86,11 @@ const productCardSelect = {
 
 type ProductCardRow = Prisma.ProductGetPayload<{ select: typeof productCardSelect }>;
 
-function toCatalogCards(rows: Array<ProductCardRow | undefined>): CatalogProductCard[] {
-  return rows.filter((row): row is ProductCardRow => Boolean(row)) as CatalogProductCard[];
+async function toCatalogCards(
+  rows: Array<ProductCardRow | undefined>,
+): Promise<CatalogProductCard[]> {
+  const cards = rows.filter((row): row is ProductCardRow => Boolean(row)) as CatalogProductCard[];
+  return attachCatalogCampaigns(cards);
 }
 
 export function bustCatalogCache() {
@@ -126,6 +130,7 @@ function listingCacheKey(filters: CatalogListingFilters, page: number) {
     c: [...(filters.categoryIds ?? [])].sort(),
     b: [...filters.brandSlugs].sort(),
     f: [...filters.filterValueIds].sort(),
+    k: [...(filters.campaignIds ?? [])].sort(),
     min: filters.minMajor,
     max: filters.maxMajor,
     q: filters.query ?? "",
@@ -416,12 +421,15 @@ export async function getCachedCatalogProduct(slug: string) {
       });
       if (!product) return null;
 
+      const related = await toCatalogCards(product.relatedFrom.map((row) => row.related));
+      const [withCampaign] = await attachCatalogCampaigns([{ id: product.id }]);
       return {
         ...product,
-        related: product.relatedFrom.map((row) => row.related),
+        campaign: withCampaign?.campaign ?? null,
+        related,
       };
     },
-    ["catalog-product-v10", slug, String(relatedLimit), String(galleryLimit)],
+    ["catalog-product-v11", slug, String(relatedLimit), String(galleryLimit)],
     { tags: [CATALOG_CACHE_TAG, "site"], revalidate },
   )();
 }
@@ -552,12 +560,12 @@ export async function getProductsBySource(
         select: productCardSelect,
       });
       const byId = new Map(rows.map((row) => [row.id, row]));
-      return toCatalogCards(ids.map((id) => byId.get(id)));
+      return await toCatalogCards(ids.map((id) => byId.get(id)));
     }
     case "BEST_SELLERS": {
       const ids = await bestSellerIds(limit, extra);
       if (ids.length === 0) {
-        return toCatalogCards(
+        return await toCatalogCards(
           await prisma.product.findMany({
             where: listingWhere(extra),
             orderBy: [{ clickCount: "desc" }, { createdAt: "desc" }],
@@ -571,10 +579,10 @@ export async function getProductsBySource(
         select: productCardSelect,
       });
       const byId = new Map(rows.map((row) => [row.id, row]));
-      return toCatalogCards(ids.map((id) => byId.get(id)));
+      return await toCatalogCards(ids.map((id) => byId.get(id)));
     }
     case "MOST_CLICKED":
-      return toCatalogCards(
+      return await toCatalogCards(
         await prisma.product.findMany({
           where: listingWhere(extra),
           orderBy: [{ clickCount: "desc" }, { createdAt: "desc" }],
@@ -583,7 +591,7 @@ export async function getProductsBySource(
         }),
       );
     case "MOST_VIEWED":
-      return toCatalogCards(
+      return await toCatalogCards(
         await prisma.product.findMany({
           where: listingWhere(extra),
           orderBy: [{ viewCount: "desc" }, { createdAt: "desc" }],
@@ -592,7 +600,7 @@ export async function getProductsBySource(
         }),
       );
     case "ON_SALE":
-      return toCatalogCards(
+      return await toCatalogCards(
         await prisma.product.findMany({
           where: listingWhere({
             ...extra,
@@ -604,7 +612,7 @@ export async function getProductsBySource(
         }),
       );
     case "NEW":
-      return toCatalogCards(
+      return await toCatalogCards(
         await prisma.product.findMany({
           where: listingWhere(extra),
           orderBy: [{ createdAt: "desc" }, { sortOrder: "asc" }],
@@ -627,7 +635,7 @@ export async function getCatalogProductsByIds(ids: string[]): Promise<CatalogPro
     select: productCardSelect,
   });
   const byId = new Map(rows.map((row) => [row.id, row]));
-  return toCatalogCards(unique.map((id) => byId.get(id)));
+  return await toCatalogCards(unique.map((id) => byId.get(id)));
 }
 
 export async function getProductCategoriesBySource(query: {
@@ -715,7 +723,7 @@ export async function getFilteredCatalogListing(
         : Promise.resolve([]),
     ]);
     const byId = new Map(soldRows.map((row) => [row.id, row]));
-    const ranked = toCatalogCards(pageIds.map((id) => byId.get(id)));
+    const ranked = await toCatalogCards(pageIds.map((id) => byId.get(id)));
     if (ranked.length >= CATALOG_GRID_PAGE_SIZE) {
       return { total, products: ranked.slice(0, CATALOG_GRID_PAGE_SIZE) };
     }
@@ -730,7 +738,7 @@ export async function getFilteredCatalogListing(
         take: CATALOG_GRID_PAGE_SIZE - ranked.length,
         select: productCardSelect,
       });
-      return { total, products: [...ranked, ...toCatalogCards(fallback)] };
+      return { total, products: [...ranked, ...(await toCatalogCards(fallback))] };
     }
     return { total, products: ranked };
   }
@@ -745,7 +753,7 @@ export async function getFilteredCatalogListing(
       select: productCardSelect,
     }),
   ]);
-  return { products: toCatalogCards(products), total };
+  return { products: await toCatalogCards(products), total };
 }
 
 export async function getCachedFilteredCatalogListing(
@@ -755,7 +763,7 @@ export async function getCachedFilteredCatalogListing(
   const revalidate = await catalogCacheRevalidateSeconds();
   return unstable_cache(
     () => getFilteredCatalogListing(filters, page),
-    ["catalog-listing-page-v5", listingCacheKey(filters, page)],
+    ["catalog-listing-page-v7", listingCacheKey(filters, page)],
     { tags: [CATALOG_CACHE_TAG, "site"], revalidate },
   )();
 }

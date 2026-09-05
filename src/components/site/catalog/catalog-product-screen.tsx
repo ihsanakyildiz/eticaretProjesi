@@ -226,6 +226,7 @@ export async function CatalogProductScreen({
                 ? productEstimatedDeliveryLabel(product.estimatedDelivery)
                 : null
             }
+            campaign={product.campaign}
           />
 
           <ProductDetailTabs

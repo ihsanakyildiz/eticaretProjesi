@@ -10,6 +10,7 @@ import { SaleCountdown, useTickingNow } from "@/components/site/catalog/sale-cou
 import { pickSellableVariants } from "@/lib/catalog-storefront";
 import { fallbackSwatchHex } from "@/lib/product-attributes";
 import { productSaleUnitShort } from "@/lib/product-editor";
+import { campaignCartPriceMinor, type CatalogCampaignBadge } from "@/lib/campaign-kinds";
 import { formatMinorTry, taxIncludedMinor } from "@/lib/product-money";
 import { resolveSalePrice } from "@/lib/product-sale";
 import { isVariantPurchasable, type OutOfStockBehavior } from "@/lib/product-stock";
@@ -66,6 +67,7 @@ export function ProductBuyBox({
   outOfStockBehavior,
   deliveryLabel,
   galleryEager = 1,
+  campaign = null,
 }: {
   title: string;
   brandName?: string | null;
@@ -85,6 +87,7 @@ export function ProductBuyBox({
   outOfStockBehavior: OutOfStockBehavior;
   deliveryLabel?: string | null;
   galleryEager?: number;
+  campaign?: CatalogCampaignBadge | null;
 }) {
   const sellable = useMemo(() => pickSellableVariants(variants), [variants]);
   const defaultVariant =
@@ -165,6 +168,12 @@ export function ProductBuyBox({
     resolvedSale?.compareAtMinor != null
       ? taxIncludedMinor(resolvedSale.compareAtMinor, taxRatePercent)
       : null;
+  const cartExcl =
+    campaign && resolvedSale
+      ? campaignCartPriceMinor(campaign.kind, campaign.valueInt, resolvedSale.priceMinor)
+      : null;
+  const cartPriceIncl =
+    cartExcl != null ? taxIncludedMinor(cartExcl, taxRatePercent) : null;
   const hasPhysicalStock =
     !variant?.trackInventory || (variant?.stockQuantity ?? 0) > 0;
   const canOrder =
@@ -277,8 +286,24 @@ export function ProductBuyBox({
         ) : (
           <p className="text-site-muted">Fiyat için bizimle iletişime geçin.</p>
         )}
+        {showPrice && cartPriceIncl != null && cartPriceIncl < priceIncl ? (
+          <p className="mt-1.5 font-display text-xl font-semibold tracking-tight text-rose-600">
+            Sepette {formatMinorTry(cartPriceIncl)}
+          </p>
+        ) : null}
+        {campaign ? (
+          <p className="mt-2 text-sm font-semibold text-rose-600">
+            <span className="mr-2 inline-flex rounded-md bg-rose-600 px-2 py-0.5 text-xs font-bold text-white">
+              {campaign.label}
+            </span>
+            {campaign.name}
+          </p>
+        ) : null}
         {resolvedSale?.onSale && resolvedSale.saleEndsAt ? (
           <SaleCountdown endsAt={resolvedSale.saleEndsAt} />
+        ) : null}
+        {!resolvedSale?.onSale && campaign?.countdown && campaign.endsAt ? (
+          <SaleCountdown endsAt={campaign.endsAt} />
         ) : null}
 
         {hasAxisPicker ? (

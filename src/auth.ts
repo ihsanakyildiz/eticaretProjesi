@@ -221,6 +221,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           },
         });
       });
+      await prisma.$executeRaw`UPDATE users SET customerSource = 'OAUTH' WHERE id = ${created.id}`;
 
       user.id = created.id;
       user.role = Role.MEMBER;

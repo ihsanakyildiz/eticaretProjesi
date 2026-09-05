@@ -6,6 +6,8 @@ import {
   resolveCatalogListingConstraint,
   type CatalogListingConstraintOmit,
 } from "@/lib/catalog-listing-constraint";
+import { loadLiveCampaignFacets } from "@/lib/campaigns";
+import type { CatalogCampaignFacet } from "@/lib/campaign-kinds";
 import { catalogListingHref } from "@/lib/catalog-listing-params";
 import type { CatalogListingFilters } from "@/lib/catalog-storefront";
 import {
@@ -42,6 +44,7 @@ export type CatalogFacetBrand = {
 
 export type CatalogListingFacets = {
   brands: CatalogFacetBrand[];
+  campaigns: CatalogCampaignFacet[];
   filterGroups: CatalogFacetGroup[];
 };
 
@@ -53,6 +56,7 @@ function facetsCacheKey(filters: CatalogListingFilters, categoryId: string | nul
     c: [...(filters.categoryIds ?? [])].sort(),
     b: [...filters.brandSlugs].sort(),
     f: [...filters.filterValueIds].sort(),
+    k: [...(filters.campaignIds ?? [])].sort(),
     min: filters.minMajor,
     max: filters.maxMajor,
     q: filters.query ?? "",
@@ -136,8 +140,12 @@ export async function getCatalogListingFacets(
 ): Promise<CatalogListingFacets> {
   const definitions = await resolveFilterDefinitions(categoryId);
 
-  const [brands, groups] = await Promise.all([
+  const [brands, campaigns, groups] = await Promise.all([
     loadBrandFacets(filters),
+    loadLiveCampaignFacets({
+      categoryIds: filters.categoryIds,
+      brandSlugs: filters.categoryIds?.length ? [] : filters.brandSlugs,
+    }),
     Promise.all(
       definitions.map(async (filter) => {
         const groupValueIds = new Set(filter.values.map((value) => value.id));
@@ -167,6 +175,7 @@ export async function getCatalogListingFacets(
 
   return {
     brands,
+    campaigns,
     filterGroups: groups.filter((group): group is CatalogFacetGroup => Boolean(group)),
   };
 }
@@ -178,7 +187,7 @@ export async function getCachedCatalogListingFacets(
   const revalidate = await facetsCacheRevalidateSeconds();
   return unstable_cache(
     () => getCatalogListingFacets(filters, categoryId),
-    ["catalog-listing-facets-v2", facetsCacheKey(filters, categoryId)],
+    ["catalog-listing-facets-v4", facetsCacheKey(filters, categoryId)],
     { tags: ["products", "site"], revalidate },
   )();
 }
@@ -198,14 +207,18 @@ export function pruneUnavailableCatalogFilters(
     ? filters.brandSlugs
     : filters.brandSlugs.filter((slug) => visibleBrandSlugs.has(slug));
 
+  const visibleCampaignIds = new Set(facets.campaigns.map((campaign) => campaign.id));
+  const campaignIds = (filters.campaignIds ?? []).filter((id) => visibleCampaignIds.has(id));
+
   if (
     filterValueIds.length === filters.filterValueIds.length &&
-    brandSlugs.length === filters.brandSlugs.length
+    brandSlugs.length === filters.brandSlugs.length &&
+    campaignIds.length === (filters.campaignIds ?? []).length
   ) {
     return null;
   }
 
-  return { ...filters, filterValueIds, brandSlugs };
+  return { ...filters, filterValueIds, brandSlugs, campaignIds };
 }
 
 export function redirectIfUnavailableFilters(
@@ -223,6 +236,7 @@ export function redirectIfUnavailableFilters(
       minMajor: pruned.minMajor,
       maxMajor: pruned.maxMajor,
       filterValueIds: pruned.filterValueIds,
+      campaignIds: pruned.campaignIds,
       query: pruned.query,
     }),
   );

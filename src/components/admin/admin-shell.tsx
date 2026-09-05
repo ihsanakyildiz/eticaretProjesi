@@ -19,6 +19,7 @@ type AdminShellProps = {
   isAdmin: boolean;
   permissionMap: StaffPermissionMap;
   advancedInventory: boolean;
+  supportChat: boolean;
 };
 
 function AdminShellLayout({
@@ -34,6 +35,7 @@ function AdminShellLayout({
     | "isAdmin"
     | "permissionMap"
     | "advancedInventory"
+    | "supportChat"
   >) {
   const { isCollapsed, isDesktop, allowTransition } = useSidebar();
   const iconMode = isDesktop && isCollapsed;
@@ -70,6 +72,7 @@ export function AdminShell({
   isAdmin,
   permissionMap,
   advancedInventory,
+  supportChat,
   ...props
 }: AdminShellProps) {
   return (
@@ -79,6 +82,7 @@ export function AdminShell({
         isAdmin={isAdmin}
         map={permissionMap}
         advancedInventory={advancedInventory}
+        supportChat={supportChat}
       >
         <SidebarProvider initialCollapsed={initialSidebarCollapsed}>
           <AdminShellLayout {...props} />

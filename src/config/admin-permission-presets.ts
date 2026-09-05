@@ -42,6 +42,7 @@ const MENU_CONTENT_IDS = [
 
 const STORE_IDS = [
   "products",
+  "campaigns",
   "product_categories",
   "brands",
   "attributes",
@@ -98,7 +99,7 @@ export const STAFF_PERMISSION_PRESETS: PermissionPreset[] = [
   {
     id: "support",
     label: "Müşteri temsilcisi",
-    description: "Sipariş, müşteri ve e-posta; silme yok",
+    description: "Sohbet sayfası, sipariş, müşteri ve e-posta; sohbet ayarları görünür, çöpü kalıcı silme yok",
   },
   {
     id: "store",
@@ -127,6 +128,8 @@ export function permissionMapForPreset(presetId: PermissionPresetId): StaffPermi
         orders: "write",
         reviews: "write",
         products: "view",
+        support: "write",
+        settings_support: "view",
       });
     case "store":
       return grantMap(

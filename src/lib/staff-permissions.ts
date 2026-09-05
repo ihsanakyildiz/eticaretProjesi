@@ -14,6 +14,7 @@ import {
   type StaffPermissionMap,
 } from "@/config/admin-permissions";
 import { isAdvancedInventoryEnabled } from "@/lib/advanced-inventory";
+import { isSupportChatLicensedSafe } from "@/lib/support-chat-gate";
 import { prisma } from "@/lib/prisma";
 
 export type { PermissionAction, StaffPermissionFlags, StaffPermissionMap };
@@ -65,6 +66,12 @@ export async function requirePermission(resource: string, action: PermissionActi
       error: "Gelişmiş stok sistemi kapalı. Ayarlar → Gelişmiş içinden açabilirsiniz.",
     };
   }
+  if (resource === "support" && !(await isSupportChatLicensedSafe())) {
+    return {
+      ok: false as const,
+      error: "Müşteri destek sohbeti modülü lisanslı değil.",
+    };
+  }
   if (!can(access.role, access.map, resource, action)) {
     return { ok: false as const, error: "Bu işlem için yetkiniz yok." };
   }
@@ -93,19 +100,24 @@ export async function requirePageView(pathname: string) {
   if (!access.session) {
     redirect("/admin/login");
   }
-  const advancedInventory = await isAdvancedInventoryEnabled();
-  const withFeatures = { ...access, advancedInventory };
+  const [advancedInventory, supportChat] = await Promise.all([
+    isAdvancedInventoryEnabled(),
+    isSupportChatLicensedSafe(),
+  ]);
+  const withFeatures = { ...access, advancedInventory, supportChat };
   const resource = resourceFromPath(pathname);
   if (resource === "inventory" && !advancedInventory) {
     redirect(firstViewableHref(access.map, access.isAdmin, new Set(["inventory"])));
   }
+  if (resource === "support" && !supportChat) {
+    redirect("/admin/settings/support/ayarlar");
+  }
   if (!resource) return withFeatures;
   if (can(access.role, access.map, resource, "view")) return withFeatures;
-  const destination = firstViewableHref(
-    access.map,
-    access.isAdmin,
-    advancedInventory ? undefined : new Set(["inventory"]),
-  );
+  const skip = new Set<string>();
+  if (!advancedInventory) skip.add("inventory");
+  if (!supportChat) skip.add("support");
+  const destination = firstViewableHref(access.map, access.isAdmin, skip);
   if (destination === pathname) {
     redirect(ADMIN_NO_ACCESS_HREF);
   }

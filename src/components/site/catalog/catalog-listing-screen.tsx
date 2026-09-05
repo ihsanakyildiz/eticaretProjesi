@@ -34,6 +34,7 @@ export type CatalogSearchParams = {
   min?: string;
   max?: string;
   filtre?: string;
+  kampanya?: string;
   q?: string;
 };
 
@@ -103,6 +104,7 @@ export async function CatalogListingScreen({
               basePath={catalogPath}
               categories={categories}
               brands={facets.brands}
+              campaigns={facets.campaigns}
               filters={filters}
               filterGroups={facets.filterGroups}
             />
@@ -134,6 +136,7 @@ export async function CatalogListingScreen({
                     minMajor: filters.minMajor,
                     maxMajor: filters.maxMajor,
                     filterValueIds: filters.filterValueIds,
+                    campaignIds: filters.campaignIds,
                     query: filters.query,
                   })
                 }

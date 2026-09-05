@@ -20,6 +20,7 @@ export const ADMIN_PERMISSION_RESOURCES: PermissionResource[] = [
   { id: "sidebars", label: "Sidebar", href: "/admin/sidebars", group: "Menü" },
   { id: "email", label: "E-posta", href: "/admin/email", group: "Menü" },
   { id: "products", label: "Ürün kataloğu", href: "/admin/products", group: "Mağaza" },
+  { id: "campaigns", label: "Kampanyalar", href: "/admin/campaigns", group: "Mağaza" },
   { id: "product_categories", label: "Ürün kategorileri", href: "/admin/products/categories", group: "Mağaza" },
   { id: "brands", label: "Markalar", href: "/admin/products/brands", group: "Mağaza" },
   { id: "attributes", label: "Varyantlar", href: "/admin/products/attributes", group: "Mağaza" },
@@ -44,6 +45,13 @@ export const ADMIN_PERMISSION_RESOURCES: PermissionResource[] = [
   { id: "customers", label: "Müşteriler", href: "/admin/members", group: "Mağaza" },
   { id: "orders", label: "Siparişler", href: "/admin/orders", group: "Mağaza" },
   { id: "reviews", label: "Ürün yorumları", href: "/admin/reviews", group: "Mağaza" },
+  {
+    id: "support",
+    label: "Sohbet sayfası",
+    href: "/admin/support",
+    group: "Sohbet",
+    hint: "Görme/yazma: gelen kutusu, yanıtlama, atama ve arşivleme. Silme: çöp kutusundan kalıcı silme ve çöpü boşaltma. Lisanslı sohbet modülü gerekir.",
+  },
   { id: "works_categories", label: "İş kategorileri", href: "/admin/works/categories", group: "İçerik" },
   { id: "works", label: "Çalışmalar", href: "/admin/works", group: "İçerik" },
   { id: "project_categories", label: "Proje kategorileri", href: "/admin/projects/categories", group: "İçerik" },
@@ -60,6 +68,13 @@ export const ADMIN_PERMISSION_RESOURCES: PermissionResource[] = [
   { id: "settings_system", label: "Sistem sağlığı", href: "/admin/settings/system", group: "Sistem" },
   { id: "settings_languages", label: "Diller", href: "/admin/settings/languages", group: "Sistem" },
   { id: "settings_translations", label: "Çeviriler", href: "/admin/settings/translations", group: "Sistem" },
+  {
+    id: "settings_support",
+    label: "Sohbet ayarları",
+    href: "/admin/settings/support",
+    group: "Sohbet",
+    hint: "Lisans, kanallar, departmanlar, etiketler ve hazır yanıtlar.",
+  },
   { id: "staff", label: "Personel", href: "/admin/staff", group: "Sistem" },
 ];
 
@@ -121,17 +136,22 @@ export function hrefToResourceId(href: string): string | null {
 
 export type AdminFeatureFlags = {
   advancedInventory: boolean;
+  supportChat: boolean;
 };
 
 export function isInventoryNavHref(href: string) {
   return href === "/admin/inventory" || href.startsWith("/admin/inventory/");
 }
 
+export function isSupportNavHref(href: string) {
+  return href === "/admin/support" || href.startsWith("/admin/support/");
+}
+
 export function filterNavByView<T extends { href?: string; children?: T[] }>(
   items: T[],
   role: string | undefined,
   map: StaffPermissionMap,
-  features: AdminFeatureFlags = { advancedInventory: true },
+  features: AdminFeatureFlags = { advancedInventory: true, supportChat: false },
 ): T[] {
   return items
     .map((item) => {
@@ -143,6 +163,7 @@ export function filterNavByView<T extends { href?: string; children?: T[] }>(
       }
       if (item.href) {
         if (!features.advancedInventory && isInventoryNavHref(item.href)) return null;
+        if (!features.supportChat && isSupportNavHref(item.href)) return null;
         const resource =
           ADMIN_PERMISSION_RESOURCES.find((entry) => entry.href === item.href)?.id ??
           resourceFromPath(item.href);

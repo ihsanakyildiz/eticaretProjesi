@@ -1,3 +1,4 @@
+import type { CatalogCampaignFacet } from "@/lib/campaign-kinds";
 import type { CatalogFacetBrand, CatalogFacetGroup } from "@/lib/catalog-facets";
 import { catalogFiltersHref } from "@/lib/catalog-listing-params";
 import type { CatalogListingFilters } from "@/lib/catalog-storefront";
@@ -13,12 +14,14 @@ export function catalogActiveFilterChips({
   basePath,
   filters,
   brands,
+  campaigns = [],
   filterGroups,
   activeCategory,
 }: {
   basePath: string;
   filters: CatalogListingFilters;
   brands: CatalogFacetBrand[];
+  campaigns?: CatalogCampaignFacet[];
   filterGroups: CatalogFacetGroup[];
   activeCategory: { id: string; name: string; href: string } | null;
 }): CatalogActiveFilterChip[] {
@@ -58,6 +61,18 @@ export function catalogActiveFilterChips({
       label: brand.name,
       href: hrefFor({
         brandSlugs: filters.brandSlugs.filter((item) => item !== slug),
+      }),
+    });
+  }
+
+  for (const campaignId of filters.campaignIds ?? []) {
+    const campaign = campaigns.find((item) => item.id === campaignId);
+    if (!campaign) continue;
+    chips.push({
+      key: `campaign-${campaign.id}`,
+      label: campaign.label,
+      href: hrefFor({
+        campaignIds: (filters.campaignIds ?? []).filter((id) => id !== campaignId),
       }),
     });
   }

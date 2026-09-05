@@ -45,6 +45,7 @@ export default async function AdminPanelLayout({
         isAdmin={access.isAdmin}
         permissionMap={access.map}
         advancedInventory={access.advancedInventory}
+        supportChat={access.supportChat}
       >
         {children}
       </AdminShell>

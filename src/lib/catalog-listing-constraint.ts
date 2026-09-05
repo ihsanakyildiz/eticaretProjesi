@@ -1,12 +1,15 @@
 import type { Prisma } from "@prisma/client";
+import { loadCampaignProductIds } from "@/lib/campaigns";
 import type { CatalogListingFilters } from "@/lib/catalog-storefront";
 import { prisma } from "@/lib/prisma";
 
 export type CatalogListingConstraintOmit = {
   brands?: boolean;
+  campaigns?: boolean;
   customFilterValues?: boolean;
   omitValueIds?: ReadonlySet<string> | readonly string[];
   valueFilterIds?: ReadonlyMap<string, string>;
+  campaignProductIds?: string[];
 };
 
 function omitValueSet(omit: CatalogListingConstraintOmit): Set<string> | null {
@@ -70,6 +73,13 @@ export function catalogListingConstraint(
   }
 
   const listingQuery = filters.query?.trim();
+  if (!omit.campaigns && (filters.campaignIds ?? []).length > 0) {
+    const productIds = omit.campaignProductIds ?? [];
+    and.push({
+      id: { in: productIds.length > 0 ? productIds : ["__none__"] },
+    });
+  }
+
   if (listingQuery) {
     and.push({
       OR: [
@@ -111,18 +121,24 @@ export async function resolveCatalogListingConstraint(
   filters: CatalogListingFilters,
   omit: CatalogListingConstraintOmit = {},
 ): Promise<Prisma.ProductWhereInput> {
+  const campaignProductIds =
+    omit.campaigns || (filters.campaignIds ?? []).length === 0
+      ? omit.campaignProductIds
+      : await loadCampaignProductIds(filters.campaignIds);
+  const withCampaigns = { ...omit, campaignProductIds };
+
   if (omit.customFilterValues || omit.valueFilterIds) {
-    return catalogListingConstraint(filters, omit);
+    return catalogListingConstraint(filters, withCampaigns);
   }
   const skip = omitValueSet(omit);
   const pendingIds = skip
     ? filters.filterValueIds.filter((id) => !skip.has(id))
     : filters.filterValueIds;
   if (pendingIds.length === 0) {
-    return catalogListingConstraint(filters, omit);
+    return catalogListingConstraint(filters, withCampaigns);
   }
   return catalogListingConstraint(filters, {
-    ...omit,
+    ...withCampaigns,
     valueFilterIds: await loadValueFilterIds(pendingIds),
   });
 }

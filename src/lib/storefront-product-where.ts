@@ -1,6 +1,8 @@
 import type { Prisma } from "@prisma/client";
 
-const listingVisibility = ["EVERYWHERE", "CATALOG"] as const;
+export const STOREFRONT_LISTING_VISIBILITIES = ["EVERYWHERE", "CATALOG"] as const;
+
+const listingVisibility = STOREFRONT_LISTING_VISIBILITIES;
 
 export function mergeProductWhere(
   base: Prisma.ProductWhereInput,

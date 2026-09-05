@@ -49,6 +49,7 @@ export type OrderFormState = {
 
 function revalidateOrders(id?: string) {
   revalidatePath("/admin/orders");
+  revalidatePath("/admin/orders/invoices");
   revalidatePath("/uye/siparisler");
   revalidateTag("products");
   if (id) {
