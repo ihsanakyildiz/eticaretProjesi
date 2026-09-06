@@ -392,6 +392,205 @@ async function syncInstagramAccountComments(
   return ingested;
 }
 
+type FacebookComment = {
+  id?: string;
+  message?: string;
+  created_time?: string;
+  from?: { id?: string; name?: string };
+  comments?: { data?: FacebookComment[] };
+};
+
+type FacebookPost = {
+  id?: string;
+  message?: string;
+  permalink_url?: string;
+  full_picture?: string;
+  picture?: string;
+  comments?: { data?: FacebookComment[] };
+};
+
+async function ingestFacebookComment(input: {
+  accountId: string;
+  pageIds: Set<string>;
+  comment: FacebookComment;
+  threadId: string;
+  sourceUrl: string | null;
+  sourceTitle: string | null;
+  sourceImage: string | null;
+}) {
+  const commentId = input.comment.id?.trim() ?? "";
+  if (!commentId) return 0;
+  const sentAt = graphSentAt(input.comment.created_time);
+  if (!sentAt) return 0;
+  const fromId = input.comment.from?.id ?? "";
+  const name = input.comment.from?.name?.trim() || fromId || "Yorum";
+  const result = await ingestSupportChatMessage({
+    accountId: input.accountId,
+    channel: "FACEBOOK_POST",
+    externalThreadId: input.threadId,
+    customerName: name,
+    customerHandle: fromId || null,
+    customerAvatar: null,
+    body: (input.comment.message ?? "").trim() || "[yorum]",
+    direction: fromId && input.pageIds.has(fromId) ? "OUT" : "IN",
+    externalId: commentId,
+    sentAt,
+    media: [],
+    sourceUrl: input.sourceUrl,
+    sourceTitle: input.sourceTitle,
+    sourceImage: input.sourceImage,
+    origin: "history",
+  });
+  return "ok" in result && !result.duplicate ? 1 : 0;
+}
+
+async function listFacebookPagePosts(pageId: string, token: string) {
+  const fields =
+    "id,message,permalink_url,full_picture,picture,comments.limit(20){id,message,from,created_time,comments.limit(10){id,message,from,created_time}}";
+  for (const path of [`/${pageId}/published_posts`, `/${pageId}/posts`]) {
+    try {
+      const payload = await graphGet<{ data?: FacebookPost[] }>(
+        path,
+        token,
+        { limit: "12", fields },
+        { retries: 1, timeoutMs: 8_000 },
+      );
+      return payload.data ?? [];
+    } catch (error) {
+      console.warn(
+        "support-chat: facebook posts lookup failed",
+        path,
+        error instanceof Error ? error.message : error,
+      );
+    }
+  }
+  return [];
+}
+
+async function syncFacebookPageComments(
+  account: {
+    id: string;
+    externalId: string;
+    credentials: Record<string, string>;
+  },
+  pageId: string,
+  token: string,
+) {
+  const posts = await listFacebookPagePosts(pageId, token);
+  const pageIds = accountOwnerIds(account);
+  const commentIds: string[] = [];
+  for (const post of posts) {
+    for (const comment of post.comments?.data ?? []) {
+      if (comment.id) commentIds.push(comment.id);
+      for (const reply of comment.comments?.data ?? []) {
+        if (reply.id) commentIds.push(reply.id);
+      }
+    }
+  }
+  const threadIds = posts.flatMap((post) =>
+    (post.comments?.data ?? []).flatMap((comment) => (comment.id?.trim() ? [comment.id.trim()] : [])),
+  );
+  const [known, existing, blocked, ignored, watermark] = await Promise.all([
+    listKnownSupportChatExternalIds(commentIds),
+    listExistingSupportChatThreadIds(account.id, threadIds),
+    listBlockedSupportChatThreads(account.id, threadIds),
+    listIgnoredSupportChatExternalIds(commentIds),
+    readSupportChatHistoryWatermark(account.id, "fb_posts"),
+  ]);
+  let ingested = 0;
+  let newestSeen: Date | null = watermark;
+  function shouldTakeComment(
+    id: string | undefined,
+    createdTime: string | undefined,
+    threadId: string,
+  ) {
+    const externalId = id?.trim() ?? "";
+    if (!externalId || known.has(externalId) || ignored.has(externalId)) return null;
+    const sentAt = graphSentAt(createdTime);
+    if (!sentAt) return null;
+    const cutoff = blocked.get(threadId) ?? null;
+    if (isSupportChatBeforeThreadCutoff(sentAt, cutoff)) return null;
+    if (!cutoff && isSupportChatHistoryTooOld(sentAt)) return null;
+    if (!cutoff && existing.has(threadId) && isSupportChatBeforeHistoryWatermark(sentAt, watermark)) {
+      return null;
+    }
+    return sentAt;
+  }
+  for (const post of posts) {
+    const comments = post.comments?.data ?? [];
+    if (comments.length === 0) continue;
+    const fresh = comments.some((comment) => {
+      const threadId = comment.id?.trim() ?? "";
+      if (!threadId) return false;
+      if (shouldTakeComment(comment.id, comment.created_time, threadId)) return true;
+      return (comment.comments?.data ?? []).some((reply) =>
+        Boolean(shouldTakeComment(reply.id, reply.created_time, threadId)),
+      );
+    });
+    if (!fresh) continue;
+    const sourceUrl = post.permalink_url ?? null;
+    const sourceTitle = post.message?.trim() || null;
+    const sourceImage = post.full_picture || post.picture || null;
+    for (const comment of comments) {
+      const threadId = comment.id?.trim() ?? "";
+      if (!threadId) continue;
+      const commentAt = shouldTakeComment(comment.id, comment.created_time, threadId);
+      if (commentAt) {
+        if (!newestSeen || commentAt.getTime() > newestSeen.getTime()) newestSeen = commentAt;
+        ingested += await ingestFacebookComment({
+          accountId: account.id,
+          pageIds,
+          comment,
+          threadId,
+          sourceUrl,
+          sourceTitle,
+          sourceImage,
+        });
+      }
+      for (const reply of comment.comments?.data ?? []) {
+        const replyAt = shouldTakeComment(reply.id, reply.created_time, threadId);
+        if (!replyAt) continue;
+        if (!newestSeen || replyAt.getTime() > newestSeen.getTime()) newestSeen = replyAt;
+        ingested += await ingestFacebookComment({
+          accountId: account.id,
+          pageIds,
+          comment: reply,
+          threadId,
+          sourceUrl,
+          sourceTitle,
+          sourceImage,
+        });
+      }
+    }
+  }
+  if (newestSeen) await writeSupportChatHistoryWatermark(account.id, newestSeen, "fb_posts");
+  return ingested;
+}
+
+export async function syncFacebookPostComments() {
+  const accounts = await listActiveSupportChatAccounts();
+  const seen = new Set<string>();
+  let ingested = 0;
+  const preferred = accounts.filter((account) => account.channel === "FACEBOOK_POST");
+  const sources = preferred.length > 0 ? preferred : accounts.filter((account) => account.channel === "FACEBOOK_MESSENGER");
+  for (const account of sources) {
+    const pageId = account.credentials.pageId || account.externalId;
+    const token = account.credentials.pageAccessToken;
+    if (!pageId || !token || seen.has(pageId)) continue;
+    seen.add(pageId);
+    try {
+      ingested += await syncFacebookPageComments(account, pageId, token);
+    } catch (error) {
+      console.warn(
+        "support-chat: facebook comment sync failed",
+        pageId,
+        error instanceof Error ? error.message : error,
+      );
+    }
+  }
+  return ingested;
+}
+
 export async function syncInstagramPostComments() {
   const accounts = await listActiveSupportChatAccounts();
   const seen = new Set<string>();
@@ -468,12 +667,13 @@ let syncInFlight: Promise<number> | null = null;
 
 async function runMetaInboxSync() {
   try {
-    const [messenger, instagramDm, instagram] = await Promise.all([
+    const [messenger, instagramDm, facebookPosts, instagram] = await Promise.all([
       syncMetaMessengerConversations(),
       syncInstagramDirectMessages(),
+      syncFacebookPostComments(),
       syncInstagramPostComments(),
     ]);
-    return messenger + instagramDm + instagram;
+    return messenger + instagramDm + facebookPosts + instagram;
   } catch (error) {
     console.warn("support-chat: messenger sync failed", error instanceof Error ? error.message : error);
     return 0;

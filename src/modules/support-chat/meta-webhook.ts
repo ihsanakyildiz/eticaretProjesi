@@ -110,6 +110,10 @@ function firstHttpsUrl(value: unknown) {
 }
 
 function dateFromEpoch(value: unknown) {
+  if (typeof value === "string" && value.includes("T")) {
+    const iso = new Date(value);
+    if (!Number.isNaN(iso.getTime())) return iso;
+  }
   const raw = typeof value === "number" ? value : Number(asString(value));
   if (!Number.isFinite(raw) || raw <= 0) return new Date();
   const ms = raw < 1e12 ? raw * 1000 : raw;
@@ -299,18 +303,19 @@ function collectFeedComments(
     const item = asString(value.item);
     const verb = asString(value.verb);
     if (verb === "remove") continue;
+    const comment = asRecord(value.comment);
+    const commentId = asString(value.comment_id) || asString(comment?.id) || asString(value.id);
     if (channel === "FACEBOOK_POST") {
       if (field !== "feed" && field !== "comments") continue;
-      if (item && item !== "comment" && item !== "comment_mention") continue;
+      if (!commentId) continue;
+      if (item && item !== "comment" && item !== "comment_mention" && !asString(value.comment_id)) continue;
     } else if (field !== "comments" && field !== "live_comments" && field !== "mentions" && field !== "feed") {
       continue;
     }
-    const from = asRecord(value.from);
+    const from = asRecord(value.from) ?? asRecord(comment?.from);
     const fromId = asString(from?.id);
-    const body = asString(value.message) || asString(value.text);
-    const commentId = asString(value.comment_id) || asString(value.id);
+    const body = asString(value.message) || asString(value.text) || asString(comment?.message);
     if (!commentId) continue;
-    if (!body && channel === "FACEBOOK_POST") continue;
     const post = asRecord(value.post);
     const media = asRecord(value.media);
     const postId =

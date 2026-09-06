@@ -772,9 +772,13 @@ async function clearSupportChatHistoryWatermarks(accountIds: string[]) {
   }
 }
 
-export async function readSupportChatHistoryWatermark(accountId: string) {
+function supportChatHistoryWatermarkKey(accountId: string, lane?: string) {
+  return lane ? `history_watermark:${accountId}:${lane}` : `history_watermark:${accountId}`;
+}
+
+export async function readSupportChatHistoryWatermark(accountId: string, lane?: string) {
   try {
-    const key = `history_watermark:${accountId}`;
+    const key = supportChatHistoryWatermarkKey(accountId, lane);
     const rows = await prisma.$queryRaw<Array<{ settingValue: string }>>`
       SELECT settingValue FROM support_chat_settings
       WHERE settingKey = ${key}
@@ -789,8 +793,8 @@ export async function readSupportChatHistoryWatermark(accountId: string) {
   }
 }
 
-export async function writeSupportChatHistoryWatermark(accountId: string, at: Date) {
-  const key = `history_watermark:${accountId}`;
+export async function writeSupportChatHistoryWatermark(accountId: string, at: Date, lane?: string) {
+  const key = supportChatHistoryWatermarkKey(accountId, lane);
   const value = at.toISOString();
   try {
     await prisma.$executeRaw`
