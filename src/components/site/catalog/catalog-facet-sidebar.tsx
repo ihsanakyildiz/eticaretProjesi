@@ -1,7 +1,7 @@
 "use client";
 
 import { ChevronDown } from "lucide-react";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { CatalogActiveFilterChips } from "@/components/site/catalog/catalog-active-filters";
 import {
   CatalogFilterSearchList,
@@ -259,6 +259,8 @@ function FilterAccordion({
   pinned?: boolean;
   defaultOpen?: boolean;
 }) {
+  const [open, setOpen] = useState(defaultOpen);
+
   if (pinned) {
     return (
       <section className="border-b border-site-border">
@@ -271,7 +273,11 @@ function FilterAccordion({
   }
 
   return (
-    <details defaultOpen={defaultOpen} className="group border-b border-site-border">
+    <details
+      open={open}
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+      className="group border-b border-site-border"
+    >
       <summary className="flex cursor-pointer list-none items-center justify-between py-2.5 text-[13px] font-medium text-site-fg select-none [&::-webkit-details-marker]:hidden">
         <span>{title}</span>
         <ChevronDown className="h-3.5 w-3.5 text-site-muted transition group-open:rotate-180" />

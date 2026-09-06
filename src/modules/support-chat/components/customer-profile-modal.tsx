@@ -77,7 +77,7 @@ export function SupportChatCustomerProfileModal({
     void getSupportChatCustomerProfileAction(conversationId).then((result) => {
       if (!active) return;
       if ("error" in result) {
-        setError(result.error);
+        setError(result.error ?? "Müşteri profili okunamadı.");
         setProfile(null);
         setLoading(false);
         return;

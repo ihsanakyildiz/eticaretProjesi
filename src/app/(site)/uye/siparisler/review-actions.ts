@@ -118,12 +118,14 @@ export async function submitProductReviewAction(
       order: { select: { reference: true } },
     },
   });
-  if (!purchased?.productId) {
+  const productId = purchased?.productId;
+  const userId = access.session.user.id;
+  if (!purchased || !productId || !userId) {
     return { error: "Yalnızca teslim edilen siparişlerdeki ürünler değerlendirilebilir." };
   }
 
   const existing = await prisma.productReview.findUnique({
-    where: { userId_productId: { userId: access.session.user.id, productId: purchased.productId } },
+    where: { userId_productId: { userId, productId } },
     include: { images: { orderBy: { sortOrder: "asc" } } },
   });
   if (existing?.status === "APPROVED") {
@@ -167,12 +169,12 @@ export async function submitProductReviewAction(
   try {
     await prisma.$transaction(async (tx) => {
       const review = await tx.productReview.upsert({
-        where: { userId_productId: { userId: access.session.user.id, productId: purchased.productId } },
+        where: { userId_productId: { userId, productId } },
         create: {
-          productId: purchased.productId,
+          productId,
           orderId: purchased.orderId,
           orderItemId: purchased.id,
-          userId: access.session.user.id,
+          userId,
           rating,
           comment,
           displayName,

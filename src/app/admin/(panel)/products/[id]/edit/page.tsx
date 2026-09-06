@@ -45,7 +45,7 @@ export default async function EditProductPage({ params }: EditProductPageProps) 
             <p className="mt-2 text-sm text-slate-500">{initial.title}</p>
           </div>
           <AdminPublicLink
-            href={publicProductHref(initial.slug, urlStructure, initial.urlId)}
+            href={publicProductHref(initial.slug ?? "", urlStructure, initial.urlId)}
             label="Sitede gör"
             variant="button"
           />

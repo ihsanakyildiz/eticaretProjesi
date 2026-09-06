@@ -219,8 +219,10 @@ async function loadYurticiTimeline(input: {
       const refreshed = await yurticiQueryTracking(yurtici.credentials, input.cargoKey).catch(
         () => tracking,
       );
-      trackingCache.set(cacheKey, { at: Date.now(), value: refreshed });
-      tracking = refreshed;
+      if (refreshed) {
+        trackingCache.set(cacheKey, { at: Date.now(), value: refreshed });
+        tracking = refreshed;
+      }
     }
   }
 
@@ -270,8 +272,10 @@ async function loadArasTimeline(input: {
     const ensured = await ensureArasShipmentForOrder(input.orderId);
     if (ensured.ok) {
       const refreshed = await arasQueryTracking(aras.credentials, input.cargoKey).catch(() => tracking);
-      trackingCache.set(cacheKey, { at: Date.now(), value: refreshed });
-      tracking = refreshed;
+      if (refreshed) {
+        trackingCache.set(cacheKey, { at: Date.now(), value: refreshed });
+        tracking = refreshed;
+      }
     }
   }
 

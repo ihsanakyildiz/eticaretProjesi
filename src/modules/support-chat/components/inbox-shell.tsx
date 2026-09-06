@@ -900,7 +900,7 @@ export function SupportChatInboxShell({
     try {
       const result = await permanentlyDeleteSupportChatConversationAction(selected.id);
       if ("error" in result) {
-        setSendError(result.error);
+        setSendError(result.error ?? "Konuşma silinemedi.");
         return;
       }
       removeConversationsFromList([selected.id]);
@@ -924,7 +924,7 @@ export function SupportChatInboxShell({
     try {
       const result = await emptySupportChatTrashAction();
       if ("error" in result) {
-        setSendError(result.error);
+        setSendError(result.error ?? "Çöp kutusu boşaltılamadı.");
         return;
       }
       const trashIds = rows.filter((row) => row.folder === "TRASH").map((row) => row.id);
@@ -1008,8 +1008,8 @@ export function SupportChatInboxShell({
     setSendError(null);
     const result = await setSupportChatConversationDepartmentAction(selected.id, nextId);
     setDepartmentBusy(false);
-    if ("error" in result && result.error) {
-      setSendError(result.error);
+    if ("error" in result) {
+      setSendError(result.error ?? "Departman güncellenemedi.");
       return;
     }
     setRows((current) =>

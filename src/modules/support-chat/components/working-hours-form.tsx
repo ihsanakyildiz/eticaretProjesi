@@ -34,7 +34,7 @@ export function SupportChatWorkingHoursForm({ hours }: { hours: SupportChatWorki
         setMessage(null);
         startTransition(async () => {
           const result = await saveSupportChatWorkingHoursAction(form);
-          if (result.error) {
+          if ("error" in result) {
             setError(result.error);
             return;
           }

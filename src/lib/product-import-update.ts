@@ -511,7 +511,7 @@ export function previewUpdateRows(
         title: row.title || product?.id || `Satır ${row.rowNumber}`,
         category: row.category,
         sku: productSku || variantSku,
-        barcode,
+        barcode: barcode ?? "",
         price: row.price,
         discount: row.discount,
         stock: row.stock,
