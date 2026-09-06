@@ -380,7 +380,8 @@ export function SupportChatInboxShell({
   const [sendError, setSendError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [messages, setMessages] = useState<SupportChatMessageRow[]>([]);
-  const [threadLoading, setThreadLoading] = useState(false);
+  const [threadForId, setThreadForId] = useState<string | null>(null);
+  const threadLoadSeq = useRef(0);
   const [quoting, setQuoting] = useState<SupportChatQuote | null>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [pendingPreview, setPendingPreview] = useState<string | null>(null);
@@ -692,36 +693,68 @@ export function SupportChatInboxShell({
     folderSyncId.current = selectedId;
   }, [selectedId, rows]);
 
+  const threadLoading = Boolean(selectedId && threadForId !== selectedId);
+
   useEffect(() => {
     if (!selectedId) {
       setMessages([]);
-      setThreadLoading(false);
+      setThreadForId(null);
       return;
     }
-    setMessages([]);
     setQuoting(null);
-    setThreadLoading(true);
+    const conversationId = selectedId;
+    const seq = ++threadLoadSeq.current;
     let cancelled = false;
-    void listSupportChatMessagesAction(selectedId).then((next) => {
-      if (cancelled) return;
-      setMessages(next);
-      setThreadLoading(false);
-    });
+
+    async function loadThread() {
+      try {
+        const next = await listSupportChatMessagesAction(conversationId);
+        if (cancelled || threadLoadSeq.current !== seq) return;
+        setMessages(next);
+        setThreadForId(conversationId);
+      } catch {
+        if (cancelled || threadLoadSeq.current !== seq) return;
+        try {
+          const retry = await listSupportChatMessagesAction(conversationId);
+          if (cancelled || threadLoadSeq.current !== seq) return;
+          setMessages(retry);
+          setThreadForId(conversationId);
+        } catch {
+          if (cancelled || threadLoadSeq.current !== seq) return;
+          setMessages([]);
+          setThreadForId(conversationId);
+        }
+      }
+    }
+
+    void loadThread();
+    const retryTimer = window.setTimeout(() => {
+      if (cancelled || threadLoadSeq.current !== seq) return;
+      void listSupportChatMessagesAction(conversationId).then((next) => {
+        if (cancelled || threadLoadSeq.current !== seq) return;
+        setMessages(next);
+        setThreadForId(conversationId);
+      });
+    }, 400);
     return () => {
       cancelled = true;
+      window.clearTimeout(retryTimer);
     };
   }, [selectedId]);
 
   useEffect(() => {
     if (!live || !selectedId) return;
+    const conversationId = selectedId;
     let cancelled = false;
     let inflight = false;
     const timer = window.setInterval(() => {
       if (inflight) return;
       inflight = true;
-      void listSupportChatMessagesAction(selectedId)
+      void listSupportChatMessagesAction(conversationId)
         .then((next) => {
-          if (!cancelled) setMessages(next);
+          if (cancelled) return;
+          setMessages(next);
+          setThreadForId(conversationId);
         })
         .finally(() => {
           inflight = false;
@@ -799,7 +832,9 @@ export function SupportChatInboxShell({
     if (focus === "customer") setFocusedAgentId(null);
     setPickedId(id);
     openConversation(id);
-    router.replace(supportChatInboxHref({ conversationId: id, tab }), { scroll: false });
+    window.setTimeout(() => {
+      router.replace(supportChatInboxHref({ conversationId: id, tab }), { scroll: false });
+    }, 0);
   }
 
   function selectAgent(group: AgentGroup) {
