@@ -7,7 +7,8 @@ import { linkSupportChatCustomer } from "@/modules/support-chat/customer-profile
 import {
   canSupportChatAppendMessage,
   canSupportChatCreateConversation,
-  canSupportChatReopenBlockedThread,
+  isSupportChatBeforeThreadCutoff,
+  supportChatCutoffMs,
   type SupportChatIngestOrigin,
 } from "@/modules/support-chat/sync-policy";
 import { normalizeWhatsAppTo } from "@/modules/support-chat/whatsapp-template";
@@ -588,10 +589,30 @@ async function ensureSupportChatThreadBlocks() {
           channel VARCHAR(32) NOT NULL,
           externalThreadId VARCHAR(191) NOT NULL,
           blockedAt DATETIME(3) NOT NULL,
+          cutoffMs BIGINT NULL,
           PRIMARY KEY (id),
           UNIQUE KEY support_chat_thread_blocks_account_thread_key (accountId, externalThreadId),
           INDEX support_chat_thread_blocks_blockedAt_idx (blockedAt)
         )
+      `);
+      await prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS support_chat_ignored_messages (
+          externalId VARCHAR(191) NOT NULL,
+          ignoredAt DATETIME(3) NOT NULL,
+          PRIMARY KEY (externalId)
+        )
+      `);
+      try {
+        await prisma.$executeRawUnsafe(
+          `ALTER TABLE support_chat_thread_blocks ADD COLUMN cutoffMs BIGINT NULL`,
+        );
+      } catch {
+        /* column already exists */
+      }
+      await prisma.$executeRawUnsafe(`
+        UPDATE support_chat_thread_blocks
+        SET cutoffMs = UNIX_TIMESTAMP(blockedAt) * 1000
+        WHERE cutoffMs IS NULL
       `);
     })().catch((error) => {
       threadBlocksReady = null;
@@ -622,19 +643,21 @@ export async function listExistingSupportChatThreadIds(accountId: string, thread
 
 export async function listBlockedSupportChatThreads(accountId: string, threadIds: string[]) {
   const unique = [...new Set(threadIds.map((id) => id.trim()).filter(Boolean))];
-  const blocked = new Map<string, Date>();
+  const blocked = new Map<string, number>();
   if (unique.length === 0) return blocked;
   try {
     await ensureSupportChatThreadBlocks();
     for (let index = 0; index < unique.length; index += 80) {
       const chunk = unique.slice(index, index + 80);
-      const rows = await prisma.$queryRaw<Array<{ externalThreadId: string; blockedAt: Date }>>`
-        SELECT externalThreadId, blockedAt FROM support_chat_thread_blocks
+      const rows = await prisma.$queryRaw<
+        Array<{ externalThreadId: string; blockedAt: Date; cutoffMs: bigint | number | null }>
+      >`
+        SELECT externalThreadId, blockedAt, cutoffMs FROM support_chat_thread_blocks
         WHERE accountId = ${accountId} AND externalThreadId IN (${Prisma.join(chunk)})
       `;
       for (const row of rows) {
-        const at = row.blockedAt instanceof Date ? row.blockedAt : new Date(row.blockedAt);
-        if (!Number.isNaN(at.getTime())) blocked.set(row.externalThreadId, at);
+        const cutoff = supportChatCutoffMs(row.cutoffMs) ?? supportChatCutoffMs(row.blockedAt);
+        if (cutoff != null) blocked.set(row.externalThreadId, cutoff);
       }
     }
   } catch (error) {
@@ -646,37 +669,73 @@ export async function listBlockedSupportChatThreads(accountId: string, threadIds
   return blocked;
 }
 
-async function getSupportChatThreadBlockAt(accountId: string, threadId: string) {
+async function getSupportChatThreadCutoffMs(accountId: string, threadId: string) {
   try {
     await ensureSupportChatThreadBlocks();
-    const rows = await prisma.$queryRaw<Array<{ blockedAt: Date }>>`
-      SELECT blockedAt FROM support_chat_thread_blocks
+    const rows = await prisma.$queryRaw<
+      Array<{ blockedAt: Date; cutoffMs: bigint | number | null }>
+    >`
+      SELECT blockedAt, cutoffMs FROM support_chat_thread_blocks
       WHERE accountId = ${accountId} AND externalThreadId = ${threadId}
       LIMIT 1
     `;
-    const at = rows[0]?.blockedAt;
-    if (!at) return null;
-    const date = at instanceof Date ? at : new Date(at);
-    return Number.isNaN(date.getTime()) ? null : date;
+    const row = rows[0];
+    if (!row) return null;
+    return supportChatCutoffMs(row.cutoffMs) ?? supportChatCutoffMs(row.blockedAt);
   } catch {
     return null;
   }
 }
 
-async function clearSupportChatThreadBlock(accountId: string, threadId: string) {
+async function isSupportChatIgnoredExternalId(externalId: string) {
   try {
     await ensureSupportChatThreadBlocks();
-    await prisma.$executeRaw`
-      DELETE FROM support_chat_thread_blocks
-      WHERE accountId = ${accountId} AND externalThreadId = ${threadId}
+    const rows = await prisma.$queryRaw<Array<{ externalId: string }>>`
+      SELECT externalId FROM support_chat_ignored_messages
+      WHERE externalId = ${externalId}
+      LIMIT 1
     `;
+    return Boolean(rows[0]);
   } catch {
-    /* ingest can continue */
+    return false;
+  }
+}
+
+export async function listIgnoredSupportChatExternalIds(ids: string[]) {
+  const unique = [...new Set(ids.map((id) => id.trim()).filter(Boolean))];
+  const ignored = new Set<string>();
+  if (unique.length === 0) return ignored;
+  try {
+    await ensureSupportChatThreadBlocks();
+    for (let index = 0; index < unique.length; index += 80) {
+      const chunk = unique.slice(index, index + 80);
+      const rows = await prisma.$queryRaw<Array<{ externalId: string }>>`
+        SELECT externalId FROM support_chat_ignored_messages
+        WHERE externalId IN (${Prisma.join(chunk)})
+      `;
+      for (const row of rows) ignored.add(row.externalId);
+    }
+  } catch {
+    return ignored;
+  }
+  return ignored;
+}
+
+async function ignoreSupportChatExternalIds(ids: string[]) {
+  const unique = [...new Set(ids.map((id) => id.trim().slice(0, 191)).filter(Boolean))];
+  if (unique.length === 0) return;
+  await ensureSupportChatThreadBlocks();
+  for (const externalId of unique) {
+    await prisma.$executeRaw`
+      INSERT INTO support_chat_ignored_messages (externalId, ignoredAt)
+      VALUES (${externalId}, NOW(3))
+      ON DUPLICATE KEY UPDATE ignoredAt = ignoredAt
+    `;
   }
 }
 
 async function blockSupportChatThreads(
-  rows: Array<{ accountId: string; channel: string; externalThreadId: string }>,
+  rows: Array<{ accountId: string; channel: string; externalThreadId: string; cutoffMs: number }>,
 ) {
   if (rows.length === 0) return;
   await ensureSupportChatThreadBlocks();
@@ -684,15 +743,32 @@ async function blockSupportChatThreads(
     const threadId = row.externalThreadId.trim().slice(0, 191);
     if (!threadId) continue;
     const id = crypto.randomUUID();
+    const cutoff = Math.max(0, Math.floor(row.cutoffMs));
+    const blockedAt = new Date(cutoff);
     await prisma.$executeRaw`
       INSERT INTO support_chat_thread_blocks
-        (id, accountId, channel, externalThreadId, blockedAt)
+        (id, accountId, channel, externalThreadId, blockedAt, cutoffMs)
       VALUES
-        (${id}, ${row.accountId}, ${row.channel}, ${threadId}, NOW(3))
+        (${id}, ${row.accountId}, ${row.channel}, ${threadId}, ${blockedAt}, ${cutoff})
       ON DUPLICATE KEY UPDATE
         channel = VALUES(channel),
-        blockedAt = NOW(3)
+        blockedAt = VALUES(blockedAt),
+        cutoffMs = VALUES(cutoffMs)
     `;
+  }
+}
+
+async function clearSupportChatHistoryWatermarks(accountIds: string[]) {
+  const unique = [...new Set(accountIds.filter(Boolean))];
+  for (const accountId of unique) {
+    const key = `history_watermark:${accountId}`;
+    try {
+      await prisma.$executeRaw`
+        DELETE FROM support_chat_settings WHERE settingKey = ${key}
+      `;
+    } catch {
+      /* next sync can still run */
+    }
   }
 }
 
@@ -900,20 +976,21 @@ export async function ingestSupportChatMessage(input: {
       LIMIT 1
     `;
     let conversationId = existing[0]?.id;
+    if (origin !== "local") {
+      if (externalId && (await isSupportChatIgnoredExternalId(externalId))) {
+        return { skipped: true as const, reason: "blocked" as const };
+      }
+      const cutoffMs = await getSupportChatThreadCutoffMs(input.accountId, threadId);
+      if (isSupportChatBeforeThreadCutoff(input.sentAt, cutoffMs)) {
+        return { skipped: true as const, reason: "blocked" as const };
+      }
+    }
     if (conversationId) {
       if (!canSupportChatAppendMessage(origin, input.sentAt)) {
         return { skipped: true as const, reason: "too_old" as const };
       }
-    } else {
-      const blockedAt = await getSupportChatThreadBlockAt(input.accountId, threadId);
-      if (blockedAt) {
-        if (!canSupportChatReopenBlockedThread(origin, input.sentAt, blockedAt)) {
-          return { skipped: true as const, reason: "blocked" as const };
-        }
-        await clearSupportChatThreadBlock(input.accountId, threadId);
-      } else if (!canSupportChatCreateConversation(origin, input.sentAt)) {
-        return { skipped: true as const, reason: "too_old" as const };
-      }
+    } else if (!canSupportChatCreateConversation(origin, input.sentAt)) {
+      return { skipped: true as const, reason: "too_old" as const };
     }
     const unread =
       input.direction === "IN" ? Number(existing[0]?.unreadCount ?? 0) + 1 : Number(existing[0]?.unreadCount ?? 0);
@@ -1315,11 +1392,12 @@ export async function permanentlyDeleteSupportChatConversations(ids: string[]) {
         accountId: string;
         channel: string;
         externalThreadId: string;
+        lastMessageAt: Date | null;
         customerAvatar: string | null;
         sourceImage: string | null;
       }>
     >`
-      SELECT id, accountId, channel, externalThreadId, customerAvatar, sourceImage
+      SELECT id, accountId, channel, externalThreadId, lastMessageAt, customerAvatar, sourceImage
       FROM support_chat_conversations
       WHERE folder = 'TRASH' AND id IN (${Prisma.join(unique)})
     `;
@@ -1327,18 +1405,43 @@ export async function permanentlyDeleteSupportChatConversations(ids: string[]) {
       return { error: "Yalnızca çöp kutusundaki konuşmalar kalıcı silinebilir." };
     }
     const trashIds = conversations.map((row) => row.id);
+    const storedMessages = await prisma.$queryRaw<
+      Array<{ conversationId: string; externalId: string | null; sentAt: Date; mediaJson: string | null }>
+    >`
+      SELECT conversationId, externalId, sentAt, mediaJson FROM support_chat_messages
+      WHERE conversationId IN (${Prisma.join(trashIds)})
+    `;
     try {
-      await blockSupportChatThreads(conversations);
+      const latestByConversation = new Map<string, number>();
+      for (const message of storedMessages) {
+        const sentAt = supportChatCutoffMs(message.sentAt);
+        if (sentAt == null) continue;
+        const previous = latestByConversation.get(message.conversationId) ?? 0;
+        if (sentAt > previous) latestByConversation.set(message.conversationId, sentAt);
+      }
+      await blockSupportChatThreads(
+        conversations.map((row) => ({
+          accountId: row.accountId,
+          channel: row.channel,
+          externalThreadId: row.externalThreadId,
+          cutoffMs:
+            Math.max(
+              latestByConversation.get(row.id) ?? 0,
+              supportChatCutoffMs(row.lastMessageAt) ?? 0,
+            ) || Date.now(),
+        })),
+      );
+      await ignoreSupportChatExternalIds(
+        storedMessages.flatMap((row) => (row.externalId ? [row.externalId] : [])),
+      );
+      await clearSupportChatHistoryWatermarks(conversations.map((row) => row.accountId));
     } catch (error) {
       console.warn(
         "support-chat: deleted thread blocks could not be saved",
         error instanceof Error ? error.message : error,
       );
     }
-    const messages = await prisma.$queryRaw<Array<{ mediaJson: string | null }>>`
-      SELECT mediaJson FROM support_chat_messages
-      WHERE conversationId IN (${Prisma.join(trashIds)})
-    `;
+    const messages = storedMessages.map((row) => ({ mediaJson: row.mediaJson }));
     const mediaSrcs = [
       ...collectLocalUploadSrcs(conversations.flatMap((row) => [row.customerAvatar, row.sourceImage])),
       ...messages.flatMap((row) => parseSupportChatMediaItems(row.mediaJson).map((item) => item.src)),

@@ -7,6 +7,7 @@ import {
   listActiveSupportChatAccounts,
   listBlockedSupportChatThreads,
   listExistingSupportChatThreadIds,
+  listIgnoredSupportChatExternalIds,
   listKnownSupportChatExternalIds,
   listSupportChatConversationsMissingAvatar,
   listSupportChatConversationsMissingSource,
@@ -16,8 +17,8 @@ import {
 } from "@/modules/support-chat/db";
 import { isSupportChatChannel, type SupportChatChannel } from "@/modules/support-chat/kinds";
 import {
-  canSupportChatHistoryOpenThread,
   isSupportChatBeforeHistoryWatermark,
+  isSupportChatBeforeThreadCutoff,
   isSupportChatHistoryTooOld,
   parseSupportChatExternalTime,
 } from "@/modules/support-chat/sync-policy";
@@ -45,10 +46,8 @@ type GraphConversation = {
   messages?: { data?: GraphMessage[] };
 };
 
-function historySentAt(value?: string) {
-  const sentAt = parseSupportChatExternalTime(value);
-  if (!sentAt || isSupportChatHistoryTooOld(sentAt)) return null;
-  return sentAt;
+function graphSentAt(value?: string) {
+  return parseSupportChatExternalTime(value);
 }
 
 function accountOwnerIds(account: { externalId: string; credentials: Record<string, string> }) {
@@ -90,12 +89,14 @@ async function syncGraphConversations(
     const customer = (conversation.participants?.data ?? []).find((person) => person.id && !ownerIds.has(person.id));
     return customer?.id?.trim() ? [customer.id.trim()] : [];
   });
-  const [known, existing, blocked, watermark] = await Promise.all([
-    listKnownSupportChatExternalIds(
-      pending.flatMap((conversation) => (conversation.messages?.data ?? []).map((message) => message.id ?? "")),
-    ),
+  const messageIds = pending.flatMap((conversation) =>
+    (conversation.messages?.data ?? []).map((message) => message.id ?? ""),
+  );
+  const [known, existing, blocked, ignored, watermark] = await Promise.all([
+    listKnownSupportChatExternalIds(messageIds),
     listExistingSupportChatThreadIds(account.id, threadIds),
     listBlockedSupportChatThreads(account.id, threadIds),
+    listIgnoredSupportChatExternalIds(messageIds),
     readSupportChatHistoryWatermark(account.id),
   ]);
   let ingested = 0;
@@ -105,19 +106,16 @@ async function syncGraphConversations(
     const customer = participants.find((person) => person.id && !ownerIds.has(person.id));
     const customerId = customer?.id?.trim() ?? "";
     if (!customerId) continue;
-    const newestMessageAt = historySentAt(conversation.messages?.data?.[0]?.created_time);
-    const updatedAt = historySentAt(conversation.updated_time);
-    const latestAt = newestMessageAt ?? updatedAt;
+    const cutoff = blocked.get(customerId) ?? null;
     const exists = existing.has(customerId);
-    if (!exists && !canSupportChatHistoryOpenThread(latestAt, blocked.get(customerId) ?? null)) continue;
-    if (exists && !latestAt) continue;
     const messages = [...(conversation.messages?.data ?? [])].reverse();
     for (const message of messages) {
       const externalId = message.id?.trim() ?? "";
-      if (!externalId || known.has(externalId)) continue;
-      const sentAt = historySentAt(message.created_time);
-      if (!sentAt) continue;
-      if (exists && isSupportChatBeforeHistoryWatermark(sentAt, watermark)) continue;
+      if (!externalId || known.has(externalId) || ignored.has(externalId)) continue;
+      const sentAt = graphSentAt(message.created_time);
+      if (!sentAt || isSupportChatBeforeThreadCutoff(sentAt, cutoff)) continue;
+      if (!cutoff && isSupportChatHistoryTooOld(sentAt)) continue;
+      if (!cutoff && exists && isSupportChatBeforeHistoryWatermark(sentAt, watermark)) continue;
       if (!newestSeen || sentAt.getTime() > newestSeen.getTime()) newestSeen = sentAt;
       const fromId = message.from?.id ?? "";
       const direction = fromId && ownerIds.has(fromId) ? ("OUT" as const) : ("IN" as const);
@@ -240,7 +238,7 @@ async function ingestInstagramComment(input: {
 }) {
   const commentId = input.comment.id?.trim() ?? "";
   if (!commentId) return 0;
-  const sentAt = historySentAt(input.comment.timestamp);
+  const sentAt = graphSentAt(input.comment.timestamp);
   if (!sentAt) return 0;
   const fromId = input.comment.from?.id ?? "";
   const username = instagramCommentAuthor(input.comment);
@@ -298,15 +296,33 @@ async function syncInstagramAccountComments(
   const threadIds = (payload.data ?? []).flatMap((media) =>
     (media.comments?.data ?? []).flatMap((comment) => (comment.id?.trim() ? [comment.id.trim()] : [])),
   );
-  const [known, existing, blocked, watermark] = await Promise.all([
+  const [known, existing, blocked, ignored, watermark] = await Promise.all([
     listKnownSupportChatExternalIds(commentIds),
     listExistingSupportChatThreadIds(account.id, threadIds),
     listBlockedSupportChatThreads(account.id, threadIds),
+    listIgnoredSupportChatExternalIds(commentIds),
     readSupportChatHistoryWatermark(account.id),
   ]);
   const sourceCache = new Map<string, { url: string | null; title: string | null; image: string | null }>();
   let ingested = 0;
   let newestSeen: Date | null = watermark;
+  function shouldTakeComment(
+    id: string | undefined,
+    timestamp: string | undefined,
+    threadId: string,
+  ) {
+    const externalId = id?.trim() ?? "";
+    if (!externalId || known.has(externalId) || ignored.has(externalId)) return null;
+    const sentAt = graphSentAt(timestamp);
+    if (!sentAt) return null;
+    const cutoff = blocked.get(threadId) ?? null;
+    if (isSupportChatBeforeThreadCutoff(sentAt, cutoff)) return null;
+    if (!cutoff && isSupportChatHistoryTooOld(sentAt)) return null;
+    if (!cutoff && existing.has(threadId) && isSupportChatBeforeHistoryWatermark(sentAt, watermark)) {
+      return null;
+    }
+    return sentAt;
+  }
   for (const media of payload.data ?? []) {
     const mediaId = media.id?.trim() ?? "";
     const comments = media.comments?.data ?? [];
@@ -314,31 +330,10 @@ async function syncInstagramAccountComments(
     const fresh = comments.some((comment) => {
       const threadId = comment.id?.trim() ?? "";
       if (!threadId) return false;
-      const commentAt = historySentAt(comment.timestamp);
-      const exists = existing.has(threadId);
-      if (!exists && !canSupportChatHistoryOpenThread(commentAt, blocked.get(threadId) ?? null)) {
-        return (comment.replies?.data ?? []).some((reply) => {
-          const replyAt = historySentAt(reply.timestamp);
-          return Boolean(reply.id && !known.has(reply.id) && replyAt);
-        });
-      }
-      if (
-        comment.id &&
-        !known.has(comment.id) &&
-        commentAt &&
-        !(exists && isSupportChatBeforeHistoryWatermark(commentAt, watermark))
-      ) {
-        return true;
-      }
-      return (comment.replies?.data ?? []).some((reply) => {
-        const replyAt = historySentAt(reply.timestamp);
-        return Boolean(
-          reply.id &&
-            !known.has(reply.id) &&
-            replyAt &&
-            !(exists && isSupportChatBeforeHistoryWatermark(replyAt, watermark)),
-        );
-      });
+      if (shouldTakeComment(comment.id, comment.timestamp, threadId)) return true;
+      return (comment.replies?.data ?? []).some((reply) =>
+        Boolean(shouldTakeComment(reply.id, reply.timestamp, threadId)),
+      );
     });
     if (!fresh) continue;
     let source = sourceCache.get(mediaId);
@@ -364,39 +359,22 @@ async function syncInstagramAccountComments(
     for (const comment of comments) {
       const threadId = comment.id?.trim() ?? "";
       if (!threadId) continue;
-      const exists = existing.has(threadId);
-      const commentAt = historySentAt(comment.timestamp);
-      const latestReplyAt = (comment.replies?.data ?? []).reduce<Date | null>((latest, reply) => {
-        const replyAt = historySentAt(reply.timestamp);
-        if (!replyAt) return latest;
-        if (!latest || replyAt.getTime() > latest.getTime()) return replyAt;
-        return latest;
-      }, null);
-      const latestAt =
-        commentAt && latestReplyAt
-          ? commentAt.getTime() > latestReplyAt.getTime()
-            ? commentAt
-            : latestReplyAt
-          : commentAt ?? latestReplyAt;
-      if (!exists && !canSupportChatHistoryOpenThread(latestAt, blocked.get(threadId) ?? null)) continue;
-      if (comment.id && !known.has(comment.id) && commentAt) {
-        if (!(exists && isSupportChatBeforeHistoryWatermark(commentAt, watermark))) {
-          if (!newestSeen || commentAt.getTime() > newestSeen.getTime()) newestSeen = commentAt;
-          ingested += await ingestInstagramComment({
-            accountId: account.id,
-            igIds,
-            comment,
-            threadId,
-            sourceUrl,
-            sourceTitle,
-            sourceImage,
-          });
-        }
+      const commentAt = shouldTakeComment(comment.id, comment.timestamp, threadId);
+      if (commentAt) {
+        if (!newestSeen || commentAt.getTime() > newestSeen.getTime()) newestSeen = commentAt;
+        ingested += await ingestInstagramComment({
+          accountId: account.id,
+          igIds,
+          comment,
+          threadId,
+          sourceUrl,
+          sourceTitle,
+          sourceImage,
+        });
       }
       for (const reply of comment.replies?.data ?? []) {
-        if (reply.id && known.has(reply.id)) continue;
-        const replyAt = historySentAt(reply.timestamp);
-        if (!replyAt || (exists && isSupportChatBeforeHistoryWatermark(replyAt, watermark))) continue;
+        const replyAt = shouldTakeComment(reply.id, reply.timestamp, threadId);
+        if (!replyAt) continue;
         if (!newestSeen || replyAt.getTime() > newestSeen.getTime()) newestSeen = replyAt;
         ingested += await ingestInstagramComment({
           accountId: account.id,
@@ -516,7 +494,7 @@ function startSlowInboxBackfill(minIntervalMs = 180_000) {
     });
 }
 
-export function startMetaInboxSync(minIntervalMs = 60_000) {
+export function startMetaInboxSync(minIntervalMs = 15_000) {
   const now = Date.now();
   if (syncInFlight || now - lastMessengerSyncAt < minIntervalMs) return;
   lastMessengerSyncAt = now;

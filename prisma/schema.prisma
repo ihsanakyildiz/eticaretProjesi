@@ -2630,10 +2630,18 @@ model SupportChatThreadBlock {
   channel          String   @db.VarChar(32)
   externalThreadId String   @db.VarChar(191)
   blockedAt        DateTime @default(now())
+  cutoffMs         BigInt?
 
   @@unique([accountId, externalThreadId])
   @@index([blockedAt])
   @@map("support_chat_thread_blocks")
+}
+
+model SupportChatIgnoredMessage {
+  externalId String   @id @db.VarChar(191)
+  ignoredAt  DateTime @default(now())
+
+  @@map("support_chat_ignored_messages")
 }
 
 model SupportChatOAuthSession {

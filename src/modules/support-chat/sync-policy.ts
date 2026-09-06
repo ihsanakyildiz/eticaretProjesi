@@ -57,30 +57,28 @@ export function canSupportChatCreateConversation(
   }
 }
 
-export function canSupportChatReopenBlockedThread(
-  origin: SupportChatIngestOrigin,
-  sentAt: Date,
-  blockedAt: Date | null,
-  now = Date.now(),
-) {
-  if (blockedAt && sentAt.getTime() <= blockedAt.getTime()) return false;
-  switch (origin) {
-    case "local":
-      return true;
-    case "history":
-      return !isSupportChatHistoryTooOld(sentAt, now);
-    case "live":
-      return supportChatMessageAgeMs(sentAt, now) <= SUPPORT_CHAT_LIVE_CREATE_MAX_AGE_MS;
-    default: {
-      const _never: never = origin;
-      return _never;
-    }
+export function supportChatCutoffMs(value: Date | number | string | bigint | null | undefined) {
+  if (value == null) return null;
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "bigint") {
+    const ms = Number(value);
+    return Number.isFinite(ms) ? ms : null;
   }
+  if (typeof value === "string" && value.trim()) {
+    const numeric = Number(value);
+    if (Number.isFinite(numeric) && numeric > 1_000_000_000_000) return numeric;
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? null : date.getTime();
+  }
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value.getTime();
+  }
+  return null;
 }
 
-export function canSupportChatHistoryOpenThread(newestSentAt: Date | null, blockedAt: Date | null) {
-  if (!newestSentAt) return false;
-  return canSupportChatReopenBlockedThread("history", newestSentAt, blockedAt);
+export function isSupportChatBeforeThreadCutoff(sentAt: Date, cutoffMs: number | null) {
+  if (cutoffMs == null) return false;
+  return sentAt.getTime() <= cutoffMs;
 }
 
 export function isSupportChatBeforeHistoryWatermark(sentAt: Date, watermark: Date | null) {
