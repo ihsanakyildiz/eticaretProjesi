@@ -620,19 +620,22 @@ export async function listExistingSupportChatThreadIds(accountId: string, thread
   return existing;
 }
 
-export async function listBlockedSupportChatThreadIds(accountId: string, threadIds: string[]) {
+export async function listBlockedSupportChatThreads(accountId: string, threadIds: string[]) {
   const unique = [...new Set(threadIds.map((id) => id.trim()).filter(Boolean))];
-  const blocked = new Set<string>();
+  const blocked = new Map<string, Date>();
   if (unique.length === 0) return blocked;
   try {
     await ensureSupportChatThreadBlocks();
     for (let index = 0; index < unique.length; index += 80) {
       const chunk = unique.slice(index, index + 80);
-      const rows = await prisma.$queryRaw<Array<{ externalThreadId: string }>>`
-        SELECT externalThreadId FROM support_chat_thread_blocks
+      const rows = await prisma.$queryRaw<Array<{ externalThreadId: string; blockedAt: Date }>>`
+        SELECT externalThreadId, blockedAt FROM support_chat_thread_blocks
         WHERE accountId = ${accountId} AND externalThreadId IN (${Prisma.join(chunk)})
       `;
-      for (const row of rows) blocked.add(row.externalThreadId);
+      for (const row of rows) {
+        const at = row.blockedAt instanceof Date ? row.blockedAt : new Date(row.blockedAt);
+        if (!Number.isNaN(at.getTime())) blocked.set(row.externalThreadId, at);
+      }
     }
   } catch (error) {
     console.warn(
@@ -643,17 +646,20 @@ export async function listBlockedSupportChatThreadIds(accountId: string, threadI
   return blocked;
 }
 
-async function isSupportChatThreadBlocked(accountId: string, threadId: string) {
+async function getSupportChatThreadBlockAt(accountId: string, threadId: string) {
   try {
     await ensureSupportChatThreadBlocks();
-    const rows = await prisma.$queryRaw<Array<{ id: string }>>`
-      SELECT id FROM support_chat_thread_blocks
+    const rows = await prisma.$queryRaw<Array<{ blockedAt: Date }>>`
+      SELECT blockedAt FROM support_chat_thread_blocks
       WHERE accountId = ${accountId} AND externalThreadId = ${threadId}
       LIMIT 1
     `;
-    return Boolean(rows[0]);
+    const at = rows[0]?.blockedAt;
+    if (!at) return null;
+    const date = at instanceof Date ? at : new Date(at);
+    return Number.isNaN(date.getTime()) ? null : date;
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -899,9 +905,9 @@ export async function ingestSupportChatMessage(input: {
         return { skipped: true as const, reason: "too_old" as const };
       }
     } else {
-      const blocked = await isSupportChatThreadBlocked(input.accountId, threadId);
-      if (blocked) {
-        if (!canSupportChatReopenBlockedThread(origin, input.direction, input.sentAt)) {
+      const blockedAt = await getSupportChatThreadBlockAt(input.accountId, threadId);
+      if (blockedAt) {
+        if (!canSupportChatReopenBlockedThread(origin, input.sentAt, blockedAt)) {
           return { skipped: true as const, reason: "blocked" as const };
         }
         await clearSupportChatThreadBlock(input.accountId, threadId);

@@ -1,10 +1,7 @@
-import type { SupportChatDirection } from "@/modules/support-chat/kinds";
-
 export type SupportChatIngestOrigin = "live" | "history" | "local";
 
 export const SUPPORT_CHAT_HISTORY_MAX_AGE_MS = 36 * 60 * 60 * 1000;
 export const SUPPORT_CHAT_LIVE_CREATE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
-export const SUPPORT_CHAT_LIVE_REOPEN_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 export const SUPPORT_CHAT_HISTORY_WATERMARK_OVERLAP_MS = 5 * 60 * 1000;
 
 export function supportChatMessageAgeMs(sentAt: Date, now = Date.now()) {
@@ -50,7 +47,7 @@ export function canSupportChatCreateConversation(
     case "local":
       return true;
     case "history":
-      return false;
+      return !isSupportChatHistoryTooOld(sentAt, now);
     case "live":
       return supportChatMessageAgeMs(sentAt, now) <= SUPPORT_CHAT_LIVE_CREATE_MAX_AGE_MS;
     default: {
@@ -62,25 +59,28 @@ export function canSupportChatCreateConversation(
 
 export function canSupportChatReopenBlockedThread(
   origin: SupportChatIngestOrigin,
-  direction: SupportChatDirection,
   sentAt: Date,
+  blockedAt: Date | null,
   now = Date.now(),
 ) {
+  if (blockedAt && sentAt.getTime() <= blockedAt.getTime()) return false;
   switch (origin) {
     case "local":
       return true;
     case "history":
-      return false;
+      return !isSupportChatHistoryTooOld(sentAt, now);
     case "live":
-      return (
-        direction === "IN" &&
-        supportChatMessageAgeMs(sentAt, now) <= SUPPORT_CHAT_LIVE_REOPEN_MAX_AGE_MS
-      );
+      return supportChatMessageAgeMs(sentAt, now) <= SUPPORT_CHAT_LIVE_CREATE_MAX_AGE_MS;
     default: {
       const _never: never = origin;
       return _never;
     }
   }
+}
+
+export function canSupportChatHistoryOpenThread(newestSentAt: Date | null, blockedAt: Date | null) {
+  if (!newestSentAt) return false;
+  return canSupportChatReopenBlockedThread("history", newestSentAt, blockedAt);
 }
 
 export function isSupportChatBeforeHistoryWatermark(sentAt: Date, watermark: Date | null) {
