@@ -14,7 +14,7 @@ import {
   supportChatInstagramAccountContext,
   supportChatInstagramUsername,
 } from "@/modules/support-chat/meta-avatar";
-import { META_GRAPH_VERSION } from "@/modules/support-chat/meta-oauth";
+import { fetchFacebookCommentBody, META_GRAPH_VERSION } from "@/modules/support-chat/meta-oauth";
 import { resolveSocialPostSource } from "@/modules/support-chat/meta-source";
 import {
   supportChatMediaKindLabel,
@@ -322,8 +322,17 @@ function collectFeedComments(
       asString(value.post_id) ||
       asString(post?.id) ||
       asString(value.media_id) ||
-      asString(media?.id);
+      asString(media?.id) ||
+      asString(value.media);
     const parentId = asString(value.parent_id);
+    const quotedExternalId =
+      parentId &&
+      parentId !== commentId &&
+      parentId !== postId &&
+      !postId.endsWith(`_${parentId}`) &&
+      !parentId.endsWith(`_${postId}`)
+        ? parentId
+        : null;
     const sourceUrl =
       asString(value.permalink_url) ||
       asString(value.permalink) ||
@@ -345,13 +354,13 @@ function collectFeedComments(
     items.push({
       channel,
       lookupIds: [entryId, postId, asString(value.recipient_id)].filter(Boolean),
-      threadId: parentId || commentId,
+      threadId: quotedExternalId || commentId,
       customerName: asString(from?.name) || asString(from?.username) || fromId || "Yorum",
       customerHandle: asString(from?.username) || fromId || null,
       body: body || "[yorum]",
       direction: "IN",
       externalId: commentId,
-      quotedExternalId: parentId || null,
+      quotedExternalId,
       sentAt: dateFromEpoch(value.created_time ?? value.timestamp),
       pendingMedia: [],
       postId: postId || null,
@@ -683,6 +692,28 @@ export async function ingestMetaWebhookPayload(payload: unknown) {
       account.credentials.pageAccessToken,
     ].filter(Boolean);
     const media = await materializePendingMedia(item.pendingMedia, tokens);
+    const token = account.credentials.pageAccessToken || account.credentials.userAccessToken || "";
+    if (item.channel === "FACEBOOK_POST" && (!item.body.trim() || item.body === "[yorum]")) {
+      const fetched = await fetchFacebookCommentBody(item.externalId, token);
+      if (fetched) item.body = fetched;
+    }
+    if (item.channel === "INSTAGRAM_POST" && (!item.sourceUrl || !item.sourceImage)) {
+      const source = await resolveSocialPostSource({
+        channel: "INSTAGRAM_POST",
+        token,
+        pageId: account.credentials.instagramId || account.externalId,
+        postId: item.postId ?? "",
+        commentId: item.threadId || item.externalId,
+        permalink: item.sourceUrl ?? "",
+        postMessage: item.sourceTitle ?? "",
+        postImage: item.sourceImage ?? "",
+      });
+      if (source) {
+        item.sourceUrl = source.url;
+        item.sourceTitle = source.title;
+        item.sourceImage = source.image;
+      }
+    }
     const body =
       item.body.trim() || (media[0] ? supportChatMediaKindLabel(media[0].kind) : "");
     if (!body && media.length === 0) continue;
@@ -722,8 +753,11 @@ export async function ingestMetaWebhookPayload(payload: unknown) {
         accountId: account.id,
         channel: item.channel,
         threadId: item.threadId,
-        token: account.credentials.pageAccessToken,
-        pageId: account.credentials.pageId || account.externalId,
+        token: account.credentials.pageAccessToken || account.credentials.userAccessToken || "",
+        pageId:
+          item.channel === "INSTAGRAM_POST"
+            ? account.credentials.instagramId || account.externalId
+            : account.credentials.pageId || account.externalId,
         postId: item.postId ?? "",
         permalink: item.sourceUrl ?? "",
         postMessage: item.sourceTitle ?? "",

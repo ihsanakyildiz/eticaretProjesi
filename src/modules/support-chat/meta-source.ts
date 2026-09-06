@@ -122,6 +122,35 @@ function instagramFallbackUrl(shortcode: string) {
   return `https://www.instagram.com/p/${encodeURIComponent(code)}/`;
 }
 
+async function fetchInstagramMedia(token: string, mediaId: string) {
+  const id = mediaId.trim();
+  if (!id || !token) return null;
+  return graphGetMaybe<InstagramMediaFields>(`/${id}`, token, {
+    fields: "id,permalink,caption,media_url,thumbnail_url,media_type,shortcode",
+  });
+}
+
+async function fetchInstagramMediaFromComment(token: string, commentId: string) {
+  const id = commentId.trim();
+  if (!id || !token) return null;
+  const json = await graphGetMaybe<InstagramMediaFields & { media?: InstagramMediaFields | { id?: string } }>(
+    `/${id}`,
+    token,
+    {
+      fields:
+        "id,text,media{id,permalink,caption,media_url,thumbnail_url,media_type,shortcode}",
+    },
+  );
+  if (!json) return null;
+  const media = json.media;
+  if (media && ("permalink" in media || "media_url" in media || "caption" in media)) {
+    return media as InstagramMediaFields;
+  }
+  const nestedId = media && "id" in media ? String(media.id ?? "").trim() : "";
+  if (nestedId) return fetchInstagramMedia(token, nestedId);
+  return json.permalink || json.media_url ? json : null;
+}
+
 function applyInstagramMedia(
   json: InstagramMediaFields,
   current: { url: string; title: string; image: string; objectId: string },
@@ -262,19 +291,29 @@ export async function resolveSocialPostSource(input: {
           }
         }
       } else {
-        const candidates = [input.postId, input.commentId].map((value) => value.trim()).filter(Boolean);
-        for (const target of candidates) {
-          const json = await graphGetMaybe<InstagramMediaFields>(`/${target}`, input.token, {
-            fields:
-              "id,permalink,caption,media_url,thumbnail_url,media_type,shortcode,media{id,permalink,caption,media_url,thumbnail_url,media_type,shortcode}",
-          });
+        const mediaIds = [input.postId].map((value) => value.trim()).filter(Boolean);
+        const commentIds = [input.commentId].map((value) => value.trim()).filter(Boolean);
+        for (const mediaId of mediaIds) {
+          const json = await fetchInstagramMedia(input.token, mediaId);
           if (!json) continue;
           const applied = applyInstagramMedia(json, { url, title, image, objectId });
           url = applied.url;
           title = applied.title;
           image = applied.image;
           objectId = applied.objectId;
-          if (url && image) break;
+          if (url && (image || title)) break;
+        }
+        if (!url || !image) {
+          for (const commentId of commentIds) {
+            const json = await fetchInstagramMediaFromComment(input.token, commentId);
+            if (!json) continue;
+            const applied = applyInstagramMedia(json, { url, title, image, objectId });
+            url = applied.url;
+            title = applied.title;
+            image = applied.image;
+            objectId = applied.objectId;
+            if (url && (image || title)) break;
+          }
         }
       }
     } catch {

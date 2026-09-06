@@ -67,6 +67,21 @@ export async function graphGetMaybe<T>(path: string, token: string, search: Reco
   }
 }
 
+export async function fetchFacebookCommentBody(commentId: string, token: string) {
+  const id = commentId.trim();
+  if (!id || !token) return "";
+  const json = await graphGetMaybe<{
+    message?: string;
+    text?: string;
+    attachment?: { title?: string; description?: string; type?: string };
+  }>(`/${id}`, token, {
+    fields: "message,text,attachment{title,description,type}",
+  });
+  const message = (json?.message ?? json?.text ?? "").trim();
+  if (message) return message;
+  return (json?.attachment?.title || json?.attachment?.description || "").trim();
+}
+
 async function graphPost(path: string, token: string, search: Record<string, string> = {}) {
   const url = new URL(`https://graph.facebook.com/${META_GRAPH_VERSION}${path}`);
   const body = new URLSearchParams(search);

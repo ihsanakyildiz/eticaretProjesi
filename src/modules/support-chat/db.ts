@@ -577,6 +577,28 @@ export async function listKnownSupportChatExternalIds(ids: string[]) {
   return known;
 }
 
+export async function listPlaceholderSupportChatExternalIds(ids: string[]) {
+  const unique = [...new Set(ids.map((id) => id.trim()).filter(Boolean))];
+  const placeholders = new Set<string>();
+  if (unique.length === 0) return placeholders;
+  try {
+    for (let index = 0; index < unique.length; index += 80) {
+      const chunk = unique.slice(index, index + 80);
+      const rows = await prisma.$queryRaw<Array<{ externalId: string | null }>>`
+        SELECT externalId FROM support_chat_messages
+        WHERE externalId IN (${Prisma.join(chunk)})
+          AND body IN ('[yorum]', '', '(medya)')
+      `;
+      for (const row of rows) {
+        if (row.externalId) placeholders.add(row.externalId);
+      }
+    }
+  } catch {
+    return placeholders;
+  }
+  return placeholders;
+}
+
 let threadBlocksReady: Promise<void> | null = null;
 
 async function ensureSupportChatThreadBlocks() {
@@ -960,6 +982,18 @@ export async function ingestSupportChatMessage(input: {
         SELECT id, conversationId FROM support_chat_messages WHERE externalId = ${externalId} LIMIT 1
       `;
       if (dup[0]) {
+        if (body && body !== "[yorum]") {
+          await prisma.$executeRaw`
+            UPDATE support_chat_messages
+            SET body = ${body}
+            WHERE id = ${dup[0].id} AND body IN ('[yorum]', '', '(medya)')
+          `;
+          await prisma.$executeRaw`
+            UPDATE support_chat_conversations
+            SET lastMessagePreview = ${preview}, updatedAt = NOW(3)
+            WHERE id = ${dup[0].conversationId} AND lastMessagePreview IN ('[yorum]', '', '(medya)')
+          `;
+        }
         if (sourceUrl || sourceTitle || sourceImage) {
           await prisma.$executeRaw`
             UPDATE support_chat_conversations
@@ -1531,7 +1565,7 @@ export async function listSupportChatConversationsMissingSource() {
           c.sourceUrl IS NULL OR c.sourceUrl = ''
           OR c.sourceImage IS NULL OR c.sourceImage = ''
         )
-      LIMIT 8
+      LIMIT 12
     `;
   } catch {
     return [];
@@ -1596,10 +1630,10 @@ export async function fillSupportChatConversationSource(
   threadId: string,
   source: { url: string; title: string; image?: string | null },
 ) {
-  const url = source.url.trim().slice(0, 500);
-  const title = source.title.trim().slice(0, 191);
+  const url = source.url.trim().slice(0, 500) || null;
+  const title = source.title.trim().slice(0, 191) || null;
   const image = source.image?.trim().slice(0, 500) || null;
-  if (!accountId || !threadId || !url) return;
+  if (!accountId || !threadId || (!url && !title && !image)) return;
   try {
     await prisma.$executeRaw`
       UPDATE support_chat_conversations

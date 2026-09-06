@@ -3,12 +3,14 @@ import "server-only";
 import { startSupportChatCustomerBackfill } from "@/modules/support-chat/customer-profiles";
 import {
   fillSupportChatConversationAvatar,
+  fillSupportChatConversationSource,
   ingestSupportChatMessage,
   listActiveSupportChatAccounts,
   listBlockedSupportChatThreads,
   listExistingSupportChatThreadIds,
   listIgnoredSupportChatExternalIds,
   listKnownSupportChatExternalIds,
+  listPlaceholderSupportChatExternalIds,
   listSupportChatConversationsMissingAvatar,
   listSupportChatConversationsMissingSource,
   readSupportChatHistoryWatermark,
@@ -28,7 +30,7 @@ import {
   supportChatInstagramAccountContext,
   supportChatInstagramUsername,
 } from "@/modules/support-chat/meta-avatar";
-import { graphGet } from "@/modules/support-chat/meta-oauth";
+import { fetchFacebookCommentBody, graphGet } from "@/modules/support-chat/meta-oauth";
 import { materializeKnownPostSource, resolveSocialPostSource } from "@/modules/support-chat/meta-source";
 
 type GraphParticipant = { id?: string; name?: string };
@@ -188,14 +190,15 @@ export async function backfillSupportChatAvatars() {
 }
 
 export async function backfillSupportChatPostSources() {
-  const rows = (await listSupportChatConversationsMissingSource()).slice(0, 4);
+  const rows = (await listSupportChatConversationsMissingSource()).slice(0, 12);
   for (const row of rows) {
     if (!isSupportChatChannel(row.channel)) continue;
     const creds = credentialsMap(row.credentialsJson);
+    const instagramId = creds.instagramId || row.accountExternalId || "";
     const source = await resolveSocialPostSource({
       channel: row.channel,
       token: creds.pageAccessToken || creds.userAccessToken || "",
-      pageId: creds.pageId || row.accountExternalId || "",
+      pageId: row.channel === "INSTAGRAM_POST" ? instagramId : creds.pageId || row.accountExternalId || "",
       postId: "",
       commentId: row.externalThreadId,
       permalink: row.sourceUrl ?? "",
@@ -327,18 +330,9 @@ async function syncInstagramAccountComments(
     const mediaId = media.id?.trim() ?? "";
     const comments = media.comments?.data ?? [];
     if (!mediaId || comments.length === 0) continue;
-    const fresh = comments.some((comment) => {
-      const threadId = comment.id?.trim() ?? "";
-      if (!threadId) return false;
-      if (shouldTakeComment(comment.id, comment.timestamp, threadId)) return true;
-      return (comment.replies?.data ?? []).some((reply) =>
-        Boolean(shouldTakeComment(reply.id, reply.timestamp, threadId)),
-      );
-    });
-    if (!fresh) continue;
     let source = sourceCache.get(mediaId);
     if (!source) {
-      const stored = media.permalink
+      const known = media.permalink
         ? await materializeKnownPostSource({
             token,
             url: media.permalink,
@@ -346,16 +340,39 @@ async function syncInstagramAccountComments(
             image: media.media_url || media.thumbnail_url || "",
           })
         : null;
+      const resolved =
+        known ??
+        (await resolveSocialPostSource({
+          channel: "INSTAGRAM_POST",
+          token,
+          pageId: instagramId,
+          postId: mediaId,
+          commentId: comments[0]?.id?.trim() ?? "",
+          permalink: media.permalink ?? "",
+          postMessage: media.caption ?? "",
+          postImage: media.media_url || media.thumbnail_url || "",
+        }));
       source = {
-        url: stored?.url ?? media.permalink ?? null,
-        title: stored?.title ?? null,
-        image: stored?.image ?? null,
+        url: resolved?.url ?? media.permalink ?? null,
+        title: resolved?.title ?? null,
+        image: resolved?.image ?? null,
       };
       sourceCache.set(mediaId, source);
     }
     const sourceUrl = source.url;
     const sourceTitle = source.title;
     const sourceImage = source.image;
+    if (sourceUrl || sourceTitle || sourceImage) {
+      for (const comment of comments) {
+        const threadId = comment.id?.trim() ?? "";
+        if (!threadId) continue;
+        await fillSupportChatConversationSource(account.id, threadId, {
+          url: sourceUrl ?? "",
+          title: sourceTitle || "Gönderiyi aç",
+          image: sourceImage,
+        });
+      }
+    }
     for (const comment of comments) {
       const threadId = comment.id?.trim() ?? "";
       if (!threadId) continue;
@@ -395,6 +412,7 @@ async function syncInstagramAccountComments(
 type FacebookComment = {
   id?: string;
   message?: string;
+  text?: string;
   created_time?: string;
   from?: { id?: string; name?: string };
   comments?: { data?: FacebookComment[] };
@@ -412,6 +430,7 @@ type FacebookPost = {
 async function ingestFacebookComment(input: {
   accountId: string;
   pageIds: Set<string>;
+  token: string;
   comment: FacebookComment;
   threadId: string;
   sourceUrl: string | null;
@@ -424,6 +443,8 @@ async function ingestFacebookComment(input: {
   if (!sentAt) return 0;
   const fromId = input.comment.from?.id ?? "";
   const name = input.comment.from?.name?.trim() || fromId || "Yorum";
+  const localBody = (input.comment.message ?? input.comment.text ?? "").trim();
+  const body = localBody || (await fetchFacebookCommentBody(commentId, input.token)) || "[yorum]";
   const result = await ingestSupportChatMessage({
     accountId: input.accountId,
     channel: "FACEBOOK_POST",
@@ -431,7 +452,7 @@ async function ingestFacebookComment(input: {
     customerName: name,
     customerHandle: fromId || null,
     customerAvatar: null,
-    body: (input.comment.message ?? "").trim() || "[yorum]",
+    body,
     direction: fromId && input.pageIds.has(fromId) ? "OUT" : "IN",
     externalId: commentId,
     sentAt,
@@ -446,7 +467,7 @@ async function ingestFacebookComment(input: {
 
 async function listFacebookPagePosts(pageId: string, token: string) {
   const fields =
-    "id,message,permalink_url,full_picture,picture,comments.limit(20){id,message,from,created_time,comments.limit(10){id,message,from,created_time}}";
+    "id,message,permalink_url,full_picture,picture,comments.limit(20){id,message,text,from,created_time,comments.limit(10){id,message,text,from,created_time}}";
   for (const path of [`/${pageId}/published_posts`, `/${pageId}/posts`]) {
     try {
       const payload = await graphGet<{ data?: FacebookPost[] }>(
@@ -490,8 +511,9 @@ async function syncFacebookPageComments(
   const threadIds = posts.flatMap((post) =>
     (post.comments?.data ?? []).flatMap((comment) => (comment.id?.trim() ? [comment.id.trim()] : [])),
   );
-  const [known, existing, blocked, ignored, watermark] = await Promise.all([
+  const [known, placeholders, existing, blocked, ignored, watermark] = await Promise.all([
     listKnownSupportChatExternalIds(commentIds),
+    listPlaceholderSupportChatExternalIds(commentIds),
     listExistingSupportChatThreadIds(account.id, threadIds),
     listBlockedSupportChatThreads(account.id, threadIds),
     listIgnoredSupportChatExternalIds(commentIds),
@@ -505,13 +527,19 @@ async function syncFacebookPageComments(
     threadId: string,
   ) {
     const externalId = id?.trim() ?? "";
-    if (!externalId || known.has(externalId) || ignored.has(externalId)) return null;
+    if (!externalId || ignored.has(externalId)) return null;
+    if (known.has(externalId) && !placeholders.has(externalId)) return null;
     const sentAt = graphSentAt(createdTime);
     if (!sentAt) return null;
     const cutoff = blocked.get(threadId) ?? null;
     if (isSupportChatBeforeThreadCutoff(sentAt, cutoff)) return null;
-    if (!cutoff && isSupportChatHistoryTooOld(sentAt)) return null;
-    if (!cutoff && existing.has(threadId) && isSupportChatBeforeHistoryWatermark(sentAt, watermark)) {
+    if (!cutoff && !placeholders.has(externalId) && isSupportChatHistoryTooOld(sentAt)) return null;
+    if (
+      !cutoff &&
+      !placeholders.has(externalId) &&
+      existing.has(threadId) &&
+      isSupportChatBeforeHistoryWatermark(sentAt, watermark)
+    ) {
       return null;
     }
     return sentAt;
@@ -540,6 +568,7 @@ async function syncFacebookPageComments(
         ingested += await ingestFacebookComment({
           accountId: account.id,
           pageIds,
+          token,
           comment,
           threadId,
           sourceUrl,
@@ -554,6 +583,7 @@ async function syncFacebookPageComments(
         ingested += await ingestFacebookComment({
           accountId: account.id,
           pageIds,
+          token,
           comment: reply,
           threadId,
           sourceUrl,

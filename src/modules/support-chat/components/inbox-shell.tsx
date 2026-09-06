@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import {
   Archive,
   ArrowDown,
@@ -177,6 +177,91 @@ function CustomerAvatar({
       {initials(name)}
     </span>
   );
+}
+
+function hasConversationPostPreview(
+  row: Pick<SupportChatConversationRow, "sourceUrl" | "sourceTitle" | "sourceImage">,
+) {
+  return Boolean(row.sourceUrl?.trim() || row.sourceTitle?.trim() || row.sourceImage?.trim());
+}
+
+function ConversationPostPreview({
+  row,
+  variant,
+}: {
+  row: Pick<SupportChatConversationRow, "channelLabel" | "sourceUrl" | "sourceTitle" | "sourceImage">;
+  variant: "thread" | "sidebar";
+}) {
+  if (!hasConversationPostPreview(row)) return null;
+  const href = row.sourceUrl?.trim() || "";
+  const title = row.sourceTitle?.trim() || "Gönderiyi aç";
+  let inner: ReactNode;
+  let className: string;
+  switch (variant) {
+    case "thread":
+      className =
+        "mx-5 mt-3 flex items-stretch gap-3 rounded-lg border border-[#e9ebec] bg-white p-2.5 shadow-sm hover:border-[#405189]/40";
+      inner = (
+        <>
+          {row.sourceImage ? (
+            <img src={row.sourceImage} alt="" className="h-16 w-16 shrink-0 rounded-md object-cover" />
+          ) : (
+            <span className="grid h-16 w-16 shrink-0 place-items-center rounded-md bg-[#405189]/10 text-[#405189]">
+              <ExternalLink className="h-5 w-5" />
+            </span>
+          )}
+          <span className="min-w-0 flex-1 py-0.5">
+            <span className="block text-[11px] font-semibold tracking-wide text-slate-400 uppercase">
+              {row.channelLabel}
+            </span>
+            <span className="mt-0.5 line-clamp-2 text-sm font-medium text-slate-800">{title}</span>
+            {href ? (
+              <span className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-[#405189]">
+                <ExternalLink className="h-3 w-3" />
+                Gönderiyi aç
+              </span>
+            ) : null}
+          </span>
+        </>
+      );
+      break;
+    case "sidebar":
+      className =
+        "mt-2 flex items-center gap-2 rounded-md border border-[#e9ebec] p-2 hover:border-[#405189]/40";
+      inner = (
+        <>
+          {row.sourceImage ? (
+            <img src={row.sourceImage} alt="" className="h-10 w-10 shrink-0 rounded object-cover" />
+          ) : (
+            <span className="grid h-10 w-10 shrink-0 place-items-center rounded bg-[#405189]/10 text-[#405189]">
+              <ExternalLink className="h-4 w-4" />
+            </span>
+          )}
+          <span className="min-w-0">
+            <span className="block truncate text-xs font-medium text-slate-800">{title}</span>
+            {href ? (
+              <span className="mt-0.5 inline-flex items-center gap-1 text-[11px] text-[#405189]">
+                <ExternalLink className="h-3 w-3" />
+                Gönderiyi aç
+              </span>
+            ) : null}
+          </span>
+        </>
+      );
+      break;
+    default: {
+      const _exhaustive: never = variant;
+      return _exhaustive;
+    }
+  }
+  if (href) {
+    return (
+      <a href={href} target="_blank" rel="noopener noreferrer" className={className}>
+        {inner}
+      </a>
+    );
+  }
+  return <div className={className}>{inner}</div>;
 }
 
 function ConversationIdentity({
@@ -1856,38 +1941,7 @@ export function SupportChatInboxShell({
                 )}
               </div>
             </header>
-            {selected.sourceUrl ? (
-              <a
-                href={selected.sourceUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="mx-5 mt-3 flex items-stretch gap-3 rounded-lg border border-[#e9ebec] bg-white p-2.5 shadow-sm hover:border-[#405189]/40"
-              >
-                {selected.sourceImage ? (
-                  <img
-                    src={selected.sourceImage}
-                    alt=""
-                    className="h-16 w-16 shrink-0 rounded-md object-cover"
-                  />
-                ) : (
-                  <span className="grid h-16 w-16 shrink-0 place-items-center rounded-md bg-[#405189]/10 text-[#405189]">
-                    <ExternalLink className="h-5 w-5" />
-                  </span>
-                )}
-                <span className="min-w-0 flex-1 py-0.5">
-                  <span className="block text-[11px] font-semibold tracking-wide text-slate-400 uppercase">
-                    {selected.channelLabel}
-                  </span>
-                  <span className="mt-0.5 line-clamp-2 text-sm font-medium text-slate-800">
-                    {selected.sourceTitle || "Gönderiyi aç"}
-                  </span>
-                  <span className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-[#405189]">
-                    <ExternalLink className="h-3 w-3" />
-                    Gönderiyi aç
-                  </span>
-                </span>
-              </a>
-            ) : null}
+            <ConversationPostPreview row={selected} variant="thread" />
             <div
               ref={threadRef}
               onScroll={() => {
@@ -2061,27 +2115,7 @@ export function SupportChatInboxShell({
           ) : (
             <p className="mt-1 font-semibold text-slate-800">Seçilmedi</p>
           )}
-          {selected?.sourceUrl ? (
-            <a
-              href={selected.sourceUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="mt-2 flex items-center gap-2 rounded-md border border-[#e9ebec] p-2 hover:border-[#405189]/40"
-            >
-              {selected.sourceImage ? (
-                <img src={selected.sourceImage} alt="" className="h-10 w-10 shrink-0 rounded object-cover" />
-              ) : null}
-              <span className="min-w-0">
-                <span className="block truncate text-xs font-medium text-slate-800">
-                  {selected.sourceTitle || "Gönderiyi aç"}
-                </span>
-                <span className="mt-0.5 inline-flex items-center gap-1 text-[11px] text-[#405189]">
-                  <ExternalLink className="h-3 w-3" />
-                  Gönderiyi aç
-                </span>
-              </span>
-            </a>
-          ) : null}
+          {selected ? <ConversationPostPreview row={selected} variant="sidebar" /> : null}
         </div>
         <div className="relative z-30 border-b border-[#e9ebec] bg-white px-4 py-3">
           <p className="text-xs font-semibold tracking-wide text-slate-400 uppercase">Departman</p>
