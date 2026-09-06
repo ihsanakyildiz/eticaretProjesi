@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import {
   Archive,
   ArrowDown,
@@ -1114,7 +1114,7 @@ export function SupportChatInboxShell({
     goTo({ tab: "benim", conversationId: selected.id });
   }
 
-  function openConversationMenu(event: MouseEvent, row: SupportChatConversationRow) {
+  function openConversationMenu(event: ReactMouseEvent, row: SupportChatConversationRow) {
     event.preventDefault();
     event.stopPropagation();
     setListMenu({ x: event.clientX, y: event.clientY, row });
