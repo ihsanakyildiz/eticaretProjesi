@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import {
   Archive,
   ArrowDown,
@@ -22,6 +22,10 @@ import { useCan } from "@/components/admin/admin-permissions";
 import { SearchableSelect } from "@/components/admin/searchable-select";
 import { SupportChatChannelLogo } from "@/modules/support-chat/components/channel-logo";
 import { SupportChatCustomerProfileModal } from "@/modules/support-chat/components/customer-profile-modal";
+import {
+  ConversationContextMenu,
+  type ConversationContextAction,
+} from "@/modules/support-chat/components/conversation-context-menu";
 import { WhatsAppTemplateModal } from "@/modules/support-chat/components/whatsapp-template-modal";
 import { normalizeWhatsAppTo } from "@/modules/support-chat/whatsapp-template";
 import { SupportChatImageLightbox } from "@/modules/support-chat/components/support-chat-image-lightbox";
@@ -32,6 +36,7 @@ import {
   pollSupportChatInboxAction,
   listSupportChatMessagesAction,
   markSupportChatConversationReadAction,
+  markSupportChatConversationUnreadAction,
   assignSupportChatConversationAction,
   setSupportChatConversationDepartmentAction,
   bulkArchiveOwnSupportChatAction,
@@ -389,6 +394,11 @@ export function SupportChatInboxShell({
   const [lightbox, setLightbox] = useState<{ src: string; alt: string } | null>(null);
   const [profileConversationId, setProfileConversationId] = useState<string | null>(null);
   const [templateOpen, setTemplateOpen] = useState(false);
+  const [listMenu, setListMenu] = useState<{
+    x: number;
+    y: number;
+    row: SupportChatConversationRow;
+  } | null>(null);
   const [openMenu, setOpenMenu] = useState<OpenMenu>(null);
   const canPurgeTrash = useCan("support", "delete");
   const [bulkBusy, setBulkBusy] = useState(false);
@@ -1104,6 +1114,131 @@ export function SupportChatInboxShell({
     goTo({ tab: "benim", conversationId: selected.id });
   }
 
+  function openConversationMenu(event: MouseEvent, row: SupportChatConversationRow) {
+    event.preventDefault();
+    event.stopPropagation();
+    setListMenu({ x: event.clientX, y: event.clientY, row });
+  }
+
+  async function moveConversationRow(row: SupportChatConversationRow, nextFolder: SupportChatFolder) {
+    const previousFolder = row.folder;
+    const result = await setSupportChatConversationFolderAction(row.id, nextFolder);
+    if ("error" in result && result.error) {
+      setSendError(result.error);
+      return;
+    }
+    if (row.assignedUserId === currentUserId) {
+      if (previousFolder === "INBOX" && nextFolder !== "INBOX") {
+        setAssignedInboxCount((count) => Math.max(0, count - 1));
+        if (row.unreadCount > 0) {
+          setUnreadInboxCount((count) => Math.max(0, count - 1));
+        }
+      } else if (previousFolder !== "INBOX" && nextFolder === "INBOX") {
+        setAssignedInboxCount((count) => count + 1);
+      }
+    }
+    setRows((current) =>
+      current.map((item) => (item.id === row.id ? { ...item, folder: nextFolder } : item)),
+    );
+    if (selectedId === row.id) {
+      setFolder(nextFolder);
+      folderSyncId.current = row.id;
+    }
+  }
+
+  async function takeConversationRow(row: SupportChatConversationRow) {
+    if (!live || assignBusyId || row.assignedUserId === currentUserId) return;
+    const previousAssignedId = row.assignedUserId;
+    setAssignBusyId(currentUserId);
+    setSendError(null);
+    const result = await assignSupportChatConversationAction(row.id, currentUserId);
+    setAssignBusyId(null);
+    if ("error" in result && result.error) {
+      setSendError(result.error);
+      return;
+    }
+    const assignedName =
+      "assignedName" in result && result.assignedName?.trim()
+        ? result.assignedName.trim()
+        : currentUserName;
+    const wasOwnInbox = previousAssignedId === currentUserId && row.folder === "INBOX";
+    if (!wasOwnInbox) {
+      setAssignedInboxCount((count) => count + 1);
+    }
+    setRows((current) =>
+      current.map((item) =>
+        item.id === row.id
+          ? { ...item, assignedUserId: currentUserId, assignedName, folder: "INBOX" }
+          : item,
+      ),
+    );
+    if (selectedId === row.id) {
+      setFolder("INBOX");
+      folderSyncId.current = row.id;
+      setViewingAgentId(currentUserId);
+      goTo({ tab: "benim", conversationId: row.id });
+    }
+  }
+
+  async function markConversationRowRead(row: SupportChatConversationRow) {
+    if (row.unreadCount < 1) return;
+    const result = await markSupportChatConversationReadAction(row.id);
+    if ("error" in result && result.error) {
+      setSendError(result.error);
+      return;
+    }
+    if (row.assignedUserId === currentUserId && row.folder === "INBOX") {
+      setUnreadInboxCount((count) => Math.max(0, count - 1));
+    }
+    setRows((current) =>
+      current.map((item) => (item.id === row.id ? { ...item, unreadCount: 0 } : item)),
+    );
+  }
+
+  async function markConversationRowUnread(row: SupportChatConversationRow) {
+    if (row.unreadCount > 0) return;
+    const result = await markSupportChatConversationUnreadAction(row.id);
+    if ("error" in result && result.error) {
+      setSendError(result.error);
+      return;
+    }
+    if (row.assignedUserId === currentUserId && row.folder === "INBOX") {
+      setUnreadInboxCount((count) => count + 1);
+    }
+    setRows((current) =>
+      current.map((item) =>
+        item.id === row.id ? { ...item, unreadCount: Math.max(1, item.unreadCount) } : item,
+      ),
+    );
+  }
+
+  async function runConversationMenuAction(
+    action: ConversationContextAction,
+    row: SupportChatConversationRow,
+  ) {
+    switch (action) {
+      case "take":
+        await takeConversationRow(row);
+        return;
+      case "archive":
+        await moveConversationRow(row, "ARCHIVE");
+        return;
+      case "trash":
+        await moveConversationRow(row, "TRASH");
+        return;
+      case "read":
+        await markConversationRowRead(row);
+        return;
+      case "unread":
+        await markConversationRowUnread(row);
+        return;
+      default: {
+        const _never: never = action;
+        return _never;
+      }
+    }
+  }
+
   async function assignDepartment(departmentId: string) {
     if (!selected || !live || departmentBusy) return;
     const nextId = departmentId.trim();
@@ -1590,6 +1725,7 @@ export function SupportChatInboxShell({
                   <button
                     type="button"
                     onClick={() => selectConversation(row.id, "customer")}
+                    onContextMenu={(event) => openConversationMenu(event, row)}
                     className={`flex w-full items-start gap-3 border-l-2 px-4 py-3 text-left ${
                       active
                         ? "border-[#405189] bg-[#405189]/5"
@@ -2053,6 +2189,7 @@ export function SupportChatInboxShell({
                     <button
                       type="button"
                       onClick={() => selectConversation(thread.id, listFocus)}
+                      onContextMenu={(event) => openConversationMenu(event, thread)}
                       className={`flex w-full items-start gap-2 rounded-md border px-2 py-2 text-left ${
                         active
                           ? "border-[#405189]/40 bg-[#405189]/5"
@@ -2107,6 +2244,19 @@ export function SupportChatInboxShell({
           src={lightbox.src}
           alt={lightbox.alt}
           onClose={() => setLightbox(null)}
+        />
+      ) : null}
+      {listMenu ? (
+        <ConversationContextMenu
+          x={listMenu.x}
+          y={listMenu.y}
+          row={rows.find((item) => item.id === listMenu.row.id) ?? listMenu.row}
+          currentUserId={currentUserId}
+          live={live}
+          onAction={(action, row) => {
+            void runConversationMenuAction(action, row);
+          }}
+          onClose={() => setListMenu(null)}
         />
       ) : null}
       <WhatsAppTemplateModal

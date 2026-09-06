@@ -24,6 +24,7 @@ import {
   listSupportChatConversations,
   listSupportChatMessages,
   markSupportChatConversationRead,
+  markSupportChatConversationUnread,
   searchWhatsAppRecipients,
   setSupportChatAccountDepartment,
   setSupportChatAccountStatus,
@@ -368,6 +369,12 @@ export async function markSupportChatConversationReadAction(conversationId: stri
   const gate = await requirePermission("support", "update");
   if (!gate.ok) return { error: gate.error };
   return markSupportChatConversationRead(conversationId);
+}
+
+export async function markSupportChatConversationUnreadAction(conversationId: string) {
+  const gate = await requirePermission("support", "update");
+  if (!gate.ok) return { error: gate.error };
+  return markSupportChatConversationUnread(conversationId);
 }
 
 export async function setSupportChatConversationFolderAction(conversationId: string, folder: string) {

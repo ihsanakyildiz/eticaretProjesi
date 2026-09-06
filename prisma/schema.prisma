@@ -2624,6 +2624,18 @@ model SupportChatSetting {
   @@map("support_chat_settings")
 }
 
+model SupportChatThreadBlock {
+  id               String   @id @default(cuid())
+  accountId        String   @db.VarChar(191)
+  channel          String   @db.VarChar(32)
+  externalThreadId String   @db.VarChar(191)
+  blockedAt        DateTime @default(now())
+
+  @@unique([accountId, externalThreadId])
+  @@index([blockedAt])
+  @@map("support_chat_thread_blocks")
+}
+
 model SupportChatOAuthSession {
   id           String   @id @default(cuid())
   state        String   @unique @db.VarChar(191)

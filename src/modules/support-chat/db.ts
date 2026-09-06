@@ -4,6 +4,12 @@ import { Prisma } from "@prisma/client";
 import { joinFullName } from "@/lib/customers";
 import { prisma } from "@/lib/prisma";
 import { linkSupportChatCustomer } from "@/modules/support-chat/customer-profiles";
+import {
+  canSupportChatAppendMessage,
+  canSupportChatCreateConversation,
+  canSupportChatReopenBlockedThread,
+  type SupportChatIngestOrigin,
+} from "@/modules/support-chat/sync-policy";
 import { normalizeWhatsAppTo } from "@/modules/support-chat/whatsapp-template";
 import {
   isSafeSupportChatMediaSrc,
@@ -570,6 +576,154 @@ export async function listKnownSupportChatExternalIds(ids: string[]) {
   return known;
 }
 
+let threadBlocksReady: Promise<void> | null = null;
+
+async function ensureSupportChatThreadBlocks() {
+  if (!threadBlocksReady) {
+    threadBlocksReady = (async () => {
+      await prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS support_chat_thread_blocks (
+          id VARCHAR(191) NOT NULL,
+          accountId VARCHAR(191) NOT NULL,
+          channel VARCHAR(32) NOT NULL,
+          externalThreadId VARCHAR(191) NOT NULL,
+          blockedAt DATETIME(3) NOT NULL,
+          PRIMARY KEY (id),
+          UNIQUE KEY support_chat_thread_blocks_account_thread_key (accountId, externalThreadId),
+          INDEX support_chat_thread_blocks_blockedAt_idx (blockedAt)
+        )
+      `);
+    })().catch((error) => {
+      threadBlocksReady = null;
+      throw error;
+    });
+  }
+  await threadBlocksReady;
+}
+
+export async function listExistingSupportChatThreadIds(accountId: string, threadIds: string[]) {
+  const unique = [...new Set(threadIds.map((id) => id.trim()).filter(Boolean))];
+  const existing = new Set<string>();
+  if (unique.length === 0) return existing;
+  try {
+    for (let index = 0; index < unique.length; index += 80) {
+      const chunk = unique.slice(index, index + 80);
+      const rows = await prisma.$queryRaw<Array<{ externalThreadId: string }>>`
+        SELECT externalThreadId FROM support_chat_conversations
+        WHERE accountId = ${accountId} AND externalThreadId IN (${Prisma.join(chunk)})
+      `;
+      for (const row of rows) existing.add(row.externalThreadId);
+    }
+  } catch {
+    return existing;
+  }
+  return existing;
+}
+
+export async function listBlockedSupportChatThreadIds(accountId: string, threadIds: string[]) {
+  const unique = [...new Set(threadIds.map((id) => id.trim()).filter(Boolean))];
+  const blocked = new Set<string>();
+  if (unique.length === 0) return blocked;
+  try {
+    await ensureSupportChatThreadBlocks();
+    for (let index = 0; index < unique.length; index += 80) {
+      const chunk = unique.slice(index, index + 80);
+      const rows = await prisma.$queryRaw<Array<{ externalThreadId: string }>>`
+        SELECT externalThreadId FROM support_chat_thread_blocks
+        WHERE accountId = ${accountId} AND externalThreadId IN (${Prisma.join(chunk)})
+      `;
+      for (const row of rows) blocked.add(row.externalThreadId);
+    }
+  } catch (error) {
+    console.warn(
+      "support-chat: thread blocks could not be read",
+      error instanceof Error ? error.message : error,
+    );
+  }
+  return blocked;
+}
+
+async function isSupportChatThreadBlocked(accountId: string, threadId: string) {
+  try {
+    await ensureSupportChatThreadBlocks();
+    const rows = await prisma.$queryRaw<Array<{ id: string }>>`
+      SELECT id FROM support_chat_thread_blocks
+      WHERE accountId = ${accountId} AND externalThreadId = ${threadId}
+      LIMIT 1
+    `;
+    return Boolean(rows[0]);
+  } catch {
+    return false;
+  }
+}
+
+async function clearSupportChatThreadBlock(accountId: string, threadId: string) {
+  try {
+    await ensureSupportChatThreadBlocks();
+    await prisma.$executeRaw`
+      DELETE FROM support_chat_thread_blocks
+      WHERE accountId = ${accountId} AND externalThreadId = ${threadId}
+    `;
+  } catch {
+    /* ingest can continue */
+  }
+}
+
+async function blockSupportChatThreads(
+  rows: Array<{ accountId: string; channel: string; externalThreadId: string }>,
+) {
+  if (rows.length === 0) return;
+  await ensureSupportChatThreadBlocks();
+  for (const row of rows) {
+    const threadId = row.externalThreadId.trim().slice(0, 191);
+    if (!threadId) continue;
+    const id = crypto.randomUUID();
+    await prisma.$executeRaw`
+      INSERT INTO support_chat_thread_blocks
+        (id, accountId, channel, externalThreadId, blockedAt)
+      VALUES
+        (${id}, ${row.accountId}, ${row.channel}, ${threadId}, NOW(3))
+      ON DUPLICATE KEY UPDATE
+        channel = VALUES(channel),
+        blockedAt = NOW(3)
+    `;
+  }
+}
+
+export async function readSupportChatHistoryWatermark(accountId: string) {
+  try {
+    const key = `history_watermark:${accountId}`;
+    const rows = await prisma.$queryRaw<Array<{ settingValue: string }>>`
+      SELECT settingValue FROM support_chat_settings
+      WHERE settingKey = ${key}
+      LIMIT 1
+    `;
+    const raw = rows[0]?.settingValue?.trim() ?? "";
+    if (!raw) return null;
+    const date = new Date(raw);
+    return Number.isNaN(date.getTime()) ? null : date;
+  } catch {
+    return null;
+  }
+}
+
+export async function writeSupportChatHistoryWatermark(accountId: string, at: Date) {
+  const key = `history_watermark:${accountId}`;
+  const value = at.toISOString();
+  try {
+    await prisma.$executeRaw`
+      INSERT INTO support_chat_settings (settingKey, settingValue, updatedAt)
+      VALUES (${key}, ${value}, NOW(3))
+      ON DUPLICATE KEY UPDATE settingValue = ${value}, updatedAt = NOW(3)
+    `;
+  } catch (error) {
+    console.warn(
+      "support-chat: history watermark could not be saved",
+      error instanceof Error ? error.message : error,
+    );
+  }
+}
+
 export async function listActiveSupportChatAccounts(): Promise<SupportChatAccountMatch[]> {
   if (activeAccountsCache && Date.now() - activeAccountsCache.at < 8_000) {
     return activeAccountsCache.rows;
@@ -696,6 +850,7 @@ export async function ingestSupportChatMessage(input: {
   customerEmail?: string | null;
   memberUserId?: string | null;
   autoReplyId?: string | null;
+  origin?: SupportChatIngestOrigin;
 }) {
   const threadId = input.externalThreadId.trim().slice(0, 191);
   const mediaItems = input.media?.filter((item) => item.src) ?? [];
@@ -711,6 +866,7 @@ export async function ingestSupportChatMessage(input: {
   const sourceTitle = input.sourceTitle?.trim().slice(0, 191) || null;
   const sourceImage = input.sourceImage?.trim().slice(0, 500) || null;
   if (!threadId) return { error: "thread" as const };
+  const origin = input.origin ?? "local";
   const accountDepartmentId = await accountDepartmentIdFor(input.accountId);
   try {
     if (externalId) {
@@ -738,6 +894,21 @@ export async function ingestSupportChatMessage(input: {
       LIMIT 1
     `;
     let conversationId = existing[0]?.id;
+    if (conversationId) {
+      if (!canSupportChatAppendMessage(origin, input.sentAt)) {
+        return { skipped: true as const, reason: "too_old" as const };
+      }
+    } else {
+      const blocked = await isSupportChatThreadBlocked(input.accountId, threadId);
+      if (blocked) {
+        if (!canSupportChatReopenBlockedThread(origin, input.direction, input.sentAt)) {
+          return { skipped: true as const, reason: "blocked" as const };
+        }
+        await clearSupportChatThreadBlock(input.accountId, threadId);
+      } else if (!canSupportChatCreateConversation(origin, input.sentAt)) {
+        return { skipped: true as const, reason: "too_old" as const };
+      }
+    }
     const unread =
       input.direction === "IN" ? Number(existing[0]?.unreadCount ?? 0) + 1 : Number(existing[0]?.unreadCount ?? 0);
     if (conversationId) {
@@ -1133,9 +1304,16 @@ export async function permanentlyDeleteSupportChatConversations(ids: string[]) {
   if (unique.length === 0) return { ok: true as const, deleted: 0, mediaSrcs: [] as string[] };
   try {
     const conversations = await prisma.$queryRaw<
-      Array<{ id: string; customerAvatar: string | null; sourceImage: string | null }>
+      Array<{
+        id: string;
+        accountId: string;
+        channel: string;
+        externalThreadId: string;
+        customerAvatar: string | null;
+        sourceImage: string | null;
+      }>
     >`
-      SELECT id, customerAvatar, sourceImage
+      SELECT id, accountId, channel, externalThreadId, customerAvatar, sourceImage
       FROM support_chat_conversations
       WHERE folder = 'TRASH' AND id IN (${Prisma.join(unique)})
     `;
@@ -1143,6 +1321,14 @@ export async function permanentlyDeleteSupportChatConversations(ids: string[]) {
       return { error: "Yalnızca çöp kutusundaki konuşmalar kalıcı silinebilir." };
     }
     const trashIds = conversations.map((row) => row.id);
+    try {
+      await blockSupportChatThreads(conversations);
+    } catch (error) {
+      console.warn(
+        "support-chat: deleted thread blocks could not be saved",
+        error instanceof Error ? error.message : error,
+      );
+    }
     const messages = await prisma.$queryRaw<Array<{ mediaJson: string | null }>>`
       SELECT mediaJson FROM support_chat_messages
       WHERE conversationId IN (${Prisma.join(trashIds)})
@@ -1196,6 +1382,19 @@ export async function markSupportChatConversationRead(id: string) {
     return { ok: true as const };
   } catch {
     return { error: "Okundu işareti verilemedi." };
+  }
+}
+
+export async function markSupportChatConversationUnread(id: string) {
+  try {
+    await prisma.$executeRaw`
+      UPDATE support_chat_conversations
+      SET unreadCount = CASE WHEN unreadCount < 1 THEN 1 ELSE unreadCount END, updatedAt = NOW(3)
+      WHERE id = ${id}
+    `;
+    return { ok: true as const };
+  } catch {
+    return { error: "Okunmadı işareti verilemedi." };
   }
 }
 

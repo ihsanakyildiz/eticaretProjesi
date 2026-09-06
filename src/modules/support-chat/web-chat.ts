@@ -489,7 +489,7 @@ export async function sendWebChatMessage(input: {
     sentAt: new Date(),
     media: storedMedia ? [storedMedia] : [],
   });
-  if ("error" in ingested) return { error: "Mesaj iletilemedi." };
+  if (!("ok" in ingested)) return { error: "Mesaj iletilemedi." };
   if (!ingested.duplicate && ingested.conversationId) {
     await maybeSendSupportChatAutoReply(ingested.conversationId);
   }

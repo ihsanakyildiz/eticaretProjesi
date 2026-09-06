@@ -128,9 +128,10 @@ export async function sendApprovedWhatsAppTemplate(input: {
     externalId: sent.externalId,
     sentAt: new Date(),
   });
-  if ("error" in ingested) return { error: "Mesaj gönderildi fakat gelen kutusuna yazılamadı." };
+  if (!("ok" in ingested) || !ingested.conversationId) {
+    return { error: "Mesaj gönderildi fakat gelen kutusuna yazılamadı." };
+  }
   const conversationId = ingested.conversationId;
-  if (!conversationId) return { error: "Konuşma açılamadı." };
   await assignSupportChatConversation(conversationId, input.userId);
   return { ok: true as const, conversationId: conversationId };
 }

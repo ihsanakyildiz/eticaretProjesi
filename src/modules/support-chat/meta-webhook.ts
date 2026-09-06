@@ -692,6 +692,7 @@ export async function ingestMetaWebhookPayload(payload: unknown) {
       direction: item.direction,
       externalId: item.externalId,
       sentAt: item.sentAt,
+      origin: "live",
       sourceUrl: item.sourceUrl,
       sourceTitle: item.sourceTitle,
       sourceImage: item.sourceImage,

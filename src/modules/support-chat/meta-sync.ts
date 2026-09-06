@@ -5,12 +5,21 @@ import {
   fillSupportChatConversationAvatar,
   ingestSupportChatMessage,
   listActiveSupportChatAccounts,
+  listBlockedSupportChatThreadIds,
+  listExistingSupportChatThreadIds,
   listKnownSupportChatExternalIds,
   listSupportChatConversationsMissingAvatar,
   listSupportChatConversationsMissingSource,
+  readSupportChatHistoryWatermark,
   updateSupportChatConversationSource,
+  writeSupportChatHistoryWatermark,
 } from "@/modules/support-chat/db";
 import { isSupportChatChannel } from "@/modules/support-chat/kinds";
+import {
+  isSupportChatBeforeHistoryWatermark,
+  isSupportChatHistoryTooOld,
+  parseSupportChatExternalTime,
+} from "@/modules/support-chat/sync-policy";
 import {
   resolveCustomerAvatar,
   supportChatAvatarPersonId,
@@ -30,9 +39,16 @@ type GraphMessage = {
 };
 type GraphConversation = {
   id?: string;
+  updated_time?: string;
   participants?: { data?: GraphParticipant[] };
   messages?: { data?: GraphMessage[] };
 };
+
+function historySentAt(value?: string) {
+  const sentAt = parseSupportChatExternalTime(value);
+  if (!sentAt || isSupportChatHistoryTooOld(sentAt)) return null;
+  return sentAt;
+}
 
 function accountPageIds(account: { externalId: string; credentials: Record<string, string> }) {
   return new Set(
@@ -66,23 +82,36 @@ async function syncMessengerPage(
   );
   const pageIds = accountPageIds(account);
   const pending = payload.data ?? [];
-  const known = await listKnownSupportChatExternalIds(
-    pending.flatMap((conversation) => (conversation.messages?.data ?? []).map((message) => message.id ?? "")),
-  );
+  const threadIds = pending.flatMap((conversation) => {
+    const customer = (conversation.participants?.data ?? []).find((person) => person.id && !pageIds.has(person.id));
+    return customer?.id?.trim() ? [customer.id.trim()] : [];
+  });
+  const [known, existing, blocked, watermark] = await Promise.all([
+    listKnownSupportChatExternalIds(
+      pending.flatMap((conversation) => (conversation.messages?.data ?? []).map((message) => message.id ?? "")),
+    ),
+    listExistingSupportChatThreadIds(account.id, threadIds),
+    listBlockedSupportChatThreadIds(account.id, threadIds),
+    readSupportChatHistoryWatermark(account.id),
+  ]);
   let ingested = 0;
   for (const conversation of pending) {
     const participants = conversation.participants?.data ?? [];
     const customer = participants.find((person) => person.id && !pageIds.has(person.id));
     const customerId = customer?.id?.trim() ?? "";
-    if (!customerId) continue;
+    if (!customerId || blocked.has(customerId) || !existing.has(customerId)) continue;
+    const updatedAt = historySentAt(conversation.updated_time);
+    const newestMessageAt = historySentAt(conversation.messages?.data?.[0]?.created_time);
+    if (!updatedAt && !newestMessageAt) continue;
     const messages = [...(conversation.messages?.data ?? [])].reverse();
     for (const message of messages) {
       const externalId = message.id?.trim() ?? "";
       if (!externalId || known.has(externalId)) continue;
+      const sentAt = historySentAt(message.created_time);
+      if (!sentAt || isSupportChatBeforeHistoryWatermark(sentAt, watermark)) continue;
       const fromId = message.from?.id ?? "";
       const direction = fromId && pageIds.has(fromId) ? ("OUT" as const) : ("IN" as const);
       const body = (message.message ?? "").trim() || (message.sticker ? "[çıkartma]" : "[mesaj]");
-      const sentAt = message.created_time ? new Date(message.created_time) : new Date();
       const result = await ingestSupportChatMessage({
         accountId: account.id,
         channel: "FACEBOOK_MESSENGER",
@@ -93,12 +122,14 @@ async function syncMessengerPage(
         body,
         direction,
         externalId,
-        sentAt: Number.isNaN(sentAt.getTime()) ? new Date() : sentAt,
+        sentAt,
         media: [],
+        origin: "history",
       });
       if ("ok" in result && !result.duplicate) ingested += 1;
     }
   }
+  await writeSupportChatHistoryWatermark(account.id, new Date());
   return ingested;
 }
 
@@ -199,9 +230,10 @@ async function ingestInstagramComment(input: {
 }) {
   const commentId = input.comment.id?.trim() ?? "";
   if (!commentId) return 0;
+  const sentAt = historySentAt(input.comment.timestamp);
+  if (!sentAt) return 0;
   const fromId = input.comment.from?.id ?? "";
   const username = instagramCommentAuthor(input.comment);
-  const sentAt = input.comment.timestamp ? new Date(input.comment.timestamp) : new Date();
   const result = await ingestSupportChatMessage({
     accountId: input.accountId,
     channel: "INSTAGRAM_POST",
@@ -212,11 +244,12 @@ async function ingestInstagramComment(input: {
     body: (input.comment.text ?? "").trim() || "[yorum]",
     direction: fromId && input.igIds.has(fromId) ? "OUT" : "IN",
     externalId: commentId,
-    sentAt: Number.isNaN(sentAt.getTime()) ? new Date() : sentAt,
+    sentAt,
     media: [],
     sourceUrl: input.sourceUrl,
     sourceTitle: input.sourceTitle,
     sourceImage: input.sourceImage,
+    origin: "history",
   });
   return "ok" in result && !result.duplicate ? 1 : 0;
 }
@@ -252,18 +285,43 @@ async function syncInstagramAccountComments(
       }
     }
   }
-  const known = await listKnownSupportChatExternalIds(commentIds);
+  const threadIds = (payload.data ?? []).flatMap((media) =>
+    (media.comments?.data ?? []).flatMap((comment) => (comment.id?.trim() ? [comment.id.trim()] : [])),
+  );
+  const [known, existing, blocked, watermark] = await Promise.all([
+    listKnownSupportChatExternalIds(commentIds),
+    listExistingSupportChatThreadIds(account.id, threadIds),
+    listBlockedSupportChatThreadIds(account.id, threadIds),
+    readSupportChatHistoryWatermark(account.id),
+  ]);
   const sourceCache = new Map<string, { url: string | null; title: string | null; image: string | null }>();
   let ingested = 0;
   for (const media of payload.data ?? []) {
     const mediaId = media.id?.trim() ?? "";
     const comments = media.comments?.data ?? [];
     if (!mediaId || comments.length === 0) continue;
-    const fresh = comments.some(
-      (comment) =>
-        (comment.id && !known.has(comment.id)) ||
-        (comment.replies?.data ?? []).some((reply) => reply.id && !known.has(reply.id)),
-    );
+    const fresh = comments.some((comment) => {
+      const threadId = comment.id?.trim() ?? "";
+      if (!threadId || blocked.has(threadId) || !existing.has(threadId)) return false;
+      const commentAt = historySentAt(comment.timestamp);
+      if (
+        comment.id &&
+        !known.has(comment.id) &&
+        commentAt &&
+        !isSupportChatBeforeHistoryWatermark(commentAt, watermark)
+      ) {
+        return true;
+      }
+      return (comment.replies?.data ?? []).some((reply) => {
+        const replyAt = historySentAt(reply.timestamp);
+        return Boolean(
+          reply.id &&
+            !known.has(reply.id) &&
+            replyAt &&
+            !isSupportChatBeforeHistoryWatermark(replyAt, watermark),
+        );
+      });
+    });
     if (!fresh) continue;
     let source = sourceCache.get(mediaId);
     if (!source) {
@@ -287,19 +345,25 @@ async function syncInstagramAccountComments(
     const sourceImage = source.image;
     for (const comment of comments) {
       const threadId = comment.id?.trim() ?? "";
+      if (!threadId || blocked.has(threadId) || !existing.has(threadId)) continue;
       if (comment.id && !known.has(comment.id)) {
-        ingested += await ingestInstagramComment({
-          accountId: account.id,
-          igIds,
-          comment,
-          threadId,
-          sourceUrl,
-          sourceTitle,
-          sourceImage,
-        });
+        const commentAt = historySentAt(comment.timestamp);
+        if (commentAt && !isSupportChatBeforeHistoryWatermark(commentAt, watermark)) {
+          ingested += await ingestInstagramComment({
+            accountId: account.id,
+            igIds,
+            comment,
+            threadId,
+            sourceUrl,
+            sourceTitle,
+            sourceImage,
+          });
+        }
       }
       for (const reply of comment.replies?.data ?? []) {
         if (reply.id && known.has(reply.id)) continue;
+        const replyAt = historySentAt(reply.timestamp);
+        if (!replyAt || isSupportChatBeforeHistoryWatermark(replyAt, watermark)) continue;
         ingested += await ingestInstagramComment({
           accountId: account.id,
           igIds,
@@ -312,6 +376,7 @@ async function syncInstagramAccountComments(
       }
     }
   }
+  await writeSupportChatHistoryWatermark(account.id, new Date());
   return ingested;
 }
 
