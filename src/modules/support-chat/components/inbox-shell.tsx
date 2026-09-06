@@ -11,6 +11,7 @@ import {
   ChevronDown,
   ExternalLink,
   Inbox,
+  Loader2,
   LogOut,
   Quote,
   Search,
@@ -379,6 +380,7 @@ export function SupportChatInboxShell({
   const [sendError, setSendError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [messages, setMessages] = useState<SupportChatMessageRow[]>([]);
+  const [threadLoading, setThreadLoading] = useState(false);
   const [quoting, setQuoting] = useState<SupportChatQuote | null>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [pendingPreview, setPendingPreview] = useState<string | null>(null);
@@ -693,11 +695,17 @@ export function SupportChatInboxShell({
   useEffect(() => {
     if (!selectedId) {
       setMessages([]);
+      setThreadLoading(false);
       return;
     }
+    setMessages([]);
+    setQuoting(null);
+    setThreadLoading(true);
     let cancelled = false;
     void listSupportChatMessagesAction(selectedId).then((next) => {
-      if (!cancelled) setMessages(next);
+      if (cancelled) return;
+      setMessages(next);
+      setThreadLoading(false);
     });
     return () => {
       cancelled = true;
@@ -1719,7 +1727,14 @@ export function SupportChatInboxShell({
               }}
               className={`${scrollStyles.scroll} ${scrollStyles.thread} min-h-0 flex-1 overflow-y-auto bg-[#f8fafc] px-5 py-4`}
             >
-              {messages.length === 0 ? (
+              {threadLoading ? (
+                <div className="grid h-full min-h-[12rem] place-items-center">
+                  <p className="flex items-center gap-2 text-sm text-slate-500">
+                    <Loader2 className="h-4 w-4 animate-spin text-[#405189]" />
+                    Konuşma yükleniyor…
+                  </p>
+                </div>
+              ) : messages.length === 0 ? (
                 <p className="rounded-lg border border-dashed border-[#e9ebec] bg-white px-4 py-8 text-center text-sm text-slate-500">
                   Bu konuşmada henüz mesaj yok.
                 </p>
