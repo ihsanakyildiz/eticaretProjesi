@@ -3,6 +3,7 @@ import "server-only";
 import { META_GRAPH_VERSION } from "@/modules/support-chat/meta-oauth";
 import type { SupportChatChannel } from "@/modules/support-chat/kinds";
 import { prepareSupportChatGraphMedia, type SupportChatOutboundMedia } from "@/modules/support-chat/media";
+import type { WhatsAppTemplateView } from "@/modules/support-chat/whatsapp-template";
 
 type GraphError = { error?: { message?: string } };
 
@@ -106,6 +107,63 @@ async function sendMessengerAttachment(input: {
   form.set("message", JSON.stringify(message));
   form.set("filedata", blobFromMedia(input.media), input.media.fileName);
   return graphSendForm(input.path, input.token, form);
+}
+
+function templateTextParams(template: WhatsAppTemplateView, component: "header" | "body", values: Record<string, string>) {
+  return template.variables
+    .filter((item) => item.component === component)
+    .sort((left, right) => left.index - right.index)
+    .map((item) => {
+      const text = values[item.id]?.trim() || item.example || " ";
+      if (item.named) return { type: "text", parameter_name: item.slot, text };
+      return { type: "text", text };
+    });
+}
+
+export async function sendWhatsAppTemplateViaMeta(input: {
+  credentials: Record<string, string>;
+  to: string;
+  template: WhatsAppTemplateView;
+  values: Record<string, string>;
+}): Promise<{ ok: true; externalId: string | null } | { error: string }> {
+  const phoneNumberId = input.credentials.phoneNumberId;
+  const token = input.credentials.userAccessToken || input.credentials.pageAccessToken;
+  if (!phoneNumberId || !token) return { error: "WhatsApp hesabı eksik." };
+  const components: Array<Record<string, unknown>> = [];
+  const headerParams = templateTextParams(input.template, "header", input.values);
+  if (headerParams.length > 0) {
+    components.push({ type: "header", parameters: headerParams });
+  }
+  const bodyParams = templateTextParams(input.template, "body", input.values);
+  if (bodyParams.length > 0) {
+    components.push({ type: "body", parameters: bodyParams });
+  }
+  for (const button of input.template.variables.filter((item) => item.component === "button")) {
+    const text = input.values[button.id]?.trim();
+    if (!text) continue;
+    components.push({
+      type: "button",
+      sub_type: "url",
+      index: String(button.index),
+      parameters: [{ type: "text", text }],
+    });
+  }
+  try {
+    const payload: Record<string, unknown> = {
+      messaging_product: "whatsapp",
+      to: input.to,
+      type: "template",
+      template: {
+        name: input.template.name,
+        language: { code: input.template.language },
+        ...(components.length > 0 ? { components } : {}),
+      },
+    };
+    const externalId = await graphSend(`/${phoneNumberId}/messages`, token, payload);
+    return { ok: true as const, externalId };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "Şablon gönderilemedi." };
+  }
 }
 
 export async function sendSupportChatViaMeta(input: {

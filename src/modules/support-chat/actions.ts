@@ -25,6 +25,7 @@ import {
   listSupportChatConversations,
   listSupportChatMessages,
   markSupportChatConversationRead,
+  searchWhatsAppRecipients,
   setSupportChatAccountDepartment,
   setSupportChatAccountStatus,
   setSupportChatConversationDepartment,
@@ -65,6 +66,7 @@ import { parseSupportChatAutoReplies } from "@/modules/support-chat/auto-replies
 import { saveSupportChatAutoReplies } from "@/modules/support-chat/auto-replies-store";
 import { parseSupportChatWorkingHours } from "@/modules/support-chat/working-hours";
 import { saveSupportChatWorkingHours } from "@/modules/support-chat/working-hours-store";
+import { listApprovedWhatsAppTemplates, sendApprovedWhatsAppTemplate } from "@/modules/support-chat/whatsapp-templates";
 
 function revalidateSupport() {
   revalidatePath("/admin/settings/support", "layout");
@@ -81,6 +83,7 @@ export async function saveSupportChatWebSettingsAction(formData: FormData) {
   const result = await saveWebChatAppearance({
     enabled: formData.get("enabled") === "1",
     membership: formData.get("membership") === "1",
+    attachmentsEnabled: formData.get("attachmentsEnabled") === "1",
     icon: isWebChatIcon(icon) ? icon : undefined,
     teaserEnabled: formData.get("teaserEnabled") === "1",
     teaserText: String(formData.get("teaserText") ?? ""),
@@ -456,6 +459,44 @@ export async function bulkMarkOwnSupportChatReadAction() {
   const userId = gate.session.user?.id;
   if (!userId) return { error: "Oturum bulunamadı." };
   const result = await bulkMarkOwnSupportChatConversationsRead(userId);
+  if ("error" in result) return result;
+  revalidatePath("/admin/support", "layout");
+  return result;
+}
+
+export async function listWhatsAppTemplatesAction() {
+  const gate = await requirePermission("support", "view");
+  if (!gate.ok) return { error: gate.error };
+  const licensed = await isSupportChatLicensed().catch(() => false);
+  if (!licensed) return { error: "Sohbet modülü lisanslı değil." };
+  return listApprovedWhatsAppTemplates();
+}
+
+export async function searchWhatsAppRecipientsAction(query: string) {
+  const gate = await requirePermission("support", "view");
+  if (!gate.ok) return { error: gate.error };
+  return { ok: true as const, hits: await searchWhatsAppRecipients(query) };
+}
+
+export async function sendWhatsAppTemplateAction(input: {
+  to: string;
+  customerName?: string;
+  templateId: string;
+  values: Record<string, string>;
+}) {
+  const gate = await requirePermission("support", "update");
+  if (!gate.ok) return { error: gate.error };
+  const userId = gate.session.user?.id;
+  if (!userId) return { error: "Oturum bulunamadı." };
+  const licensed = await isSupportChatLicensed().catch(() => false);
+  if (!licensed) return { error: "Sohbet modülü lisanslı değil." };
+  const result = await sendApprovedWhatsAppTemplate({
+    to: input.to,
+    customerName: input.customerName,
+    templateId: input.templateId,
+    values: input.values,
+    userId,
+  });
   if ("error" in result) return result;
   revalidatePath("/admin/support", "layout");
   return result;

@@ -15,6 +15,7 @@ export type WebChatPosition = "right" | "left";
 export type WebChatAppearance = {
   enabled: boolean;
   membership: boolean;
+  attachmentsEnabled: boolean;
   icon: WebChatIcon;
   teaserEnabled: boolean;
   teaserText: string;
@@ -27,6 +28,7 @@ export type WebChatAppearance = {
 export const WEB_CHAT_APPEARANCE_DEFAULTS: WebChatAppearance = {
   enabled: true,
   membership: true,
+  attachmentsEnabled: false,
   icon: "message",
   teaserEnabled: true,
   teaserText: "Sipariş veya kargo için yardıma mı ihtiyacınız var?",
@@ -66,6 +68,10 @@ export function parseWebChatAppearance(map: Record<string, string>): WebChatAppe
   return {
     enabled: flag("support_chat_web_enabled", WEB_CHAT_APPEARANCE_DEFAULTS.enabled),
     membership: flag("support_chat_web_membership", WEB_CHAT_APPEARANCE_DEFAULTS.membership),
+    attachmentsEnabled: flag(
+      "support_chat_web_attachments",
+      WEB_CHAT_APPEARANCE_DEFAULTS.attachmentsEnabled,
+    ),
     icon: isWebChatIcon(icon) ? icon : WEB_CHAT_APPEARANCE_DEFAULTS.icon,
     teaserEnabled: flag("support_chat_web_teaser", WEB_CHAT_APPEARANCE_DEFAULTS.teaserEnabled),
     teaserText:

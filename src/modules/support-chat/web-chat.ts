@@ -15,8 +15,14 @@ import {
   listSupportChatMessages,
   upsertSupportChatAccount,
 } from "@/modules/support-chat/db";
-import type { SupportChatMessageRow } from "@/modules/support-chat/kinds";
+import {
+  isSafeSupportChatMediaSrc,
+  supportChatKindFromFile,
+  type SupportChatMediaItem,
+  type SupportChatMessageRow,
+} from "@/modules/support-chat/kinds";
 import { isSupportChatLicensed } from "@/modules/support-chat/license";
+import { saveSupportChatMediaFile, toSupportChatMediaItem } from "@/modules/support-chat/media";
 import {
   parseWebChatAppearance,
   WEB_CHAT_APPEARANCE_DEFAULTS,
@@ -32,11 +38,19 @@ const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+export type WebChatPublicMedia = {
+  kind: SupportChatMediaItem["kind"];
+  src: string;
+  fileName: string;
+  mime: string;
+};
+
 export type WebChatPublicMessage = {
   id: string;
   direction: "IN" | "OUT";
   body: string;
   sentAt: string;
+  media: WebChatPublicMedia[];
 };
 
 export type WebChatKnownCustomer = {
@@ -66,6 +80,7 @@ export type WebChatSession = {
   showAgentName: boolean;
   icon: WebChatAppearance["icon"];
   position: WebChatAppearance["position"];
+  attachmentsEnabled: boolean;
   hasConversation: boolean;
   unread: number;
 };
@@ -319,6 +334,11 @@ function toPublicMessage(row: SupportChatMessageRow): WebChatPublicMessage {
     direction: row.direction,
     body: row.body,
     sentAt: row.sentAt,
+    media: (row.media ?? []).flatMap((item) =>
+      isSafeSupportChatMediaSrc(item.src)
+        ? [{ kind: item.kind, src: item.src, fileName: item.fileName, mime: item.mime }]
+        : [],
+    ),
   };
 }
 
@@ -359,6 +379,7 @@ export async function getWebChatSession(seenAt?: string | null): Promise<WebChat
     showAgentName: appearance.showAgentName,
     icon: appearance.icon,
     position: appearance.position,
+    attachmentsEnabled: appearance.attachmentsEnabled,
     hasConversation: false,
     unread: 0,
   };
@@ -412,6 +433,7 @@ export async function sendWebChatMessage(input: {
   email?: string;
   phone?: string;
   body: string;
+  file?: File | null;
 }): Promise<{ ok: true; messages: WebChatPublicMessage[] } | { error: string }> {
   const ip = await getClientIp();
   if (!takeRateToken(`web-chat:${ip}`, 20, 60_000)) {
@@ -421,7 +443,21 @@ export async function sendWebChatMessage(input: {
   const appearance = await loadWebChatAppearance().catch(() => WEB_CHAT_APPEARANCE_DEFAULTS);
   if (!licensed || !appearance.enabled) return { error: "Sohbet kapalı." };
   const body = input.body.trim().slice(0, 2000);
-  if (body.length < 1) return { error: "Mesaj yazın." };
+  let storedMedia: SupportChatMediaItem | null = null;
+  if (input.file && input.file.size > 0) {
+    if (!appearance.attachmentsEnabled) return { error: "Dosya yükleme kapalı." };
+    const mime = input.file.type || "application/octet-stream";
+    const kind = supportChatKindFromFile(mime, input.file.name);
+    const saved = await saveSupportChatMediaFile({
+      buffer: Buffer.from(await input.file.arrayBuffer()),
+      mime,
+      fileName: input.file.name,
+      kind,
+    });
+    if ("error" in saved) return { error: saved.error };
+    storedMedia = toSupportChatMediaItem(saved);
+  }
+  if (body.length < 1 && !storedMedia) return { error: "Mesaj yazın veya dosya ekleyin." };
   const name = normalizeName(input.name ?? "");
   const email = normalizeEmail(input.email ?? "");
   if (email === null) return { error: "Geçerli bir e-posta yazın." };
@@ -451,6 +487,7 @@ export async function sendWebChatMessage(input: {
     direction: "IN",
     externalId: `web-in-${crypto.randomUUID()}`,
     sentAt: new Date(),
+    media: storedMedia ? [storedMedia] : [],
   });
   if ("error" in ingested) return { error: "Mesaj iletilemedi." };
   if (!ingested.duplicate && ingested.conversationId) {

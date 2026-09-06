@@ -1,15 +1,23 @@
 "use client";
 
-import { Minus, Send, X } from "lucide-react";
+import { FileText, Minus, Paperclip, Send, X } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { WebChatGlyph } from "@/modules/support-chat/components/web-chat-icon";
 import type { WebChatIcon, WebChatPosition } from "@/modules/support-chat/web-chat-appearance";
+
+type WebChatMedia = {
+  kind: "image" | "video" | "audio" | "document";
+  src: string;
+  fileName: string;
+  mime: string;
+};
 
 type WebChatMessage = {
   id: string;
   direction: "IN" | "OUT";
   body: string;
   sentAt: string;
+  media?: WebChatMedia[];
 };
 
 type WebChatSession = {
@@ -30,6 +38,7 @@ type WebChatSession = {
   showAgentName: boolean;
   icon: WebChatIcon;
   position: WebChatPosition;
+  attachmentsEnabled: boolean;
   hasConversation: boolean;
   unread: number;
 };
@@ -90,6 +99,89 @@ function formatTime(iso: string) {
   return date.toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" });
 }
 
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+const MAX_MEDIA_BYTES = 16 * 1024 * 1024;
+
+function mediaKindFromFile(file: File): WebChatMedia["kind"] {
+  if (file.type.startsWith("image/")) return "image";
+  if (file.type.startsWith("video/")) return "video";
+  if (file.type.startsWith("audio/")) return "audio";
+  return "document";
+}
+
+function maxBytesForKind(kind: WebChatMedia["kind"]) {
+  switch (kind) {
+    case "image":
+      return MAX_IMAGE_BYTES;
+    case "video":
+    case "audio":
+    case "document":
+      return MAX_MEDIA_BYTES;
+    default: {
+      const _exhaustive: never = kind;
+      return _exhaustive;
+    }
+  }
+}
+
+function visibleMessageBody(message: WebChatMessage) {
+  const media = message.media ?? [];
+  const body = message.body.trim();
+  if (!body || body === "(medya)") return "";
+  if (media[0] && (body === "Görsel" || body === "Video" || body === "Ses" || body === "Dosya")) {
+    return "";
+  }
+  return body;
+}
+
+function WebChatBubbleMedia({ items, outgoing }: { items: WebChatMedia[]; outgoing: boolean }) {
+  if (items.length === 0) return null;
+  const tone = outgoing ? "text-white/90" : "text-slate-700";
+  return (
+    <div className="space-y-2">
+      {items.map((item) => {
+        switch (item.kind) {
+          case "image":
+            return (
+              <a key={item.src} href={item.src} target="_blank" rel="noopener noreferrer" className="block">
+                <img
+                  src={item.src}
+                  alt={item.fileName || "Görsel"}
+                  className="max-h-48 max-w-full rounded-xl object-contain"
+                />
+              </a>
+            );
+          case "video":
+            return (
+              <video key={item.src} src={item.src} controls className="max-h-48 w-full rounded-xl bg-black" />
+            );
+          case "audio":
+            return <audio key={item.src} src={item.src} controls className="w-full" />;
+          case "document":
+            return (
+              <a
+                key={item.src}
+                href={item.src}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={`inline-flex max-w-full items-center gap-2 rounded-xl px-2.5 py-2 text-xs font-medium ${
+                  outgoing ? "bg-white/15 text-white" : "bg-slate-100 text-slate-700"
+                }`}
+              >
+                <FileText className="h-4 w-4 shrink-0" />
+                <span className={`min-w-0 truncate ${tone}`}>{item.fileName || "Dosya"}</span>
+              </a>
+            );
+          default: {
+            const _exhaustive: never = item.kind;
+            return _exhaustive;
+          }
+        }
+      })}
+    </div>
+  );
+}
+
 export function SiteWebChat({
   siteName,
   hours,
@@ -117,8 +209,11 @@ export function SiteWebChat({
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [unread, setUnread] = useState(0);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [pendingPreview, setPendingPreview] = useState<string | null>(null);
   const threadRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (knownCustomer?.known) return;
@@ -232,6 +327,16 @@ export function SiteWebChat({
   }, [messages, open, started]);
 
   useEffect(() => {
+    if (!pendingFile || !pendingFile.type.startsWith("image/")) {
+      setPendingPreview(null);
+      return;
+    }
+    const url = URL.createObjectURL(pendingFile);
+    setPendingPreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [pendingFile]);
+
+  useEffect(() => {
     if (!open) return;
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") setOpen(false);
@@ -269,22 +374,36 @@ export function SiteWebChat({
     requestAnimationFrame(() => inputRef.current?.focus());
   }
 
+  function pickFile(file: File | undefined) {
+    if (!file) return;
+    const kind = mediaKindFromFile(file);
+    const max = maxBytesForKind(kind);
+    if (file.size > max) {
+      setError(
+        `${kind === "image" ? "Görsel" : "Dosya"} en fazla ${Math.round(max / 1024 / 1024)} MB olabilir.`,
+      );
+      return;
+    }
+    setError(null);
+    setPendingFile(file);
+  }
+
   async function send() {
     const text = draft.trim();
-    if (!text || sending) return;
+    if ((!text && !pendingFile) || sending) return;
     setSending(true);
     setError(null);
     writeProfile({ name: name.trim(), email: email.trim(), phone: phone.trim() });
     try {
+      const form = new FormData();
+      form.set("name", name);
+      form.set("email", email);
+      form.set("phone", phone);
+      form.set("body", text);
+      if (pendingFile) form.set("file", pendingFile);
       const response = await fetch("/api/support-chat/web/messages", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name,
-          email,
-          phone,
-          body: text,
-        }),
+        body: form,
       });
       const data = (await response.json()) as { messages?: WebChatMessage[]; error?: string };
       if (!response.ok || !data.messages) {
@@ -292,6 +411,7 @@ export function SiteWebChat({
         return;
       }
       setDraft("");
+      setPendingFile(null);
       setMessages(data.messages);
       const last = data.messages[data.messages.length - 1];
       if (last) writeSeenAt(last.sentAt);
@@ -404,32 +524,78 @@ export function SiteWebChat({
                     </span>
                   ) : null}
                 </div>
-                {messages.map((message) => (
-                  <div
-                    key={message.id}
-                    className={`flex ${message.direction === "IN" ? "justify-end" : "justify-start"}`}
-                  >
-                    <div
-                      className={`max-w-[85%] rounded-2xl px-3.5 py-2 text-sm leading-6 shadow-sm ${
-                        message.direction === "IN"
-                          ? "rounded-br-md bg-site-primary text-white"
-                          : "rounded-bl-md bg-white text-slate-800"
-                      }`}
-                    >
-                      <p className="whitespace-pre-wrap">{message.body}</p>
-                      <p
-                        className={`mt-1 text-[10px] ${
-                          message.direction === "IN" ? "text-white/70" : "text-slate-400"
+                {messages.map((message) => {
+                  const media = message.media ?? [];
+                  const text = visibleMessageBody(message);
+                  const mine = message.direction === "IN";
+                  return (
+                    <div key={message.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
+                      <div
+                        className={`max-w-[85%] rounded-2xl px-3.5 py-2 text-sm leading-6 shadow-sm ${
+                          mine
+                            ? "rounded-br-md bg-site-primary text-white"
+                            : "rounded-bl-md bg-white text-slate-800"
                         }`}
                       >
-                        {formatTime(message.sentAt)}
-                      </p>
+                        <WebChatBubbleMedia items={media} outgoing={mine} />
+                        {text ? (
+                          <p className={media.length > 0 ? "mt-1.5 whitespace-pre-wrap" : "whitespace-pre-wrap"}>
+                            {text}
+                          </p>
+                        ) : null}
+                        <p className={`mt-1 text-[10px] ${mine ? "text-white/70" : "text-slate-400"}`}>
+                          {formatTime(message.sentAt)}
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
               <div className="border-t border-sky-100 bg-[#eef3f8] px-3 pt-2 pb-3">
+                {pendingFile ? (
+                  <div className="mb-2 flex items-center gap-2 rounded-xl border border-sky-100 bg-white px-2.5 py-2">
+                    {pendingPreview ? (
+                      <img src={pendingPreview} alt="" className="h-10 w-10 rounded-md object-cover" />
+                    ) : (
+                      <span className="grid h-10 w-10 place-items-center rounded-md bg-slate-100 text-slate-500">
+                        <FileText className="h-4 w-4" />
+                      </span>
+                    )}
+                    <span className="min-w-0 flex-1 truncate text-xs text-slate-600">{pendingFile.name}</span>
+                    <button
+                      type="button"
+                      onClick={() => setPendingFile(null)}
+                      className="grid h-7 w-7 place-items-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                      aria-label="Dosyayı kaldır"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ) : null}
                 <div className="flex items-end gap-2">
+                  {session.attachmentsEnabled ? (
+                    <>
+                      <input
+                        ref={fileRef}
+                        type="file"
+                        accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.csv,.zip"
+                        className="hidden"
+                        onChange={(event) => {
+                          pickFile(event.target.files?.[0]);
+                          event.target.value = "";
+                        }}
+                      />
+                      <button
+                        type="button"
+                        disabled={sending}
+                        onClick={() => fileRef.current?.click()}
+                        title="Dosya ekle"
+                        className="grid h-11 w-11 shrink-0 place-items-center rounded-full border border-sky-200 bg-white text-slate-500 hover:bg-sky-50 disabled:opacity-40"
+                      >
+                        <Paperclip className="h-4 w-4" />
+                      </button>
+                    </>
+                  ) : null}
                   <div className="min-w-0 flex-1 rounded-2xl border border-sky-200 bg-white px-3 py-2">
                     <textarea
                       ref={inputRef}
@@ -442,14 +608,14 @@ export function SiteWebChat({
                           void send();
                         }
                       }}
-                      placeholder="Bir mesaj yaz..."
+                      placeholder={session.attachmentsEnabled ? "Mesaj yazın veya dosya ekleyin..." : "Bir mesaj yaz..."}
                       disabled={sending}
                       className="max-h-28 min-h-[40px] w-full resize-none bg-transparent text-sm outline-none placeholder:text-slate-400"
                     />
                   </div>
                   <button
                     type="button"
-                    disabled={sending || !draft.trim()}
+                    disabled={sending || (!draft.trim() && !pendingFile)}
                     onClick={() => void send()}
                     title="Gönder"
                     className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-[#8eb4e6] text-white hover:bg-[#7aa6dc] disabled:opacity-40"

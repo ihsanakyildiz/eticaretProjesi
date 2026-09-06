@@ -11,6 +11,9 @@ import {
   type WebChatIcon,
 } from "@/modules/support-chat/web-chat-appearance";
 
+const FIELD_CLASS =
+  "w-full rounded-md border border-slate-300 bg-[#f3f6f9] px-3 py-2.5 text-sm text-slate-800 shadow-[inset_0_1px_2px_rgba(15,23,42,0.06)] outline-none transition placeholder:text-slate-400 focus:border-[#405189] focus:bg-white focus:ring-2 focus:ring-[#405189]/20";
+
 function ToggleRow({
   name,
   label,
@@ -39,6 +42,29 @@ function ToggleRow({
   );
 }
 
+function TextField({
+  name,
+  label,
+  defaultValue,
+  multiline = false,
+}: {
+  name: string;
+  label: string;
+  defaultValue: string;
+  multiline?: boolean;
+}) {
+  return (
+    <label className="block rounded-lg border border-slate-200 bg-[#f8fafc] px-4 py-3">
+      <span className="mb-1.5 block text-xs font-semibold text-slate-600">{label}</span>
+      {multiline ? (
+        <textarea name={name} rows={3} defaultValue={defaultValue} className={FIELD_CLASS} />
+      ) : (
+        <input name={name} defaultValue={defaultValue} className={FIELD_CLASS} />
+      )}
+    </label>
+  );
+}
+
 export function SupportChatWebSettingsForm({ appearance }: { appearance: WebChatAppearance }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -57,7 +83,7 @@ export function SupportChatWebSettingsForm({ appearance }: { appearance: WebChat
         setMessage(null);
         startTransition(async () => {
           const result = await saveSupportChatWebSettingsAction(form);
-          if (result.error) {
+          if ("error" in result) {
             setError(result.error);
             return;
           }
@@ -79,6 +105,12 @@ export function SupportChatWebSettingsForm({ appearance }: { appearance: WebChat
           label="Üyelik / iletişim formu"
           hint="Pasifken ziyaretçiden ad, e-posta veya telefon istenmez."
           defaultChecked={appearance.membership}
+        />
+        <ToggleRow
+          name="attachmentsEnabled"
+          label="Dosya yükleme"
+          hint="Açıkken ziyaretçi sohbete görsel, video, ses veya belge ekleyebilir. Görsel 5 MB, diğer dosyalar 16 MB."
+          defaultChecked={appearance.attachmentsEnabled}
         />
       </section>
 
@@ -114,45 +146,28 @@ export function SupportChatWebSettingsForm({ appearance }: { appearance: WebChat
           hint="Kapalıyken yalnızca yuvarlak buton durur."
           defaultChecked={appearance.teaserEnabled}
         />
-        <label className="block">
-          <span className="mb-1 block text-xs font-medium text-slate-500">Sohbet balon metni</span>
-          <input
-            name="teaserText"
-            defaultValue={appearance.teaserText}
-            className="w-full rounded-md border border-[#e9ebec] px-3 py-2.5 text-sm"
-          />
-        </label>
-        <label className="block">
-          <span className="mb-1 block text-xs font-medium text-slate-500">
-            Üye değilse gösterilecek balon metni
-          </span>
-          <input
-            name="teaserGuestText"
-            defaultValue={appearance.teaserGuestText}
-            className="w-full rounded-md border border-[#e9ebec] px-3 py-2.5 text-sm"
-          />
-        </label>
+        <TextField name="teaserText" label="Sohbet balon metni" defaultValue={appearance.teaserText} />
+        <TextField
+          name="teaserGuestText"
+          label="Üye değilse gösterilecek balon metni"
+          defaultValue={appearance.teaserGuestText}
+        />
         <ToggleRow
           name="showAgentName"
           label="Temsilci adı görünsün"
           hint="Kapalıyken başlıkta site adı yerine Destek yazılır."
           defaultChecked={appearance.showAgentName}
         />
-        <label className="block">
-          <span className="mb-1 block text-xs font-medium text-slate-500">
-            Kullanıcıya gösterilecek mesaj
-          </span>
-          <textarea
-            name="greeting"
-            rows={3}
-            defaultValue={appearance.greeting}
-            className="w-full rounded-md border border-[#e9ebec] px-3 py-2.5 text-sm"
-          />
-        </label>
+        <TextField
+          name="greeting"
+          label="Kullanıcıya gösterilecek mesaj"
+          defaultValue={appearance.greeting}
+          multiline
+        />
         <fieldset>
-          <legend className="mb-2 text-xs font-medium text-slate-500">Sohbet konumu</legend>
+          <legend className="mb-2 text-xs font-semibold text-slate-600">Sohbet konumu</legend>
           <div className="flex gap-2">
-            <label className="flex-1 cursor-pointer rounded-lg border border-[#e9ebec] px-3 py-2.5 text-sm has-[:checked]:border-[#405189] has-[:checked]:bg-[#405189]/5">
+            <label className="flex-1 cursor-pointer rounded-lg border border-[#e9ebec] bg-white px-3 py-2.5 text-sm has-[:checked]:border-[#405189] has-[:checked]:bg-[#405189]/5">
               <input
                 type="radio"
                 name="position"
@@ -162,7 +177,7 @@ export function SupportChatWebSettingsForm({ appearance }: { appearance: WebChat
               />
               Sağda
             </label>
-            <label className="flex-1 cursor-pointer rounded-lg border border-[#e9ebec] px-3 py-2.5 text-sm has-[:checked]:border-[#405189] has-[:checked]:bg-[#405189]/5">
+            <label className="flex-1 cursor-pointer rounded-lg border border-[#e9ebec] bg-white px-3 py-2.5 text-sm has-[:checked]:border-[#405189] has-[:checked]:bg-[#405189]/5">
               <input
                 type="radio"
                 name="position"

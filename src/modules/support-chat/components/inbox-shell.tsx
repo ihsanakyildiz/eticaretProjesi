@@ -23,6 +23,8 @@ import { useCan } from "@/components/admin/admin-permissions";
 import { SearchableSelect } from "@/components/admin/searchable-select";
 import { SupportChatChannelLogo } from "@/modules/support-chat/components/channel-logo";
 import { SupportChatCustomerProfileModal } from "@/modules/support-chat/components/customer-profile-modal";
+import { WhatsAppTemplateModal } from "@/modules/support-chat/components/whatsapp-template-modal";
+import { normalizeWhatsAppTo } from "@/modules/support-chat/whatsapp-template";
 import { SupportChatImageLightbox } from "@/modules/support-chat/components/support-chat-image-lightbox";
 import { SupportChatComposer } from "@/modules/support-chat/components/support-chat-composer";
 import scrollStyles from "./support-chat-scroll.module.css";
@@ -384,6 +386,7 @@ export function SupportChatInboxShell({
   const [pendingVoice, setPendingVoice] = useState(false);
   const [lightbox, setLightbox] = useState<{ src: string; alt: string } | null>(null);
   const [profileConversationId, setProfileConversationId] = useState<string | null>(null);
+  const [templateOpen, setTemplateOpen] = useState(false);
   const [openMenu, setOpenMenu] = useState<OpenMenu>(null);
   const canPurgeTrash = useCan("support", "delete");
   const [bulkBusy, setBulkBusy] = useState(false);
@@ -1226,12 +1229,23 @@ export function SupportChatInboxShell({
                 </div>
               ) : null}
             </div>
-            <span
-              className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-                live ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"
-              }`}
-            >
-              {live ? "● Canlı" : "Lisans kapalı"}
+            <span className="flex shrink-0 items-center gap-1.5">
+              <button
+                type="button"
+                disabled={!live}
+                title="WhatsApp şablon mesajı ile konuşma başlat"
+                onClick={() => setTemplateOpen(true)}
+                className="rounded-full hover:opacity-90 disabled:opacity-40"
+              >
+                <SupportChatChannelLogo channel="WHATSAPP" className="h-8 w-8" badge />
+              </button>
+              <span
+                className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                  live ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"
+                }`}
+              >
+                {live ? "● Canlı" : "Lisans kapalı"}
+              </span>
             </span>
           </div>
 
@@ -1746,8 +1760,19 @@ export function SupportChatInboxShell({
             <header className="flex flex-wrap items-center justify-end gap-2 border-b border-[#e9ebec] px-5 py-3">
               {bulkInboxActions}
             </header>
-            <div className="grid flex-1 place-items-center text-sm text-slate-500">
-              Soldan bir konuşma seçin veya kanal bağlayın.
+            <div className="grid flex-1 place-items-center px-5 text-sm text-slate-500">
+              <div className="flex flex-col items-center gap-3 text-center">
+                <p>Soldan bir konuşma seçin veya WhatsApp şablonu ile yeni konuşma başlatın.</p>
+                <button
+                  type="button"
+                  disabled={!live}
+                  onClick={() => setTemplateOpen(true)}
+                  className="inline-flex items-center gap-2 rounded-lg bg-[#25D366] px-3 py-2 text-sm font-semibold text-white hover:bg-[#1ebe5d] disabled:opacity-40"
+                >
+                  <SupportChatChannelLogo channel="WHATSAPP" className="h-5 w-5" badge />
+                  WhatsApp konuşması başlat
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -1972,6 +1997,26 @@ export function SupportChatInboxShell({
           onClose={() => setLightbox(null)}
         />
       ) : null}
+      <WhatsAppTemplateModal
+        open={templateOpen}
+        initialRecipient={
+          selected?.channel === "WHATSAPP"
+            ? {
+                name: selected.customerName,
+                phone: normalizeWhatsAppTo(selected.customerHandle || "") || selected.customerHandle || "",
+              }
+            : null
+        }
+        onClose={() => setTemplateOpen(false)}
+        onSent={(conversationId) => {
+          setTemplateOpen(false);
+          setFolder("INBOX");
+          goTo({ tab: "benim", conversationId });
+          void loadSupportChatInboxAction().then((result) => {
+            if ("conversations" in result) setRows(result.conversations);
+          });
+        }}
+      />
     </div>
   );
 }

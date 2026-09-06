@@ -1,8 +1,10 @@
 import "server-only";
 
 import { Prisma } from "@prisma/client";
+import { joinFullName } from "@/lib/customers";
 import { prisma } from "@/lib/prisma";
 import { linkSupportChatCustomer } from "@/modules/support-chat/customer-profiles";
+import { normalizeWhatsAppTo } from "@/modules/support-chat/whatsapp-template";
 import {
   isSafeSupportChatMediaSrc,
   isSupportChatChannel,
@@ -712,8 +714,8 @@ export async function ingestSupportChatMessage(input: {
   const accountDepartmentId = await accountDepartmentIdFor(input.accountId);
   try {
     if (externalId) {
-      const dup = await prisma.$queryRaw<Array<{ id: string }>>`
-        SELECT id FROM support_chat_messages WHERE externalId = ${externalId} LIMIT 1
+      const dup = await prisma.$queryRaw<Array<{ id: string; conversationId: string }>>`
+        SELECT id, conversationId FROM support_chat_messages WHERE externalId = ${externalId} LIMIT 1
       `;
       if (dup[0]) {
         if (sourceUrl || sourceTitle || sourceImage) {
@@ -727,7 +729,7 @@ export async function ingestSupportChatMessage(input: {
             WHERE accountId = ${input.accountId} AND externalThreadId = ${threadId}
           `;
         }
-        return { ok: true as const, duplicate: true, conversationId: undefined };
+        return { ok: true as const, duplicate: true, conversationId: dup[0].conversationId };
       }
     }
     const existing = await prisma.$queryRaw<Array<{ id: string; unreadCount: number }>>`
@@ -1036,6 +1038,76 @@ export async function bulkMarkOwnSupportChatConversationsRead(userId: string) {
     return { ok: true as const, count: Number(count) };
   } catch {
     return { error: "Konuşmalar okundu işaretlenemedi." };
+  }
+}
+
+export type WhatsAppRecipientHit = {
+  conversationId: string | null;
+  name: string;
+  phone: string;
+};
+
+export async function searchWhatsAppRecipients(query: string): Promise<WhatsAppRecipientHit[]> {
+  const needle = query.trim().slice(0, 80);
+  if (needle.length < 2) return [];
+  const like = `%${needle.replace(/[%_]/g, "")}%`;
+  const digits = needle.replace(/\D/g, "");
+  const phoneLike = digits.length >= 4 ? `%${digits}%` : like;
+  try {
+    const chats = await prisma.$queryRaw<
+      Array<{ id: string; customerName: string; customerHandle: string | null; externalThreadId: string }>
+    >`
+      SELECT id, customerName, customerHandle, externalThreadId
+      FROM support_chat_conversations
+      WHERE channel = 'WHATSAPP'
+        AND (
+          customerName LIKE ${like}
+          OR customerHandle LIKE ${like}
+          OR externalThreadId LIKE ${phoneLike}
+        )
+      ORDER BY lastMessageAt DESC
+      LIMIT 12
+    `;
+    const members = await prisma.$queryRaw<
+      Array<{ name: string | null; firstName: string | null; lastName: string | null; phone: string | null }>
+    >`
+      SELECT name, firstName, lastName, phone
+      FROM users
+      WHERE phone IS NOT NULL AND phone <> ''
+        AND (
+          name LIKE ${like}
+          OR firstName LIKE ${like}
+          OR lastName LIKE ${like}
+          OR phone LIKE ${phoneLike}
+        )
+      ORDER BY updatedAt DESC
+      LIMIT 12
+    `;
+    const hits: WhatsAppRecipientHit[] = [];
+    const seen = new Set<string>();
+    for (const row of chats) {
+      const phone = normalizeWhatsAppTo(row.externalThreadId || row.customerHandle || "");
+      if (!phone || seen.has(phone)) continue;
+      seen.add(phone);
+      hits.push({
+        conversationId: row.id,
+        name: row.customerName || phone,
+        phone,
+      });
+    }
+    for (const row of members) {
+      const phone = normalizeWhatsAppTo(row.phone || "");
+      if (!phone || seen.has(phone)) continue;
+      seen.add(phone);
+      hits.push({
+        conversationId: null,
+        name: row.name?.trim() || joinFullName(row.firstName ?? "", row.lastName ?? "") || phone,
+        phone,
+      });
+    }
+    return hits.slice(0, 12);
+  } catch {
+    return [];
   }
 }
 
