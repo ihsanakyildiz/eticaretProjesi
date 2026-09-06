@@ -5,7 +5,7 @@ import {
   fillSupportChatConversationAvatar,
   ingestSupportChatMessage,
   listActiveSupportChatAccounts,
-  listBlockedSupportChatThreadIds,
+  listBlockedSupportChatThreads,
   listExistingSupportChatThreadIds,
   listKnownSupportChatExternalIds,
   listSupportChatConversationsMissingAvatar,
@@ -14,8 +14,9 @@ import {
   updateSupportChatConversationSource,
   writeSupportChatHistoryWatermark,
 } from "@/modules/support-chat/db";
-import { isSupportChatChannel } from "@/modules/support-chat/kinds";
+import { isSupportChatChannel, type SupportChatChannel } from "@/modules/support-chat/kinds";
 import {
+  canSupportChatHistoryOpenThread,
   isSupportChatBeforeHistoryWatermark,
   isSupportChatHistoryTooOld,
   parseSupportChatExternalTime,
@@ -50,40 +51,43 @@ function historySentAt(value?: string) {
   return sentAt;
 }
 
-function accountPageIds(account: { externalId: string; credentials: Record<string, string> }) {
+function accountOwnerIds(account: { externalId: string; credentials: Record<string, string> }) {
   return new Set(
     [
       account.externalId,
       account.credentials.pageId,
+      account.credentials.instagramId,
       account.credentials.globalBrandPageId,
     ].filter(Boolean),
   );
 }
 
-async function syncMessengerPage(
+async function syncGraphConversations(
   account: {
     id: string;
     externalId: string;
     credentials: Record<string, string>;
   },
-  pageId: string,
+  ownerId: string,
   token: string,
+  channel: Extract<SupportChatChannel, "FACEBOOK_MESSENGER" | "INSTAGRAM_DM">,
+  platform: "MESSENGER" | "INSTAGRAM",
 ) {
   const payload = await graphGet<{ data?: GraphConversation[] }>(
-    `/${pageId}/conversations`,
+    `/${ownerId}/conversations`,
     token,
     {
-      platform: "MESSENGER",
+      platform,
       limit: "12",
       fields:
         "id,updated_time,participants{id,name},messages.limit(8){id,message,from,created_time,sticker}",
     },
     { retries: 1, timeoutMs: 8_000 },
   );
-  const pageIds = accountPageIds(account);
+  const ownerIds = accountOwnerIds(account);
   const pending = payload.data ?? [];
   const threadIds = pending.flatMap((conversation) => {
-    const customer = (conversation.participants?.data ?? []).find((person) => person.id && !pageIds.has(person.id));
+    const customer = (conversation.participants?.data ?? []).find((person) => person.id && !ownerIds.has(person.id));
     return customer?.id?.trim() ? [customer.id.trim()] : [];
   });
   const [known, existing, blocked, watermark] = await Promise.all([
@@ -91,30 +95,36 @@ async function syncMessengerPage(
       pending.flatMap((conversation) => (conversation.messages?.data ?? []).map((message) => message.id ?? "")),
     ),
     listExistingSupportChatThreadIds(account.id, threadIds),
-    listBlockedSupportChatThreadIds(account.id, threadIds),
+    listBlockedSupportChatThreads(account.id, threadIds),
     readSupportChatHistoryWatermark(account.id),
   ]);
   let ingested = 0;
+  let newestSeen: Date | null = watermark;
   for (const conversation of pending) {
     const participants = conversation.participants?.data ?? [];
-    const customer = participants.find((person) => person.id && !pageIds.has(person.id));
+    const customer = participants.find((person) => person.id && !ownerIds.has(person.id));
     const customerId = customer?.id?.trim() ?? "";
-    if (!customerId || blocked.has(customerId) || !existing.has(customerId)) continue;
-    const updatedAt = historySentAt(conversation.updated_time);
+    if (!customerId) continue;
     const newestMessageAt = historySentAt(conversation.messages?.data?.[0]?.created_time);
-    if (!updatedAt && !newestMessageAt) continue;
+    const updatedAt = historySentAt(conversation.updated_time);
+    const latestAt = newestMessageAt ?? updatedAt;
+    const exists = existing.has(customerId);
+    if (!exists && !canSupportChatHistoryOpenThread(latestAt, blocked.get(customerId) ?? null)) continue;
+    if (exists && !latestAt) continue;
     const messages = [...(conversation.messages?.data ?? [])].reverse();
     for (const message of messages) {
       const externalId = message.id?.trim() ?? "";
       if (!externalId || known.has(externalId)) continue;
       const sentAt = historySentAt(message.created_time);
-      if (!sentAt || isSupportChatBeforeHistoryWatermark(sentAt, watermark)) continue;
+      if (!sentAt) continue;
+      if (exists && isSupportChatBeforeHistoryWatermark(sentAt, watermark)) continue;
+      if (!newestSeen || sentAt.getTime() > newestSeen.getTime()) newestSeen = sentAt;
       const fromId = message.from?.id ?? "";
-      const direction = fromId && pageIds.has(fromId) ? ("OUT" as const) : ("IN" as const);
+      const direction = fromId && ownerIds.has(fromId) ? ("OUT" as const) : ("IN" as const);
       const body = (message.message ?? "").trim() || (message.sticker ? "[çıkartma]" : "[mesaj]");
       const result = await ingestSupportChatMessage({
         accountId: account.id,
-        channel: "FACEBOOK_MESSENGER",
+        channel,
         externalThreadId: customerId,
         customerName: customer?.name?.trim() || customerId,
         customerHandle: customerId,
@@ -129,7 +139,7 @@ async function syncMessengerPage(
       if ("ok" in result && !result.duplicate) ingested += 1;
     }
   }
-  await writeSupportChatHistoryWatermark(account.id, new Date());
+  if (newestSeen) await writeSupportChatHistoryWatermark(account.id, newestSeen);
   return ingested;
 }
 
@@ -291,24 +301,32 @@ async function syncInstagramAccountComments(
   const [known, existing, blocked, watermark] = await Promise.all([
     listKnownSupportChatExternalIds(commentIds),
     listExistingSupportChatThreadIds(account.id, threadIds),
-    listBlockedSupportChatThreadIds(account.id, threadIds),
+    listBlockedSupportChatThreads(account.id, threadIds),
     readSupportChatHistoryWatermark(account.id),
   ]);
   const sourceCache = new Map<string, { url: string | null; title: string | null; image: string | null }>();
   let ingested = 0;
+  let newestSeen: Date | null = watermark;
   for (const media of payload.data ?? []) {
     const mediaId = media.id?.trim() ?? "";
     const comments = media.comments?.data ?? [];
     if (!mediaId || comments.length === 0) continue;
     const fresh = comments.some((comment) => {
       const threadId = comment.id?.trim() ?? "";
-      if (!threadId || blocked.has(threadId) || !existing.has(threadId)) return false;
+      if (!threadId) return false;
       const commentAt = historySentAt(comment.timestamp);
+      const exists = existing.has(threadId);
+      if (!exists && !canSupportChatHistoryOpenThread(commentAt, blocked.get(threadId) ?? null)) {
+        return (comment.replies?.data ?? []).some((reply) => {
+          const replyAt = historySentAt(reply.timestamp);
+          return Boolean(reply.id && !known.has(reply.id) && replyAt);
+        });
+      }
       if (
         comment.id &&
         !known.has(comment.id) &&
         commentAt &&
-        !isSupportChatBeforeHistoryWatermark(commentAt, watermark)
+        !(exists && isSupportChatBeforeHistoryWatermark(commentAt, watermark))
       ) {
         return true;
       }
@@ -318,7 +336,7 @@ async function syncInstagramAccountComments(
           reply.id &&
             !known.has(reply.id) &&
             replyAt &&
-            !isSupportChatBeforeHistoryWatermark(replyAt, watermark),
+            !(exists && isSupportChatBeforeHistoryWatermark(replyAt, watermark)),
         );
       });
     });
@@ -345,10 +363,25 @@ async function syncInstagramAccountComments(
     const sourceImage = source.image;
     for (const comment of comments) {
       const threadId = comment.id?.trim() ?? "";
-      if (!threadId || blocked.has(threadId) || !existing.has(threadId)) continue;
-      if (comment.id && !known.has(comment.id)) {
-        const commentAt = historySentAt(comment.timestamp);
-        if (commentAt && !isSupportChatBeforeHistoryWatermark(commentAt, watermark)) {
+      if (!threadId) continue;
+      const exists = existing.has(threadId);
+      const commentAt = historySentAt(comment.timestamp);
+      const latestReplyAt = (comment.replies?.data ?? []).reduce<Date | null>((latest, reply) => {
+        const replyAt = historySentAt(reply.timestamp);
+        if (!replyAt) return latest;
+        if (!latest || replyAt.getTime() > latest.getTime()) return replyAt;
+        return latest;
+      }, null);
+      const latestAt =
+        commentAt && latestReplyAt
+          ? commentAt.getTime() > latestReplyAt.getTime()
+            ? commentAt
+            : latestReplyAt
+          : commentAt ?? latestReplyAt;
+      if (!exists && !canSupportChatHistoryOpenThread(latestAt, blocked.get(threadId) ?? null)) continue;
+      if (comment.id && !known.has(comment.id) && commentAt) {
+        if (!(exists && isSupportChatBeforeHistoryWatermark(commentAt, watermark))) {
+          if (!newestSeen || commentAt.getTime() > newestSeen.getTime()) newestSeen = commentAt;
           ingested += await ingestInstagramComment({
             accountId: account.id,
             igIds,
@@ -363,7 +396,8 @@ async function syncInstagramAccountComments(
       for (const reply of comment.replies?.data ?? []) {
         if (reply.id && known.has(reply.id)) continue;
         const replyAt = historySentAt(reply.timestamp);
-        if (!replyAt || isSupportChatBeforeHistoryWatermark(replyAt, watermark)) continue;
+        if (!replyAt || (exists && isSupportChatBeforeHistoryWatermark(replyAt, watermark))) continue;
+        if (!newestSeen || replyAt.getTime() > newestSeen.getTime()) newestSeen = replyAt;
         ingested += await ingestInstagramComment({
           accountId: account.id,
           igIds,
@@ -376,7 +410,7 @@ async function syncInstagramAccountComments(
       }
     }
   }
-  await writeSupportChatHistoryWatermark(account.id, new Date());
+  if (newestSeen) await writeSupportChatHistoryWatermark(account.id, newestSeen);
   return ingested;
 }
 
@@ -414,11 +448,35 @@ export async function syncMetaMessengerConversations() {
     if (!pageId || !token || seen.has(pageId)) continue;
     seen.add(pageId);
     try {
-      ingested += await syncMessengerPage(account, pageId, token);
+      ingested += await syncGraphConversations(account, pageId, token, "FACEBOOK_MESSENGER", "MESSENGER");
     } catch (error) {
       console.warn(
         "support-chat: messenger sync failed",
         pageId,
+        error instanceof Error ? error.message : error,
+      );
+    }
+  }
+  return ingested;
+}
+
+export async function syncInstagramDirectMessages() {
+  const accounts = await listActiveSupportChatAccounts();
+  const seen = new Set<string>();
+  let ingested = 0;
+  for (const account of accounts) {
+    if (account.channel !== "INSTAGRAM_DM") continue;
+    const instagramId =
+      account.credentials.instagramId || account.credentials.pageId || account.externalId;
+    const token = account.credentials.pageAccessToken;
+    if (!instagramId || !token || seen.has(instagramId)) continue;
+    seen.add(instagramId);
+    try {
+      ingested += await syncGraphConversations(account, instagramId, token, "INSTAGRAM_DM", "INSTAGRAM");
+    } catch (error) {
+      console.warn(
+        "support-chat: instagram dm sync failed",
+        instagramId,
         error instanceof Error ? error.message : error,
       );
     }
@@ -432,11 +490,12 @@ let syncInFlight: Promise<number> | null = null;
 
 async function runMetaInboxSync() {
   try {
-    const [messenger, instagram] = await Promise.all([
+    const [messenger, instagramDm, instagram] = await Promise.all([
       syncMetaMessengerConversations(),
+      syncInstagramDirectMessages(),
       syncInstagramPostComments(),
     ]);
-    return messenger + instagram;
+    return messenger + instagramDm + instagram;
   } catch (error) {
     console.warn("support-chat: messenger sync failed", error instanceof Error ? error.message : error);
     return 0;
