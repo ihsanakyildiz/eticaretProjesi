@@ -185,6 +185,23 @@ function hasConversationPostPreview(
   return Boolean(row.sourceUrl?.trim() || row.sourceTitle?.trim() || row.sourceImage?.trim());
 }
 
+function PostPreviewImage({
+  src,
+  className,
+  fallback,
+}: {
+  src: string | null | undefined;
+  className: string;
+  fallback: ReactNode;
+}) {
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    setFailed(false);
+  }, [src]);
+  if (!src || failed) return fallback;
+  return <img src={src} alt="" onError={() => setFailed(true)} className={className} />;
+}
+
 function ConversationPostPreview({
   row,
   variant,
@@ -203,13 +220,15 @@ function ConversationPostPreview({
         "mx-5 mt-3 flex items-stretch gap-3 rounded-lg border border-[#e9ebec] bg-white p-2.5 shadow-sm hover:border-[#405189]/40";
       inner = (
         <>
-          {row.sourceImage ? (
-            <img src={row.sourceImage} alt="" className="h-16 w-16 shrink-0 rounded-md object-cover" />
-          ) : (
-            <span className="grid h-16 w-16 shrink-0 place-items-center rounded-md bg-[#405189]/10 text-[#405189]">
-              <ExternalLink className="h-5 w-5" />
-            </span>
-          )}
+          <PostPreviewImage
+            src={row.sourceImage}
+            className="h-16 w-16 shrink-0 rounded-md object-cover"
+            fallback={
+              <span className="grid h-16 w-16 shrink-0 place-items-center rounded-md bg-[#405189]/10 text-[#405189]">
+                <ExternalLink className="h-5 w-5" />
+              </span>
+            }
+          />
           <span className="min-w-0 flex-1 py-0.5">
             <span className="block text-[11px] font-semibold tracking-wide text-slate-400 uppercase">
               {row.channelLabel}
@@ -230,13 +249,15 @@ function ConversationPostPreview({
         "mt-2 flex items-center gap-2 rounded-md border border-[#e9ebec] p-2 hover:border-[#405189]/40";
       inner = (
         <>
-          {row.sourceImage ? (
-            <img src={row.sourceImage} alt="" className="h-10 w-10 shrink-0 rounded object-cover" />
-          ) : (
-            <span className="grid h-10 w-10 shrink-0 place-items-center rounded bg-[#405189]/10 text-[#405189]">
-              <ExternalLink className="h-4 w-4" />
-            </span>
-          )}
+          <PostPreviewImage
+            src={row.sourceImage}
+            className="h-10 w-10 shrink-0 rounded object-cover"
+            fallback={
+              <span className="grid h-10 w-10 shrink-0 place-items-center rounded bg-[#405189]/10 text-[#405189]">
+                <ExternalLink className="h-4 w-4" />
+              </span>
+            }
+          />
           <span className="min-w-0">
             <span className="block truncate text-xs font-medium text-slate-800">{title}</span>
             {href ? (
@@ -1826,13 +1847,11 @@ export function SupportChatInboxShell({
                         <span className="text-[11px] text-slate-400">{timeLabel(row.lastMessageAt)}</span>
                       </span>
                       <span className="flex items-center gap-1.5">
-                        {row.sourceImage ? (
-                          <img
-                            src={row.sourceImage}
-                            alt=""
-                            className="h-4 w-4 rounded object-cover"
-                          />
-                        ) : null}
+                        <PostPreviewImage
+                          src={row.sourceImage}
+                          className="h-4 w-4 rounded object-cover"
+                          fallback={null}
+                        />
                         <span className="truncate text-[11px] text-slate-500">{row.channelLabel}</span>
                         {group.related.length > 1 ? (
                           <span className="shrink-0 text-[11px] text-slate-400">

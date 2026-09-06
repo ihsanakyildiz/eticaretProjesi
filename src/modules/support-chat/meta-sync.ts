@@ -519,6 +519,7 @@ async function syncFacebookPageComments(
     listIgnoredSupportChatExternalIds(commentIds),
     readSupportChatHistoryWatermark(account.id, "fb_posts"),
   ]);
+  const sourceCache = new Map<string, { url: string | null; title: string | null; image: string | null }>();
   let ingested = 0;
   let newestSeen: Date | null = watermark;
   function shouldTakeComment(
@@ -547,18 +548,50 @@ async function syncFacebookPageComments(
   for (const post of posts) {
     const comments = post.comments?.data ?? [];
     if (comments.length === 0) continue;
-    const fresh = comments.some((comment) => {
-      const threadId = comment.id?.trim() ?? "";
-      if (!threadId) return false;
-      if (shouldTakeComment(comment.id, comment.created_time, threadId)) return true;
-      return (comment.comments?.data ?? []).some((reply) =>
-        Boolean(shouldTakeComment(reply.id, reply.created_time, threadId)),
-      );
-    });
-    if (!fresh) continue;
-    const sourceUrl = post.permalink_url ?? null;
-    const sourceTitle = post.message?.trim() || null;
-    const sourceImage = post.full_picture || post.picture || null;
+    const postId = post.id?.trim() ?? "";
+    let source = postId ? sourceCache.get(postId) : undefined;
+    if (!source) {
+      const stored = post.permalink_url
+        ? await materializeKnownPostSource({
+            token,
+            url: post.permalink_url,
+            title: post.message ?? "",
+            image: post.full_picture || post.picture || "",
+          })
+        : null;
+      const resolved =
+        stored ??
+        (await resolveSocialPostSource({
+          channel: "FACEBOOK_POST",
+          token,
+          pageId,
+          postId,
+          commentId: comments[0]?.id?.trim() ?? "",
+          permalink: post.permalink_url ?? "",
+          postMessage: post.message ?? "",
+          postImage: post.full_picture || post.picture || "",
+        }));
+      source = {
+        url: resolved?.url ?? post.permalink_url ?? null,
+        title: resolved?.title ?? post.message?.trim() ?? null,
+        image: resolved?.image ?? null,
+      };
+      if (postId) sourceCache.set(postId, source);
+    }
+    const sourceUrl = source.url;
+    const sourceTitle = source.title;
+    const sourceImage = source.image;
+    if (sourceUrl || sourceTitle || sourceImage) {
+      for (const comment of comments) {
+        const threadId = comment.id?.trim() ?? "";
+        if (!threadId) continue;
+        await fillSupportChatConversationSource(account.id, threadId, {
+          url: sourceUrl ?? "",
+          title: sourceTitle || "Gönderiyi aç",
+          image: sourceImage,
+        });
+      }
+    }
     for (const comment of comments) {
       const threadId = comment.id?.trim() ?? "";
       if (!threadId) continue;

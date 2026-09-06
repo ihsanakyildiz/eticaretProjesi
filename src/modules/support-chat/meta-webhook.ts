@@ -697,11 +697,17 @@ export async function ingestMetaWebhookPayload(payload: unknown) {
       const fetched = await fetchFacebookCommentBody(item.externalId, token);
       if (fetched) item.body = fetched;
     }
-    if (item.channel === "INSTAGRAM_POST" && (!item.sourceUrl || !item.sourceImage)) {
+    if (
+      isPostPreviewChannel(item.channel) &&
+      (!item.sourceUrl || !item.sourceImage?.startsWith("/uploads/"))
+    ) {
       const source = await resolveSocialPostSource({
-        channel: "INSTAGRAM_POST",
+        channel: item.channel,
         token,
-        pageId: account.credentials.instagramId || account.externalId,
+        pageId:
+          item.channel === "INSTAGRAM_POST"
+            ? account.credentials.instagramId || account.externalId
+            : account.credentials.pageId || account.externalId,
         postId: item.postId ?? "",
         commentId: item.threadId || item.externalId,
         permalink: item.sourceUrl ?? "",

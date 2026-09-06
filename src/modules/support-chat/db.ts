@@ -536,6 +536,14 @@ export type SupportChatAccountMatch = {
   credentials: Record<string, string>;
 };
 
+function normalizeSupportChatSourceImage(value: string | null | undefined) {
+  const image = value?.trim() || "";
+  if (!image) return null;
+  if (image.startsWith("/uploads/")) return image.slice(0, 500);
+  if (image.length > 500 || !/^https?:\/\//i.test(image)) return null;
+  return image;
+}
+
 function credentialsMap(raw: string): Record<string, string> {
   try {
     const parsed = JSON.parse(raw) as Record<string, unknown>;
@@ -972,7 +980,7 @@ export async function ingestSupportChatMessage(input: {
   const externalId = input.externalId?.trim().slice(0, 191) || null;
   const sourceUrl = input.sourceUrl?.trim().slice(0, 500) || null;
   const sourceTitle = input.sourceTitle?.trim().slice(0, 191) || null;
-  const sourceImage = input.sourceImage?.trim().slice(0, 500) || null;
+  const sourceImage = normalizeSupportChatSourceImage(input.sourceImage);
   if (!threadId) return { error: "thread" as const };
   const origin = input.origin ?? "local";
   const accountDepartmentId = await accountDepartmentIdFor(input.accountId);
@@ -998,9 +1006,13 @@ export async function ingestSupportChatMessage(input: {
           await prisma.$executeRaw`
             UPDATE support_chat_conversations
             SET
-              sourceUrl = COALESCE(${sourceUrl}, sourceUrl),
-              sourceTitle = COALESCE(${sourceTitle}, sourceTitle),
-              sourceImage = COALESCE(${sourceImage}, sourceImage),
+              sourceUrl = COALESCE(NULLIF(sourceUrl, ''), ${sourceUrl}),
+              sourceTitle = COALESCE(NULLIF(sourceTitle, ''), ${sourceTitle}),
+              sourceImage = CASE
+                WHEN ${sourceImage} LIKE '/uploads/%' THEN ${sourceImage}
+                WHEN sourceImage LIKE '/uploads/%' THEN sourceImage
+                ELSE COALESCE(NULLIF(sourceImage, ''), ${sourceImage})
+              END,
               updatedAt = NOW(3)
             WHERE accountId = ${input.accountId} AND externalThreadId = ${threadId}
           `;
@@ -1045,9 +1057,13 @@ export async function ingestSupportChatMessage(input: {
             unreadCount = ${unread},
             status = 'OPEN',
             folder = 'INBOX',
-            sourceUrl = COALESCE(${sourceUrl}, sourceUrl),
-            sourceTitle = COALESCE(${sourceTitle}, sourceTitle),
-            sourceImage = COALESCE(${sourceImage}, sourceImage),
+            sourceUrl = COALESCE(NULLIF(sourceUrl, ''), ${sourceUrl}),
+            sourceTitle = COALESCE(NULLIF(sourceTitle, ''), ${sourceTitle}),
+            sourceImage = CASE
+              WHEN ${sourceImage} LIKE '/uploads/%' THEN ${sourceImage}
+              WHEN sourceImage LIKE '/uploads/%' THEN sourceImage
+              ELSE COALESCE(NULLIF(sourceImage, ''), ${sourceImage})
+            END,
             departmentId = COALESCE(${accountDepartmentId}, departmentId),
             updatedAt = NOW(3)
           WHERE id = ${conversationId}
@@ -1564,6 +1580,7 @@ export async function listSupportChatConversationsMissingSource() {
         AND (
           c.sourceUrl IS NULL OR c.sourceUrl = ''
           OR c.sourceImage IS NULL OR c.sourceImage = ''
+          OR c.sourceImage NOT LIKE '/uploads/%'
         )
       LIMIT 12
     `;
@@ -1632,7 +1649,7 @@ export async function fillSupportChatConversationSource(
 ) {
   const url = source.url.trim().slice(0, 500) || null;
   const title = source.title.trim().slice(0, 191) || null;
-  const image = source.image?.trim().slice(0, 500) || null;
+  const image = normalizeSupportChatSourceImage(source.image);
   if (!accountId || !threadId || (!url && !title && !image)) return;
   try {
     await prisma.$executeRaw`
@@ -1640,7 +1657,11 @@ export async function fillSupportChatConversationSource(
       SET
         sourceUrl = COALESCE(NULLIF(sourceUrl, ''), ${url}),
         sourceTitle = COALESCE(NULLIF(sourceTitle, ''), ${title}),
-        sourceImage = COALESCE(NULLIF(sourceImage, ''), ${image}),
+        sourceImage = CASE
+          WHEN ${image} LIKE '/uploads/%' THEN ${image}
+          WHEN sourceImage LIKE '/uploads/%' THEN sourceImage
+          ELSE COALESCE(NULLIF(sourceImage, ''), ${image})
+        END,
         updatedAt = NOW(3)
       WHERE accountId = ${accountId} AND externalThreadId = ${threadId}
     `;
@@ -1655,7 +1676,7 @@ export async function updateSupportChatConversationSource(
 ) {
   const url = source.url.trim().slice(0, 500);
   const title = source.title.trim().slice(0, 191);
-  const image = source.image?.trim().slice(0, 500) || null;
+  const image = normalizeSupportChatSourceImage(source.image);
   if (!id || !url) return;
   try {
     await prisma.$executeRaw`
@@ -1663,7 +1684,11 @@ export async function updateSupportChatConversationSource(
       SET
         sourceUrl = ${url},
         sourceTitle = ${title},
-        sourceImage = COALESCE(${image}, sourceImage),
+        sourceImage = CASE
+          WHEN ${image} LIKE '/uploads/%' THEN ${image}
+          WHEN sourceImage LIKE '/uploads/%' THEN sourceImage
+          ELSE COALESCE(${image}, sourceImage)
+        END,
         updatedAt = NOW(3)
       WHERE id = ${id}
     `;
