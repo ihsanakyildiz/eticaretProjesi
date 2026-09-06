@@ -1,6 +1,5 @@
 "use server";
 
-import { after } from "next/server";
 import { revalidatePath } from "next/cache";
 import { isSupportChatChannel, isSupportChatFolder, supportChatKindFromFile, type SupportChatMediaItem } from "@/modules/support-chat/kinds";
 import {
@@ -53,7 +52,6 @@ import {
   subscribeMetaAssets,
 } from "@/modules/support-chat/meta-oauth";
 import { getSupportChatCustomerProfile } from "@/modules/support-chat/customer-profiles";
-import { startMetaInboxSync } from "@/modules/support-chat/meta-sync";
 import {
   activateSupportChatLicense,
   deactivateSupportChatLicense,
@@ -333,14 +331,15 @@ export async function loadSupportChatInboxAction() {
   const gate = await requirePermission("support", "view");
   if (!gate.ok) return { error: gate.error, conversations: [] };
   try {
-    after(() => {
-      startMetaInboxSync();
-    });
     const conversations = await listSupportChatConversations();
     return { conversations };
   } catch {
     return { error: "Gelen kutusu okunamadı.", conversations: [] };
   }
+}
+
+export async function pollSupportChatInboxAction() {
+  return loadSupportChatInboxAction();
 }
 
 export async function getSupportChatCustomerProfileAction(conversationId: string) {
@@ -578,7 +577,6 @@ export async function sendSupportChatMessageAction(
   if (!context.assignedUserId) {
     await assignSupportChatConversation(conversationId, userId);
   }
-  revalidatePath("/admin/support", "layout");
   return { ok: true as const, assigned: !context.assignedUserId };
 }
 

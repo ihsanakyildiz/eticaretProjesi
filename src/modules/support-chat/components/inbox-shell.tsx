@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
@@ -17,7 +16,6 @@ import {
   Search,
   Trash2,
   UserRound,
-  X,
 } from "lucide-react";
 import { useCan } from "@/components/admin/admin-permissions";
 import { SearchableSelect } from "@/components/admin/searchable-select";
@@ -30,6 +28,7 @@ import { SupportChatComposer } from "@/modules/support-chat/components/support-c
 import scrollStyles from "./support-chat-scroll.module.css";
 import {
   loadSupportChatInboxAction,
+  pollSupportChatInboxAction,
   listSupportChatMessagesAction,
   markSupportChatConversationReadAction,
   assignSupportChatConversationAction,
@@ -505,14 +504,21 @@ export function SupportChatInboxShell({
   useEffect(() => {
     if (!live) return;
     let cancelled = false;
+    let inflight = false;
     async function refresh() {
-      const result = await loadSupportChatInboxAction();
-      if (cancelled || "error" in result) return;
-      setRows(result.conversations);
+      if (inflight) return;
+      inflight = true;
+      try {
+        const result = await pollSupportChatInboxAction();
+        if (cancelled || "error" in result) return;
+        setRows(result.conversations);
+      } finally {
+        inflight = false;
+      }
     }
     const timer = window.setInterval(() => {
       void refresh();
-    }, 3000);
+    }, 4000);
     return () => {
       cancelled = true;
       window.clearInterval(timer);
@@ -676,10 +682,6 @@ export function SupportChatInboxShell({
       : selected
         ? (relatedByPerson.get(supportChatPersonKey(selected)) ?? [selected])
         : [];
-  const selectedMessageStamp = selected
-    ? `${selected.id}:${selected.lastMessageAt ?? ""}:${selected.unreadCount}:${selected.lastMessagePreview}`
-    : "";
-
   useEffect(() => {
     if (!selectedId || folderSyncId.current === selectedId) return;
     const row = rows.find((item) => item.id === selectedId);
@@ -700,7 +702,28 @@ export function SupportChatInboxShell({
     return () => {
       cancelled = true;
     };
-  }, [selectedId, selectedMessageStamp]);
+  }, [selectedId]);
+
+  useEffect(() => {
+    if (!live || !selectedId) return;
+    let cancelled = false;
+    let inflight = false;
+    const timer = window.setInterval(() => {
+      if (inflight) return;
+      inflight = true;
+      void listSupportChatMessagesAction(selectedId)
+        .then((next) => {
+          if (!cancelled) setMessages(next);
+        })
+        .finally(() => {
+          inflight = false;
+        });
+    }, 2000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [live, selectedId]);
 
   useEffect(() => {
     pinThreadToLatest.current = true;
@@ -815,24 +838,63 @@ export function SupportChatInboxShell({
 
   async function sendMessage() {
     if (!selected || sending || (!draft.trim() && !pendingFile)) return;
-    setSending(true);
-    setSendError(null);
-    const payload = new FormData();
-    payload.set("conversationId", selected.id);
-    payload.set("body", draft);
-    if (quoting?.messageId) payload.set("quotedMessageId", quoting.messageId);
-    if (pendingFile) payload.set("file", pendingFile);
-    if (pendingVoice) payload.set("voiceNote", "1");
-    const result = await sendSupportChatMessageAction(payload);
-    setSending(false);
-    if ("error" in result) {
-      setSendError(result.error);
-      return;
-    }
+    const text = draft.trim();
+    const quoted = quoting;
+    const file = pendingFile;
+    const voice = pendingVoice;
+    const previewSrc = pendingPreview;
+    const tempId = `temp:${Date.now()}`;
+    const optimistic: SupportChatMessageRow = {
+      id: tempId,
+      direction: "OUT",
+      body: text,
+      sentAt: new Date().toISOString(),
+      quote: quoted,
+      media: file
+        ? [
+            {
+              kind: supportChatKindFromFile(file.type, file.name),
+              mime: file.type || "application/octet-stream",
+              fileName: file.name,
+              src: previewSrc || "",
+            },
+          ]
+        : [],
+    };
+    pinThreadToLatest.current = true;
+    setMessages((current) => [...current, optimistic]);
+    setRows((current) =>
+      current.map((row) =>
+        row.id === selected.id
+          ? {
+              ...row,
+              lastMessagePreview: supportChatMessagePreview(text, optimistic.media),
+              lastMessageAt: optimistic.sentAt,
+            }
+          : row,
+      ),
+    );
     setDraft("");
     setQuoting(null);
     setPendingFile(null);
     setPendingVoice(false);
+    setSending(true);
+    setSendError(null);
+    const payload = new FormData();
+    payload.set("conversationId", selected.id);
+    payload.set("body", text);
+    if (quoted?.messageId) payload.set("quotedMessageId", quoted.messageId);
+    if (file) payload.set("file", file);
+    if (voice) payload.set("voiceNote", "1");
+    const result = await sendSupportChatMessageAction(payload);
+    setSending(false);
+    if ("error" in result) {
+      setSendError(result.error);
+      setMessages((current) => current.filter((item) => item.id !== tempId));
+      setDraft(text);
+      setQuoting(quoted);
+      return;
+    }
     if (result.assigned) {
       setRows((current) =>
         current.map((row) =>

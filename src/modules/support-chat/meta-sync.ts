@@ -362,6 +362,7 @@ export async function syncMetaMessengerConversations() {
 }
 
 let lastMessengerSyncAt = 0;
+let lastBackfillAt = 0;
 let syncInFlight: Promise<number> | null = null;
 
 async function runMetaInboxSync() {
@@ -370,9 +371,6 @@ async function runMetaInboxSync() {
       syncMetaMessengerConversations(),
       syncInstagramPostComments(),
     ]);
-    await backfillSupportChatPostSources();
-    await backfillSupportChatAvatars();
-    startSupportChatCustomerBackfill();
     return messenger + instagram;
   } catch (error) {
     console.warn("support-chat: messenger sync failed", error instanceof Error ? error.message : error);
@@ -380,16 +378,31 @@ async function runMetaInboxSync() {
   }
 }
 
-export function startMetaInboxSync(minIntervalMs = 20_000) {
+function startSlowInboxBackfill(minIntervalMs = 180_000) {
+  const now = Date.now();
+  if (now - lastBackfillAt < minIntervalMs) return;
+  lastBackfillAt = now;
+  void backfillSupportChatPostSources()
+    .then(() => backfillSupportChatAvatars())
+    .then(() => {
+      startSupportChatCustomerBackfill();
+    })
+    .catch((error) => {
+      console.warn("support-chat: inbox backfill failed", error instanceof Error ? error.message : error);
+    });
+}
+
+export function startMetaInboxSync(minIntervalMs = 60_000) {
   const now = Date.now();
   if (syncInFlight || now - lastMessengerSyncAt < minIntervalMs) return;
   lastMessengerSyncAt = now;
+  startSlowInboxBackfill();
   syncInFlight = runMetaInboxSync().finally(() => {
     syncInFlight = null;
   });
 }
 
-export async function syncMetaMessengerConversationsThrottled(minIntervalMs = 20_000) {
+export async function syncMetaMessengerConversationsThrottled(minIntervalMs = 60_000) {
   startMetaInboxSync(minIntervalMs);
   return 0;
 }
