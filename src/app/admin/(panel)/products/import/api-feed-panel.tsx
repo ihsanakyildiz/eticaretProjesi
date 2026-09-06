@@ -19,7 +19,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { AdminSwitch } from "@/components/admin/admin-switch";
-import { useCan } from "@/components/admin/admin-permissions";
+import { useCan, useCanWrite } from "@/components/admin/admin-permissions";
 import { IMPORT_PATHS } from "./import-paths";
 import { FeedMappingTable } from "./feed-mapping-table";
 import {
@@ -137,7 +137,7 @@ function ApiSyncProgressBar({ feed }: { feed: ApiProductFeedSummary }) {
 }
 
 export function ApiFeedListPanel({ initialFeeds }: { initialFeeds: ApiProductFeedSummary[] }) {
-  const canWrite = useCan("products", "update") || useCan("products", "create");
+  const canWrite = useCanWrite("products");
   const canDelete = useCan("products", "delete");
   const [feeds, setFeeds] = useState(initialFeeds);
   const [error, setError] = useState<string | null>(null);
@@ -246,7 +246,7 @@ export function ApiFeedEditorPanel({
   suppliers: XmlFeedLookupOption[];
 }) {
   const router = useRouter();
-  const canWrite = useCan("products", "update") || useCan("products", "create");
+  const canWrite = useCanWrite("products");
   const [feed, setFeed] = useState(initialFeed);
   const [editor, setEditor] = useState<ApiFeedFormValues>(() =>
     initialFeed ? apiFeedToForm(initialFeed) : emptyApiFeedForm(),

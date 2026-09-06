@@ -50,6 +50,11 @@ export function useCan(resource: string, action: PermissionAction) {
   return can(role, map, resource, action);
 }
 
+export function useCanWrite(resource: string) {
+  const { role, map } = usePermissions();
+  return can(role, map, resource, "update") || can(role, map, resource, "create");
+}
+
 export function Can({
   resource,
   action,

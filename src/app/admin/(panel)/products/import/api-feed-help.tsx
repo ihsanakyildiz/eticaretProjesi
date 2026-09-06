@@ -332,7 +332,7 @@ function ApiFeedHelpModal({ onClose }: { onClose: () => void }) {
 
             <HelpSection id="kategori" title="3. Kategori ve marka eşlemesi">
               <p>
-                API’deki metinler (ör. “Elektronik”, “men's clothing”) mağaza kategorisi / markası
+                API’deki metinler (ör. “Elektronik”, “mens clothing”) mağaza kategorisi / markası
                 ile birebir aynı olmayabilir. Her değer için mağazadaki kaydı seçin.
               </p>
               <ul className="mt-3 list-disc space-y-1.5 pl-5">

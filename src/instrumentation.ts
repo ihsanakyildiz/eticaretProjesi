@@ -14,7 +14,7 @@ export async function register() {
 
   const secret = process.env.CRON_SECRET?.trim();
   const headers: Record<string, string> = secret ? { authorization: `Bearer ${secret}` } : {};
-  const ports = [...new Set([process.env.PORT?.trim(), "3000", "3001"].filter(Boolean))];
+  const ports = [...new Set([process.env.PORT?.trim(), "3000", "3001", "3002"].filter(Boolean))];
   setTimeout(() => {
     void (async () => {
       for (const port of ports) {

@@ -212,7 +212,7 @@ function XmlFeedHelpModal({ onClose }: { onClose: () => void }) {
                   <code className="rounded bg-slate-100 px-1">Secenek.StokAdedi</code> → Stok
                 </li>
                 <li>
-                  <code className="rounded bg-slate-100 px-1">&lt;Ozellik Ad="Ebat"&gt;</code> otomatik
+                  <code className="rounded bg-slate-100 px-1">{`<Ozellik Ad="Ebat">`}</code> otomatik
                   Ebat özelliği olur; eşlemenize gerek yoktur.
                 </li>
               </ul>
@@ -281,7 +281,7 @@ function XmlFeedHelpModal({ onClose }: { onClose: () => void }) {
                 </li>
                 <li>
                   <strong className="font-medium text-slate-800">Özellikler boş:</strong> Ticimax{" "}
-                  <code className="rounded bg-slate-100 px-1">&lt;Ozellik Ad="Renk"&gt;</code> otomatik
+                  <code className="rounded bg-slate-100 px-1">{`<Ozellik Ad="Renk">`}</code> otomatik
                   okunur. Düz etiketse Beden / Renk / Ebat alanını özellik değerine bağlayın.
                 </li>
                 <li>

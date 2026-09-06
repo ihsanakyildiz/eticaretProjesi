@@ -8,10 +8,14 @@ const { auth } = NextAuth(authConfig);
 const TRUSTED_SITE_HOSTS = new Set([
   "www.ihsanakyildiz.com.tr",
   "ihsanakyildiz.com.tr",
+  "www.sastim.com",
+  "sastim.com",
   "localhost:3000",
   "localhost:3001",
+  "localhost:3002",
   "127.0.0.1:3000",
   "127.0.0.1:3001",
+  "127.0.0.1:3002",
 ]);
 
 export default auth((req) => {

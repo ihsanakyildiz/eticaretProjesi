@@ -12,6 +12,7 @@ import {
   Upload,
   XCircle,
 } from "lucide-react";
+import Link from "next/link";
 import { Can } from "@/components/admin/admin-permissions";
 import type {
   ProductImportFilter,
@@ -134,13 +135,13 @@ export function ProductImportClient({
                   linkleri sunucuya indirilir; uzak dosya yoksa o ürün atlanır.
                 </p>
                 <Can resource="products" action="create">
-                  <a
+                  <Link
                     href="/admin/products/import/template"
                     className="mt-4 inline-flex items-center gap-2 rounded-md bg-[#0ab39c] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#099885]"
                   >
                     <Download className="h-4 w-4" />
                     Excel kalıbını indir
-                  </a>
+                  </Link>
                 </Can>
               </div>
             </div>
