@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { connectSupportChatMetaAssetsAction } from "@/modules/support-chat/actions";
@@ -86,12 +87,12 @@ export function SupportChatMetaPickerForm({
         >
           Seçilenleri bağla
         </button>
-        <a
+        <Link
           href="/admin/settings/support/kanallar"
           className="rounded-md border border-[#e9ebec] px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50"
         >
           Vazgeç
-        </a>
+        </Link>
       </div>
       {error ? <p className="text-sm text-rose-600">{error}</p> : null}
     </form>

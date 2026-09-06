@@ -49,7 +49,7 @@ function patternModules(pattern: string): number[] {
 
 export function code39Svg(value: string, options?: { height?: number; module?: number }): string {
   const height = options?.height ?? 64;
-  const module = options?.module ?? 1.6;
+  const unit = options?.module ?? 1.6;
   const payload = `*${value.replace(/[^0-9A-Z\-]/gi, "").toUpperCase()}*`;
   const bars: { x: number; w: number }[] = [];
   let x = 0;
@@ -58,10 +58,10 @@ export function code39Svg(value: string, options?: { height?: number; module?: n
     if (!pattern) continue;
     const widths = patternModules(pattern);
     widths.forEach((width, index) => {
-      if (index % 2 === 0) bars.push({ x, w: width * module });
-      x += width * module;
+      if (index % 2 === 0) bars.push({ x, w: width * unit });
+      x += width * unit;
     });
-    x += module;
+    x += unit;
   }
   const width = Math.ceil(x);
   const rects = bars

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { headers } from "next/headers";
 import { originFromHeaders } from "@/lib/site-origin";
 import { SupportChatChannelSubnav } from "@/modules/support-chat/components/channel-subnav";
@@ -80,9 +81,9 @@ export async function SupportChatChannelSettingsPage({
           {group === "WEB" ? (
             <p className="rounded-lg border border-[#e9ebec] bg-white px-4 py-3 text-sm text-slate-600">
               Widget görünümü, metinleri ve konumu{" "}
-              <a href="/admin/settings/support/web" className="font-medium text-[#405189] hover:underline">
+              <Link href="/admin/settings/support/web" className="font-medium text-[#405189] hover:underline">
                 Web sohbet
-              </a>{" "}
+              </Link>{" "}
               sayfasından yönetilir. İlk sohbette “Site web sohbet” hesabı otomatik oluşur.
             </p>
           ) : null}
