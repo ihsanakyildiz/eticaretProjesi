@@ -9,6 +9,7 @@ import {
   ImageIcon,
   Loader2,
   Save,
+  Sparkles,
   Trash2,
   Upload,
 } from "lucide-react";
@@ -25,6 +26,7 @@ import {
   type FilterCategoryScope,
 } from "@/lib/product-filters";
 import type { CategoryNodeBase } from "@/lib/category-tree";
+import { suggestProductCategory } from "@/lib/suggest-product-category";
 import {
   MAX_GENERATED_COMBINATIONS,
   buildCombinationsFromValueGroups,
@@ -218,12 +220,13 @@ export function ProductEditor({
   const action = mode === "create" ? createProductAction : updateProductAction;
   const [state, formAction, isPending] = useActionState(action, initialState);
   const saveIntentRef = useRef<"draft" | "publish">("draft");
-  const [tab, setTab] = useState<ProductEditorTabId>("description");
+  const [tab, setTab] = useState<ProductEditorTabId>("details");
   const [title, setTitle] = useState(initial?.title ?? "");
   const [slug, setSlug] = useState(initial?.slug ?? "");
   const [slugTouched, setSlugTouched] = useState(Boolean(initial?.slug));
   const isActive = initial?.isActive ?? true;
   const [categoryId, setCategoryId] = useState(initial?.categoryId ?? "");
+  const [categoryManual, setCategoryManual] = useState(Boolean(initial?.categoryId));
   const [brandId, setBrandId] = useState(initial?.brandId ?? "");
   const [supplierId, setSupplierId] = useState(initial?.supplierId ?? "");
   const [sku, setSku] = useState(initial?.sku ?? "");
@@ -286,8 +289,22 @@ export function ProductEditor({
 
   useEffect(() => {
     const requested = new URLSearchParams(window.location.search).get("tab");
+    if (requested === "description") {
+      setTab("details");
+      return;
+    }
     if (requested && isProductEditorTabId(requested)) setTab(requested);
   }, []);
+
+  const categorySuggestion = useMemo(
+    () => suggestProductCategory(title, categoryCatalog),
+    [title, categoryCatalog],
+  );
+
+  useEffect(() => {
+    if (categoryManual || !categorySuggestion) return;
+    setCategoryId(categorySuggestion.id);
+  }, [categoryManual, categorySuggestion]);
 
   const hasCombinations = variants.some(
     (item) => item.combinationKey !== DEFAULT_VARIANT_COMBINATION_KEY,
@@ -589,7 +606,67 @@ export function ProductEditor({
         </div>
       </div>
 
-      <div className={tab === "description" ? "space-y-6" : "hidden"}>
+      <div className={tab === "details" ? "space-y-6" : "hidden"}>
+          <section className="rounded-lg border border-[#e9ebec] bg-white shadow-sm">
+            <div className="border-b border-[#e9ebec] px-5 py-4">
+              <h2 className="text-base font-semibold text-slate-800">Kategori *</h2>
+              <p className="mt-1 text-sm text-slate-500">
+                Ürün adına göre otomatik önerilir. İsterseniz farklı bir kategori seçebilirsiniz.
+              </p>
+            </div>
+            <div className="p-5 space-y-3">
+              {categorySuggestion && (!categoryManual || categoryId !== categorySuggestion.id) ? (
+                <div className="flex flex-col gap-2 rounded-md border border-[#0ab39c]/30 bg-[#0ab39c]/5 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="flex min-w-0 items-start gap-2 text-sm text-slate-700">
+                    <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-[#0ab39c]" />
+                    <span>
+                      {categoryId === categorySuggestion.id ? (
+                        <>
+                          Başlığa göre seçildi:{" "}
+                          <strong className="font-semibold text-slate-800">
+                            {categorySuggestion.pathLabel}
+                          </strong>
+                        </>
+                      ) : (
+                        <>
+                          Öneri:{" "}
+                          <strong className="font-semibold text-slate-800">
+                            {categorySuggestion.pathLabel}
+                          </strong>
+                        </>
+                      )}
+                    </span>
+                  </p>
+                  {categoryId !== categorySuggestion.id ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCategoryId(categorySuggestion.id);
+                        setCategoryManual(false);
+                      }}
+                      className="shrink-0 rounded-md bg-[#0ab39c] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#0ab39c]/90"
+                    >
+                      Önerileni kullan
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
+              <ParentCategoryTreePicker
+                name="categoryId"
+                value={categoryId}
+                onChange={(id) => {
+                  setCategoryId(id);
+                  setCategoryManual(id !== categorySuggestion?.id);
+                }}
+                nodes={categoryTree}
+                allowEmpty={false}
+              />
+              {state.fieldErrors?.categoryId ? (
+                <p className="mt-1.5 text-xs text-rose-600">{state.fieldErrors.categoryId}</p>
+              ) : null}
+            </div>
+          </section>
+
           <section className="rounded-lg border border-[#e9ebec] bg-white shadow-sm">
             <div className="border-b border-[#e9ebec] px-5 py-4">
               <h2 className="text-base font-semibold text-slate-800">Görseller</h2>
@@ -653,29 +730,12 @@ export function ProductEditor({
               </div>
             </section>
           ) : null}
-        </div>
 
-      <div className={tab === "details" ? "space-y-6" : "hidden"}>
           <section className="rounded-lg border border-[#e9ebec] bg-white shadow-sm">
             <div className="border-b border-[#e9ebec] px-5 py-4">
               <h2 className="text-base font-semibold text-slate-800">Sınıflandırma</h2>
             </div>
             <div className="grid gap-5 p-5 md:grid-cols-2">
-              <div className="md:col-span-2">
-                <p className="mb-1.5 text-sm font-medium text-slate-700">Kategori *</p>
-                <ParentCategoryTreePicker
-                  name="categoryId"
-                  value={categoryId}
-                  onChange={setCategoryId}
-                  nodes={categoryTree}
-                  allowEmpty={false}
-                />
-                {state.fieldErrors?.categoryId ? (
-                  <p className="mt-1.5 text-xs text-rose-600">{state.fieldErrors.categoryId}</p>
-                ) : (
-                  <p className="mt-1.5 text-xs text-slate-400">Vitrinde listelenmesi için kategori zorunludur.</p>
-                )}
-              </div>
               <div>
                 <label className="mb-1.5 block text-sm font-medium text-slate-700">Marka</label>
                 <SearchableSelect

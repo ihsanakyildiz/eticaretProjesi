@@ -19,7 +19,7 @@ export default async function NewProductPage() {
         <p className="text-xs font-medium tracking-wide text-slate-400 uppercase">Mağaza</p>
         <h1 className="mt-1 text-xl font-semibold text-slate-800 sm:text-2xl">Yeni ürün</h1>
         <p className="mt-2 text-sm text-slate-500">
-          Üstteki sekmelerden açıklama, varyant, fiyat ve SEO bilgilerini doldurun. Altta taslak
+          Üstteki sekmelerden detay, varyant, fiyat ve SEO bilgilerini doldurun. Altta taslak
           kaydedebilir veya yayınlayabilirsiniz.
         </p>
       </div>

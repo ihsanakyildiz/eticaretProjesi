@@ -6,7 +6,6 @@ import type {
 } from "@prisma/client";
 
 export const PRODUCT_EDITOR_TABS = [
-  "description",
   "details",
   "variants",
   "shipping",
@@ -23,8 +22,6 @@ export function isProductEditorTabId(value: string): value is ProductEditorTabId
 
 export function productEditorTabLabel(id: ProductEditorTabId): string {
   switch (id) {
-    case "description":
-      return "Açıklama";
     case "details":
       return "Detaylar";
     case "variants":
