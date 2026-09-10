@@ -9,6 +9,7 @@ import {
   XML_FEED_MAX_ITEMS,
   type XmlFeedCategoryAlias,
   type XmlFeedFieldMapping,
+  type XmlFeedFilterCatalogItem,
   type XmlFeedPreviewResult,
 } from "@/lib/xml-product-feed-shared";
 
@@ -37,6 +38,8 @@ export function previewJsonFeed(
   categoryAliases: XmlFeedCategoryAlias[],
   brandAliases: XmlFeedCategoryAlias[] = [],
   variantPathInput = "",
+  filterValueAliases: Record<string, XmlFeedCategoryAlias[]> = {},
+  filters: XmlFeedFilterCatalogItem[] = [],
 ): XmlFeedPreviewResult {
   const root = parseJsonDocument(jsonText);
   const itemPath = itemPathInput.trim() || detectJsonItemPath(root);
@@ -48,6 +51,8 @@ export function previewJsonFeed(
     mappingInput,
     categoryAliases,
     brandAliases,
+    filterValueAliases,
+    filters,
   );
 }
 

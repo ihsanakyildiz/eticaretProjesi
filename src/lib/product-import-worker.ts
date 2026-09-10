@@ -162,7 +162,7 @@ async function processImportJob(jobId: string) {
             rowId: meta.rowId,
             rowNumber: meta.rowNumber,
             title: meta.title,
-            prepared: prepareImportedProduct(draft, used, sortOrder),
+            prepared: prepareImportedProduct(draft, used, sortOrder, catalog.lookups.filters),
           });
           sortOrder += 1;
         }

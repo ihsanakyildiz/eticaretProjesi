@@ -4,6 +4,7 @@ import { after } from "next/server";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { IMPORT_PATHS } from "./import-paths";
+import { loadAdminImportLookups } from "./import-lookups";
 import { requirePermission } from "@/lib/staff-permissions";
 import { previewXmlFeed } from "@/lib/xml-product-feed";
 import { fetchXmlFeedText } from "@/lib/xml-product-feed-fetch";
@@ -133,6 +134,7 @@ export async function previewXmlFeedAction(input: {
   mapping?: XmlFeedFormValues["mapping"];
   categoryAliases?: XmlFeedFormValues["categoryAliases"];
   brandAliases?: XmlFeedFormValues["brandAliases"];
+  filterValueAliases?: XmlFeedFormValues["filterValueAliases"];
 }): Promise<{ error?: string; preview?: XmlFeedPreviewResult }> {
   const gate = await requirePermission("products", "view");
   if (!gate.ok) return { error: gate.error };
@@ -154,6 +156,7 @@ export async function previewXmlFeedAction(input: {
 
   try {
     const xml = await fetchXmlFeedText(url, httpUser || null, httpPass || null);
+    const { filters } = await loadAdminImportLookups();
     return {
       preview: previewXmlFeed(
         xml,
@@ -162,6 +165,8 @@ export async function previewXmlFeedAction(input: {
         input.categoryAliases ?? [],
         input.brandAliases ?? [],
         input.variantPath ?? "",
+        input.filterValueAliases ?? {},
+        filters,
       ),
     };
   } catch (error) {

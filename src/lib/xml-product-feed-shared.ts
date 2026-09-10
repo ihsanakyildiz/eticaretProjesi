@@ -1,3 +1,5 @@
+import { slugify } from "@/lib/slug";
+
 export const XML_FEED_MAX_BYTES = 25 * 1024 * 1024;
 export const XML_FEED_MAX_ITEMS = 20000;
 export const XML_FEED_PREVIEW_ITEMS = 8;
@@ -180,9 +182,10 @@ export const XML_FEED_TARGET_FIELDS = [
     group: "stok",
     hint: "API/XML açık-kapalı değeri. active, açık, 1 → satışa açık; inactive, kapalı, 0 → satışa kapalı.",
   },
-  { key: "category", header: "Kategori", group: "sınıflama", hint: "Eşleşmezse mevcut kategori korunur; satış durumu değişmez" },
+  { key: "category", header: "Kategori", group: "sınıflama", hint: "Eşleşmezse ürün adından önerilir veya varsayılan kategori kullanılır" },
   { key: "brand", header: "Marka", group: "sınıflama", hint: "Eşleşmezse mevcut marka korunur; satış durumu değişmez" },
   { key: "supplier", header: "Tedarikçi", group: "sınıflama", hint: "Boşsa kaynak tedarikçisi" },
+  { key: "filters", header: "Filtreler", group: "sınıflama", hint: "Eşlenen ürün filtrelerini yaz. Kapalıysa yalnızca yeni üründe uygulanır" },
   { key: "summary", header: "Kısa açıklama", group: "içerik", hint: "" },
   { key: "content", header: "Açıklama", group: "içerik", hint: "HTML olabilir" },
   { key: "imageUrl", header: "Görseller", group: "içerik", hint: "Güncelleme açıkken XML’de görsel yoksa satışa kapanır. İndirme başarısız olursa mevcut görseller korunur." },
@@ -205,8 +208,22 @@ export const XML_FEED_TARGET_FIELDS = [
 
 export type XmlFeedTargetKey = (typeof XML_FEED_TARGET_FIELDS)[number]["key"];
 
-/** XML yolu → mağaza alanı. Aynı alana birden fazla XML etiketi bağlanabilir (görseller). */
-export type XmlFeedFieldMapping = Record<string, XmlFeedTargetKey>;
+const XML_FEED_FILTER_PREFIX = "filter:";
+
+export type XmlFeedFilterTargetKey = `${typeof XML_FEED_FILTER_PREFIX}${string}`;
+export type XmlFeedMappedField = XmlFeedTargetKey | XmlFeedFilterTargetKey;
+
+/** XML yolu → mağaza alanı. Aynı alana birden fazla XML etiketi bağlanabilir (görseller ve filtreler). */
+export type XmlFeedFieldMapping = Record<string, XmlFeedMappedField>;
+
+export type XmlFeedFilterCatalogItem = {
+  id: string;
+  name: string;
+  slug: string;
+  inputType: "MULTI_SELECT" | "SWATCH" | "BOOLEAN" | "RANGE";
+  unit: string | null;
+  values: Array<{ id: string; name: string; slug?: string }>;
+};
 
 const TARGET_KEY_SET = new Set<string>(XML_FEED_TARGET_FIELDS.map((field) => field.key));
 
@@ -214,12 +231,46 @@ export function isXmlFeedTargetKey(value: string): value is XmlFeedTargetKey {
   return TARGET_KEY_SET.has(value);
 }
 
+export function isXmlFeedFilterTargetKey(value: string): value is XmlFeedFilterTargetKey {
+  return value.startsWith(XML_FEED_FILTER_PREFIX) && value.length > XML_FEED_FILTER_PREFIX.length;
+}
+
+export function isXmlFeedMappedField(value: string): value is XmlFeedMappedField {
+  return isXmlFeedTargetKey(value) || isXmlFeedFilterTargetKey(value);
+}
+
+export function xmlFeedFilterTargetKey(filterId: string): XmlFeedFilterTargetKey {
+  return `${XML_FEED_FILTER_PREFIX}${filterId.trim()}`;
+}
+
+export function xmlFeedFilterIdFromTarget(value: string) {
+  if (!isXmlFeedFilterTargetKey(value)) return null;
+  const id = value.slice(XML_FEED_FILTER_PREFIX.length).trim();
+  return id || null;
+}
+
 export function xmlFeedTargetLabel(key: XmlFeedTargetKey) {
   return XML_FEED_TARGET_FIELDS.find((field) => field.key === key)?.header ?? key;
 }
 
+export function xmlFeedMappedFieldLabel(key: XmlFeedMappedField, filters: XmlFeedFilterCatalogItem[] = []) {
+  if (isXmlFeedTargetKey(key)) return xmlFeedTargetLabel(key);
+  const filterId = xmlFeedFilterIdFromTarget(key);
+  const filter = filters.find((item) => item.id === filterId);
+  return filter ? `Filtre: ${filter.name}` : "Filtre";
+}
+
 export function mappingHasTarget(mapping: XmlFeedFieldMapping, field: XmlFeedTargetKey) {
   return Object.values(mapping).includes(field);
+}
+
+export function mappingFilterIds(mapping: XmlFeedFieldMapping) {
+  const ids: string[] = [];
+  for (const field of Object.values(mapping)) {
+    const filterId = xmlFeedFilterIdFromTarget(field);
+    if (filterId && !ids.includes(filterId)) ids.push(filterId);
+  }
+  return ids;
 }
 
 export function isFeedPathUnder(path: string, prefix: string) {
@@ -259,6 +310,7 @@ export type XmlFeedFormValues = {
   mapping: XmlFeedFieldMapping;
   categoryAliases: XmlFeedCategoryAlias[];
   brandAliases: XmlFeedCategoryAlias[];
+  filterValueAliases: Record<string, XmlFeedCategoryAlias[]>;
   discovery: XmlFeedDiscovery | null;
   matchBy: XmlFeedMatchBy;
   skuPrefix: string;
@@ -313,6 +365,7 @@ export type XmlProductFeedSummary = {
   mapping: XmlFeedFieldMapping;
   categoryAliases: XmlFeedCategoryAlias[];
   brandAliases: XmlFeedCategoryAlias[];
+  filterValueAliases: Record<string, XmlFeedCategoryAlias[]>;
   discovery: XmlFeedDiscovery | null;
   matchBy: XmlFeedMatchBy;
   skuPrefix: string;
@@ -398,6 +451,7 @@ export type XmlFeedPreviewResult = {
   suggestedMapping: XmlFeedFieldMapping;
   xmlCategories: string[];
   xmlBrands: string[];
+  xmlFilterValues: Record<string, string[]>;
   sampleRows: XmlPreviewMappedRow[];
 };
 
@@ -408,6 +462,7 @@ export type XmlFeedDiscovery = {
   xmlTags: XmlFeedTagPreview[];
   xmlCategories: string[];
   xmlBrands: string[];
+  xmlFilterValues: Record<string, string[]>;
   sampleRows: XmlPreviewMappedRow[];
 };
 
@@ -419,6 +474,7 @@ export function discoveryFromPreview(preview: XmlFeedPreviewResult): XmlFeedDisc
     xmlTags: preview.xmlTags,
     xmlCategories: preview.xmlCategories,
     xmlBrands: preview.xmlBrands,
+    xmlFilterValues: preview.xmlFilterValues,
     sampleRows: preview.sampleRows,
   };
 }
@@ -441,6 +497,7 @@ export function previewFromDiscovery(
     suggestedMapping: mapping,
     xmlCategories: discovery.xmlCategories,
     xmlBrands: discovery.xmlBrands,
+    xmlFilterValues: discovery.xmlFilterValues ?? {},
     sampleRows: discovery.sampleRows,
   };
 }
@@ -458,13 +515,14 @@ export function emptyXmlFeedForm(): XmlFeedFormValues {
     mapping: {},
     categoryAliases: [],
     brandAliases: [],
+    filterValueAliases: {},
     discovery: null,
     matchBy: "BARCODE",
     skuPrefix: "",
     httpUser: "",
     httpPass: "",
     createNew: true,
-    updateFields: ["price", "stock"],
+    updateFields: ["price", "stock", "filters"],
     updatePrice: true,
     updateStock: true,
     updateImages: false,
@@ -561,10 +619,10 @@ export function parseXmlFeedMapping(raw: string): XmlFeedFieldMapping {
     const asLegacy: XmlFeedFieldMapping = {};
     for (const [key, value] of Object.entries(record)) {
       if (typeof value !== "string" || !value.trim()) continue;
-      if (isXmlFeedTargetKey(value)) {
+      if (isXmlFeedMappedField(value)) {
         asSource[key.trim()] = value;
       }
-      if (isXmlFeedTargetKey(key) && !isXmlFeedTargetKey(value)) {
+      if (isXmlFeedTargetKey(key) && !isXmlFeedMappedField(value)) {
         asLegacy[value.trim()] = key;
       }
     }
@@ -597,7 +655,31 @@ function parseAliasBlock(value: unknown): XmlFeedCategoryAlias[] {
   return [];
 }
 
-export const XML_FEED_DEFAULT_UPDATE_FIELDS: XmlFeedTargetKey[] = ["price", "stock"];
+function parseFilterValueMap(value: unknown): Record<string, string[]> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const out: Record<string, string[]> = {};
+  for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+    const id = key.trim();
+    if (!id) continue;
+    if (!Array.isArray(item)) continue;
+    out[id] = item.filter((entry): entry is string => typeof entry === "string" && Boolean(entry.trim()));
+  }
+  return out;
+}
+
+function parseFilterValueAliases(value: unknown): Record<string, XmlFeedCategoryAlias[]> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const out: Record<string, XmlFeedCategoryAlias[]> = {};
+  for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+    const id = key.trim();
+    if (!id) continue;
+    const aliases = parseAliasBlock(item);
+    if (aliases.length > 0) out[id] = aliases;
+  }
+  return out;
+}
+
+export const XML_FEED_DEFAULT_UPDATE_FIELDS: XmlFeedTargetKey[] = ["price", "stock", "filters"];
 
 export function parseXmlFeedUpdateFields(value: unknown): XmlFeedTargetKey[] | null {
   if (!Array.isArray(value)) return null;
@@ -668,6 +750,7 @@ function parseDiscovery(value: unknown): XmlFeedDiscovery | null {
     xmlBrands: Array.isArray(record.xmlBrands)
       ? record.xmlBrands.filter((item): item is string => typeof item === "string")
       : [],
+    xmlFilterValues: parseFilterValueMap(record.xmlFilterValues),
     sampleRows: Array.isArray(record.sampleRows)
       ? (record.sampleRows as XmlPreviewMappedRow[]).map((row) => ({
           ...row,
@@ -681,6 +764,7 @@ function parseDiscovery(value: unknown): XmlFeedDiscovery | null {
 export function parseXmlFeedValueMaps(raw: string): {
   categories: XmlFeedCategoryAlias[];
   brands: XmlFeedCategoryAlias[];
+  filterValueAliases: Record<string, XmlFeedCategoryAlias[]>;
   updateFields: XmlFeedTargetKey[] | null;
   discovery: XmlFeedDiscovery | null;
   variantPath: string;
@@ -693,6 +777,7 @@ export function parseXmlFeedValueMaps(raw: string): {
   const empty = {
     categories: [] as XmlFeedCategoryAlias[],
     brands: [] as XmlFeedCategoryAlias[],
+    filterValueAliases: {} as Record<string, XmlFeedCategoryAlias[]>,
     updateFields: null as XmlFeedTargetKey[] | null,
     discovery: null as XmlFeedDiscovery | null,
     variantPath: "",
@@ -727,6 +812,7 @@ export function parseXmlFeedValueMaps(raw: string): {
         return {
           categories: parseAliasBlock(record.categories),
           brands: parseAliasBlock(record.brands),
+          filterValueAliases: parseFilterValueAliases(record.filterValueAliases),
           updateFields: parseXmlFeedUpdateFields(record.updateFields),
           discovery: parseDiscovery(record.discovery),
           variantPath: typeof record.variantPath === "string" ? record.variantPath : "",
@@ -750,7 +836,7 @@ export function serializeXmlFeedMapping(mapping: XmlFeedFieldMapping) {
   const clean: XmlFeedFieldMapping = {};
   for (const [path, field] of Object.entries(mapping)) {
     const xmlPath = path.trim();
-    if (xmlPath && isXmlFeedTargetKey(field)) clean[xmlPath] = field;
+    if (xmlPath && isXmlFeedMappedField(field)) clean[xmlPath] = field;
   }
   return JSON.stringify(clean);
 }
@@ -782,10 +868,18 @@ export function serializeXmlFeedValueMaps(
     deleteUnsold: false,
   },
   variantPath = "",
+  filterValueAliases: Record<string, XmlFeedCategoryAlias[]> = {},
 ) {
+  const filterAliases: Record<string, Record<string, string>> = {};
+  for (const [filterId, aliases] of Object.entries(filterValueAliases)) {
+    const id = filterId.trim();
+    if (!id) continue;
+    filterAliases[id] = aliasesToRecord(aliases);
+  }
   return JSON.stringify({
     categories: aliasesToRecord(categories),
     brands: aliasesToRecord(brands),
+    filterValueAliases: filterAliases,
     updateFields,
     discovery,
     stockLimit: parseXmlFeedStockLimit(stockLimit),
@@ -809,10 +903,46 @@ function categoryLeaf(value: string) {
 export function suggestValueAlias(from: string, options: Array<{ name: string }>) {
   const candidates = [from.trim(), categoryLeaf(from)];
   for (const candidate of candidates) {
-    const match = options.find((option) => sameLookupLabel(option.name, candidate));
+    if (!candidate) continue;
+    const match = options.find(
+      (option) =>
+        sameLookupLabel(option.name, candidate) || slugify(option.name) === slugify(candidate),
+    );
     if (match) return match.name;
   }
-  return "";
+  const folded = slugify(from);
+  if (!folded) return "";
+  const loose = options.find((option) => {
+    const optionSlug = slugify(option.name);
+    if (optionSlug.length < 4 || folded.length < 4) return false;
+    return optionSlug.startsWith(folded) || folded.startsWith(optionSlug);
+  });
+  return loose?.name ?? "";
+}
+
+export function mergeFilterValueAliases(
+  existing: Record<string, XmlFeedCategoryAlias[]>,
+  xmlFilterValues: Record<string, string[]>,
+  filters: XmlFeedFilterCatalogItem[],
+): Record<string, XmlFeedCategoryAlias[]> {
+  const next: Record<string, XmlFeedCategoryAlias[]> = { ...existing };
+  const ids = new Set([
+    ...filters.map((filter) => filter.id),
+    ...Object.keys(existing),
+    ...Object.keys(xmlFilterValues),
+  ]);
+  for (const filterId of ids) {
+    const filter = filters.find((item) => item.id === filterId);
+    const values = xmlFilterValues[filterId] ?? [];
+    const current = existing[filterId] ?? [];
+    if (values.length === 0 && current.length === 0) continue;
+    const options =
+      filter?.inputType === "BOOLEAN"
+        ? [{ name: "Evet" }, { name: "Hayır" }]
+        : (filter?.values ?? []);
+    next[filterId] = mergeValueAliases(current, values, options);
+  }
+  return next;
 }
 
 export function mergeValueAliases(
@@ -866,6 +996,7 @@ export function feedToForm(feed: XmlProductFeedSummary): XmlFeedFormValues {
     mapping: feed.mapping,
     categoryAliases: feed.categoryAliases,
     brandAliases: feed.brandAliases,
+    filterValueAliases: feed.filterValueAliases,
     discovery: feed.discovery,
     matchBy: feed.matchBy,
     skuPrefix: feed.skuPrefix,
@@ -889,6 +1020,13 @@ export function feedToForm(feed: XmlProductFeedSummary): XmlFeedFormValues {
     priceRound: feed.priceRound,
     intervalMinutes: feed.intervalMinutes,
   };
+}
+
+export function splitMappedFilterValues(raw: string) {
+  return raw
+    .split(/\s*(?:\||,|;|\/)\s*/)
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 export function applyCategoryAlias(raw: string, aliases: XmlFeedCategoryAlias[]) {

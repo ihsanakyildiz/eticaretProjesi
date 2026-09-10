@@ -27,6 +27,7 @@ import {
 import { kickApiFeedWorker, queueApiFeedRun } from "@/lib/api-product-feed-worker";
 import { discoverApiFeedSource } from "@/lib/api-feed-discover";
 import { previewJsonFeed } from "@/lib/json-product-feed";
+import { loadAdminImportLookups } from "./import-lookups";
 import {
   isXmlFeedMatchBy,
   isXmlFeedPriceRound,
@@ -160,6 +161,7 @@ export async function previewApiFeedAction(input: {
   mapping?: ApiFeedFormValues["mapping"];
   categoryAliases?: ApiFeedFormValues["categoryAliases"];
   brandAliases?: ApiFeedFormValues["brandAliases"];
+  filterValueAliases?: ApiFeedFormValues["filterValueAliases"];
   httpMethod?: ApiFeedFormValues["httpMethod"];
   authType?: ApiFeedFormValues["authType"];
   authHeader?: string;
@@ -221,7 +223,8 @@ export async function previewApiFeedAction(input: {
     switch (discovered.kind) {
       case "openapi":
         return { specTitle: discovered.title, endpoints: discovered.endpoints };
-      case "feed":
+      case "feed": {
+        const { filters } = await loadAdminImportLookups();
         return {
           preview: previewJsonFeed(
             discovered.text,
@@ -230,8 +233,11 @@ export async function previewApiFeedAction(input: {
             input.categoryAliases ?? [],
             input.brandAliases ?? [],
             input.variantPath ?? "",
+            input.filterValueAliases ?? {},
+            filters,
           ),
         };
+      }
       default: {
         const _exhaustive: never = discovered;
         return _exhaustive;

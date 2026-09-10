@@ -4,13 +4,19 @@ import { XMLParser } from "fast-xml-parser";
 import type { ProductImportColumnKey, ProductImportRawRow } from "@/lib/product-import";
 import {
   applyCategoryAlias,
+  isXmlFeedFilterTargetKey,
+  isXmlFeedTargetKey,
+  splitMappedFilterValues,
   XML_FEED_MAX_ITEMS,
   XML_FEED_PREVIEW_ITEMS,
   XML_FEED_TARGET_FIELDS,
   XML_FEED_WRITE_BATCH,
   XML_FEED_WRITE_ROW_BUDGET,
+  xmlFeedFilterIdFromTarget,
+  xmlFeedFilterTargetKey,
   type XmlFeedFieldMapping,
   type XmlFeedCategoryAlias,
+  type XmlFeedFilterCatalogItem,
   type XmlFeedPreviewResult,
   type XmlFeedTargetKey,
   type XmlPreviewMappedRow,
@@ -130,6 +136,7 @@ const FIELD_ALIASES: Record<XmlFeedTargetKey, string[]> = {
   category: ["category", "kategori", "kategoriadi", "categoryname", "g:product_type", "producttype"],
   brand: ["brand", "marka", "g:brand", "manufacturer", "uretici"],
   supplier: ["supplier", "suppliername", "tedarikci", "vendor"],
+  filters: [],
   summary: ["summary", "short", "kisaaciklama", "shortdescription", "g:description"],
   content: ["description", "aciklama", "content", "detail", "detay", "uzunaciklama", "g:description"],
   imageUrl: [
@@ -190,7 +197,7 @@ const FIELD_ALIASES: Record<XmlFeedTargetKey, string[]> = {
   option2Name: ["option2name", "ozellik2"],
   option2Value: ["option2value", "color", "colour", "renk", "renkadi", "colorname"],
   option3Name: ["option3name", "ozellik3"],
-  option3Value: ["option3value", "material", "materyal", "fabric", "kumas"],
+  option3Value: ["option3value"],
 };
 
 const VARIANT_ARRAY_TOKENS = [
@@ -247,6 +254,7 @@ const VARIANT_IDENTITY_SKIP = new Set<XmlFeedTargetKey>([
   "productKey",
   "externalId",
   "supplier",
+  "filters",
   "seoTitle",
   "seoDescription",
 ]);
@@ -255,7 +263,6 @@ const OPTION_AXES = [
   { tokens: ["varyant", "ebat", "olcu", "ölçü", "boyut", "dimension"], name: "Ebat" },
   { tokens: ["size", "beden", "sizes", "bedenadi", "sizeid"], name: "Beden" },
   { tokens: ["color", "colour", "renk", "colorname", "renkadi", "colorid"], name: "Renk" },
-  { tokens: ["material", "materyal", "fabric", "kumas"], name: "Materyal" },
 ] as const;
 
 const VARIANT_LEVEL_FIELDS = new Set<XmlFeedTargetKey>([
@@ -482,9 +489,40 @@ function isOptionBagPath(path: string) {
   });
 }
 
-export function suggestXmlMapping(paths: string[], variantPath = ""): XmlFeedFieldMapping {
+function filterPathTokens(filter: XmlFeedFilterCatalogItem) {
+  const tokens = [normalizeToken(filter.name), normalizeToken(filter.slug)].filter(Boolean);
+  const slug = filter.slug;
+  if (slug.includes("malzeme") || slug.includes("materyal") || slug.includes("kumas")) {
+    tokens.push("material", "materyal", "fabric", "kumas", "cloth", "malzeme");
+  }
+  if (slug.includes("yaka") || slug.includes("collar")) tokens.push("collar", "neck", "yaka");
+  if (slug.includes("cinsiyet") || slug.includes("gender")) tokens.push("gender", "cinsiyet", "sex");
+  if (slug.includes("sezon") || slug.includes("season")) tokens.push("season", "sezon");
+  if (slug.includes("kalip") || slug.includes("fit")) tokens.push("fit", "kalip", "silhouette");
+  if (slug.includes("kol") || slug.includes("sleeve")) tokens.push("sleeve", "kol");
+  if (slug.includes("desen") || slug.includes("pattern")) tokens.push("pattern", "desen", "print");
+  if (slug.includes("stil") || slug.includes("style")) tokens.push("style", "stil");
+  return [...new Set(tokens)];
+}
+
+function suggestFilterForPath(path: string, filters: XmlFeedFilterCatalogItem[]) {
+  const last = (path.split(".").pop() ?? path).replace(/^@/, "");
+  const token = normalizeToken(last);
+  if (!token) return null;
+  return (
+    filters.find((filter) => filterPathTokens(filter).includes(token)) ??
+    filters.find((filter) => filterPathTokens(filter).some((alias) => alias.length >= 4 && (token.startsWith(alias) || alias.startsWith(token)))) ??
+    null
+  );
+}
+
+export function suggestXmlMapping(
+  paths: string[],
+  variantPath = "",
+  filters: XmlFeedFilterCatalogItem[] = [],
+): XmlFeedFieldMapping {
   const mapping: XmlFeedFieldMapping = {};
-  const claimed = new Set<XmlFeedTargetKey>();
+  const claimed = new Set<string>();
   const nested = variantPath.trim()
     ? paths.filter((path) => pathIsUnder(path, variantPath) && path !== variantPath.trim())
     : [];
@@ -502,9 +540,21 @@ export function suggestXmlMapping(paths: string[], variantPath = ""): XmlFeedFie
     claimed.add(field);
   }
 
+  function assignFilter(path: string) {
+    if (mapping[path]) return;
+    const filter = suggestFilterForPath(path, filters);
+    if (!filter) return;
+    const key = xmlFeedFilterTargetKey(filter.id);
+    if (claimed.has(key)) return;
+    mapping[path] = key;
+    claimed.add(key);
+  }
+
   for (const path of nested) assign(path, VARIANT_LEVEL_FIELDS);
   for (const path of parent) assign(path, null);
   for (const path of nested) assign(path, null);
+  for (const path of parent) assignFilter(path);
+  for (const path of nested) assignFilter(path);
   return mapping;
 }
 
@@ -666,10 +716,10 @@ function splitMappingForVariants(mapping: XmlFeedFieldMapping, variantPath: stri
   return { parent, variant };
 }
 
-function suggestVariantMapping(paths: string[]): XmlFeedFieldMapping {
-  const mapping = suggestXmlMapping(paths);
+function suggestVariantMapping(paths: string[], filters: XmlFeedFilterCatalogItem[] = []): XmlFeedFieldMapping {
+  const mapping = suggestXmlMapping(paths, "", filters);
   for (const [path, field] of Object.entries(mapping)) {
-    if (VARIANT_IDENTITY_SKIP.has(field)) delete mapping[path];
+    if (isXmlFeedTargetKey(field) && VARIANT_IDENTITY_SKIP.has(field)) delete mapping[path];
   }
   return mapping;
 }
@@ -854,6 +904,11 @@ function mergeParentVariantRow(
   if (!(variant.compareAt ?? "").trim()) merged.compareAt = parent.compareAt;
   if (!(variant.cost ?? "").trim()) merged.cost = parent.cost;
   merged.productKey = parent.productKey;
+  const filterValues = { ...(parent.filterValues ?? {}) };
+  for (const [filterId, value] of Object.entries(variant.filterValues ?? {})) {
+    if (value.trim()) filterValues[filterId] = value;
+  }
+  if (Object.keys(filterValues).length > 0) merged.filterValues = filterValues;
   if (!(variant.barcode ?? "").trim()) {
     merged.barcode = "";
   }
@@ -894,11 +949,20 @@ export function mapFeedItemToRawRows(
   categoryAliases: XmlFeedCategoryAlias[],
   brandAliases: XmlFeedCategoryAlias[] = [],
   variantPathInput = "",
+  filterValueAliases: Record<string, XmlFeedCategoryAlias[]> = {},
+  filters: XmlFeedFilterCatalogItem[] = [],
 ): ProductImportRawRow[] {
   const variantPath = variantPathInput.trim() || detectXmlVariantPath(item);
   const variants = extractXmlVariantItems(item, variantPath);
   const { parent: parentMapping, variant: variantMappingInput } = splitMappingForVariants(mapping, variantPath);
-  const parentRow = mapXmlItemToRawRow(item, startRowNumber, parentMapping, categoryAliases, brandAliases);
+  const parentRow = mapXmlItemToRawRow(
+    item,
+    startRowNumber,
+    parentMapping,
+    categoryAliases,
+    brandAliases,
+    filterValueAliases,
+  );
   const parentKey = parentGroupKey(item, parentRow, `p${startRowNumber}`);
   parentRow.productKey = parentKey;
 
@@ -907,7 +971,7 @@ export function mapFeedItemToRawRows(
   }
 
   return variants.map((variant, index) => {
-    const autoMapping = suggestVariantMapping(listXmlItemPaths(variant));
+    const autoMapping = suggestVariantMapping(listXmlItemPaths(variant), filters);
     const variantMapping = { ...autoMapping, ...variantMappingInput };
     const variantRow = mapXmlItemToRawRow(
       variant,
@@ -915,6 +979,7 @@ export function mapFeedItemToRawRows(
       variantMapping,
       categoryAliases,
       brandAliases,
+      filterValueAliases,
     );
     const merged = mergeParentVariantRow(parentRow, variantRow);
     merged.rowNumber = startRowNumber + index;
@@ -980,6 +1045,35 @@ function collectUniqueMappedValues(
   return [...values].sort((left, right) => left.localeCompare(right, "tr"));
 }
 
+function collectUniqueMappedFilterValues(
+  items: Record<string, unknown>[],
+  mapping: XmlFeedFieldMapping,
+) {
+  const pathsByFilter = new Map<string, string[]>();
+  for (const [path, field] of Object.entries(mapping)) {
+    const filterId = xmlFeedFilterIdFromTarget(field);
+    if (!filterId) continue;
+    const list = pathsByFilter.get(filterId) ?? [];
+    list.push(path);
+    pathsByFilter.set(filterId, list);
+  }
+  const out: Record<string, string[]> = {};
+  for (const [filterId, paths] of pathsByFilter) {
+    const values = new Set<string>();
+    for (const item of items) {
+      for (const path of paths) {
+        const value = extractXmlPathValue(item, path).trim();
+        if (!value) continue;
+        for (const part of splitMappedFilterValues(value)) values.add(part);
+        if (values.size >= UNIQUE_VALUE_LIMIT) break;
+      }
+      if (values.size >= UNIQUE_VALUE_LIMIT) break;
+    }
+    out[filterId] = [...values].sort((left, right) => left.localeCompare(right, "tr"));
+  }
+  return out;
+}
+
 export function previewMappedFeedItems(
   items: Record<string, unknown>[],
   itemPath: string,
@@ -987,12 +1081,14 @@ export function previewMappedFeedItems(
   mappingInput: XmlFeedFieldMapping,
   categoryAliases: XmlFeedCategoryAlias[],
   brandAliases: XmlFeedCategoryAlias[] = [],
+  filterValueAliases: Record<string, XmlFeedCategoryAlias[]> = {},
+  filters: XmlFeedFilterCatalogItem[] = [],
 ): XmlFeedPreviewResult {
   const sample = items[0] ?? {};
   const xmlPaths = items.length > 0 ? listXmlItemPaths(sample) : [];
   const variantPath = variantPathInput.trim() || (sample ? detectXmlVariantPath(sample) : "");
   const variantPathCandidates = sample ? listXmlVariantPathCandidates(sample) : [];
-  const autoMapping = suggestXmlMapping(xmlPaths, variantPath);
+  const autoMapping = suggestXmlMapping(xmlPaths, variantPath, filters);
   const suggestedMapping =
     Object.keys(mappingInput).length > 0 ? { ...autoMapping, ...mappingInput } : autoMapping;
   const xmlTags = xmlPaths
@@ -1012,6 +1108,8 @@ export function previewMappedFeedItems(
       categoryAliases,
       brandAliases,
       variantPath,
+      filterValueAliases,
+      filters,
     );
     for (const row of rows) {
       if (sampleRows.length >= XML_FEED_PREVIEW_ITEMS) break;
@@ -1046,6 +1144,7 @@ export function previewMappedFeedItems(
     suggestedMapping,
     xmlCategories: collectUniqueMappedValues(items, suggestedMapping, "category"),
     xmlBrands: collectUniqueMappedValues(items, suggestedMapping, "brand"),
+    xmlFilterValues: collectUniqueMappedFilterValues(items, suggestedMapping),
     sampleRows,
   };
 }
@@ -1056,13 +1155,25 @@ export function mapXmlItemToRawRow(
   mapping: XmlFeedFieldMapping,
   categoryAliases: XmlFeedCategoryAlias[],
   brandAliases: XmlFeedCategoryAlias[] = [],
+  filterValueAliases: Record<string, XmlFeedCategoryAlias[]> = {},
 ): ProductImportRawRow {
   const row: ProductImportRawRow = { rowNumber };
   const collected: Partial<Record<XmlFeedTargetKey, string[]>> = {};
+  const filterCollected: Record<string, string[]> = {};
   for (const [path, field] of Object.entries(mapping)) {
     if (!path.trim()) continue;
     const value = extractXmlPathValue(item, path);
     if (!value) continue;
+    if (isXmlFeedFilterTargetKey(field)) {
+      const filterId = xmlFeedFilterIdFromTarget(field);
+      if (!filterId) continue;
+      filterCollected[filterId] = [
+        ...(filterCollected[filterId] ?? []),
+        ...splitMappedFilterValues(value),
+      ];
+      continue;
+    }
+    if (!isXmlFeedTargetKey(field) || field === "filters") continue;
     const parts = field === "imageUrl" ? value.split(/\s*\|\s*/).filter(Boolean) : [value];
     collected[field] = [...(collected[field] ?? []), ...parts];
   }
@@ -1089,6 +1200,19 @@ export function mapXmlItemToRawRow(
     }
     row[field.key as ProductImportColumnKey] = joined;
   }
+  const filterValues: Record<string, string> = {};
+  for (const [filterId, values] of Object.entries(filterCollected)) {
+    const aliases = filterValueAliases[filterId] ?? [];
+    const mapped = [
+      ...new Set(
+        values
+          .map((value) => applyCategoryAlias(value, aliases).trim())
+          .filter(Boolean),
+      ),
+    ];
+    if (mapped.length > 0) filterValues[filterId] = mapped.join(" | ");
+  }
+  if (Object.keys(filterValues).length > 0) row.filterValues = filterValues;
   return row;
 }
 
@@ -1099,6 +1223,8 @@ export function previewXmlFeed(
   categoryAliases: XmlFeedCategoryAlias[],
   brandAliases: XmlFeedCategoryAlias[] = [],
   variantPathInput = "",
+  filterValueAliases: Record<string, XmlFeedCategoryAlias[]> = {},
+  filters: XmlFeedFilterCatalogItem[] = [],
 ): XmlFeedPreviewResult {
   const root = parseXmlDocument(xml);
   const itemPath = itemPathInput.trim() || detectXmlItemPath(root);
@@ -1110,5 +1236,7 @@ export function previewXmlFeed(
     mappingInput,
     categoryAliases,
     brandAliases,
+    filterValueAliases,
+    filters,
   );
 }

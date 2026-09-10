@@ -9,7 +9,7 @@ export const metadata: Metadata = {
 };
 
 export default async function NewApiFeedPage() {
-  const { categories, brands, suppliers } = await loadAdminImportLookups();
+  const { categories, brands, suppliers, filters } = await loadAdminImportLookups();
 
   return (
     <div className="space-y-6">
@@ -24,6 +24,7 @@ export default async function NewApiFeedPage() {
         categories={categories}
         brands={brands}
         suppliers={suppliers}
+        filters={filters}
       />
     </div>
   );

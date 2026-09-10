@@ -43,6 +43,7 @@ export default async function ApiFeedEditPage({ params }: Props) {
         categories={lookups.categories}
         brands={lookups.brands}
         suppliers={lookups.suppliers}
+        filters={lookups.filters}
       />
     </div>
   );

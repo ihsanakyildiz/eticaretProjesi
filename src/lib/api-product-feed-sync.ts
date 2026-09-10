@@ -14,7 +14,10 @@ import {
   insertImportedProductsSafely,
   loadProductImportLookups,
   prepareImportedProduct,
+  resolveImportBrand,
+  resolveImportCategory,
   skuKey,
+  syncImportedProductFilters,
   uniquesFromUsed,
   type ProductImportLookups,
   type ProductImportRawRow,
@@ -206,8 +209,13 @@ function applyRowDefaults(
     const rawId = (row.externalId ?? row.productKey ?? "").trim();
     if (rawId) next.externalId = rawId.slice(0, 191);
   }
-  if (!next.category && defaults.categoryName) next.category = defaults.categoryName;
-  if (!next.brand && defaults.brandName) next.brand = defaults.brandName;
+  const categoryHit = resolveImportCategory(next.category ?? "", next.title ?? "", lookups);
+  if (categoryHit) next.category = categoryHit.name;
+  else if (defaults.categoryName) next.category = defaults.categoryName;
+  const brandHit = next.brand ? resolveImportBrand(next.brand, lookups) : null;
+  if (brandHit) next.brand = brandHit.name;
+  else if (defaults.brandName) next.brand = defaults.brandName;
+  else next.brand = "";
   if (next.supplier && !resolveLookup(lookups.suppliers, next.supplier)) {
     next.supplier = defaults.supplierName;
   } else if (!next.supplier && defaults.supplierName) {
@@ -629,11 +637,11 @@ async function updateMatchedProduct(
     if (value != null) productData.depthCm = value;
   }
   if (allowsUpdate(updateFields, "category") && row.category?.trim()) {
-    const category = resolveLookup(lookups.categories, row.category);
+    const category = resolveImportCategory(row.category, row.title ?? "", lookups);
     if (category) productData.categoryId = category.id;
   }
   if (allowsUpdate(updateFields, "brand") && row.brand?.trim()) {
-    const brand = resolveLookup(lookups.brands, row.brand);
+    const brand = resolveImportBrand(row.brand, lookups);
     if (brand) productData.brandId = brand.id;
   }
   if (allowsUpdate(updateFields, "supplier") && row.supplier?.trim()) {
@@ -708,6 +716,11 @@ async function updateMatchedProduct(
     if (externalId) {
       await withPrismaRetry(() =>
         prisma.$executeRaw`UPDATE products SET externalId = ${externalId.slice(0, 191)} WHERE id = ${hit.productId}`,
+      );
+    }
+    if (allowsUpdate(updateFields, "filters")) {
+      await withPrismaRetry(() =>
+        syncImportedProductFilters(hit.productId, row.filterValues, lookups),
       );
     }
   }
@@ -1100,6 +1113,8 @@ export async function syncApiFeedRun(runId: string) {
           valueMaps.categories,
           valueMaps.brands,
           valueMaps.variantPath,
+          valueMaps.filterValueAliases,
+          lookups.filters,
         );
         rawRows.push(...rows);
         rowNumber += rows.length;
@@ -1295,7 +1310,7 @@ export async function syncApiFeedRun(runId: string) {
           prepared.push({
             rowNumber: draft.rowNumber,
             title: draft.title,
-            item: prepareImportedProduct(draft, used, sortOrder),
+            item: prepareImportedProduct(draft, used, sortOrder, lookups.filters),
           });
           sortOrder += 1;
         }

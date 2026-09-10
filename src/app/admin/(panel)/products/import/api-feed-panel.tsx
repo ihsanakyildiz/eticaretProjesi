@@ -39,12 +39,14 @@ import {
   XML_FEED_MATCH_BY,
   XML_FEED_PRICE_ROUNDS,
   XML_FEED_TARGET_FIELDS,
-  isXmlFeedTargetKey,
+  mappingFilterIds,
+  mergeFilterValueAliases,
   xmlFeedIntervalLabel,
   xmlFeedOutOfStockLabel,
   xmlFeedPriceRoundLabel,
   xmlFeedRunStatusLabel,
   xmlFeedTargetLabel,
+  xmlFeedFilterTargetKey,
   XML_FEED_OUT_OF_STOCK,
   XML_FEED_RUN_PAGE_SIZE,
   discoveryFromPreview,
@@ -55,7 +57,9 @@ import {
   toggleUpdateField,
   upsertValueAlias,
   type XmlFeedCategoryAlias,
+  type XmlFeedFilterCatalogItem,
   type XmlFeedLookupOption,
+  type XmlFeedMappedField,
   type XmlFeedPreviewResult,
   type XmlFeedTagPreview,
   type XmlFeedTargetKey,
@@ -239,11 +243,13 @@ export function ApiFeedEditorPanel({
   categories,
   brands,
   suppliers,
+  filters,
 }: {
   initialFeed: ApiProductFeedSummary | null;
   categories: XmlFeedLookupOption[];
   brands: XmlFeedLookupOption[];
   suppliers: XmlFeedLookupOption[];
+  filters: XmlFeedFilterCatalogItem[];
 }) {
   const router = useRouter();
   const canWrite = useCanWrite("products");
@@ -299,7 +305,7 @@ export function ApiFeedEditorPanel({
     setEditor((current) => ({ ...current, [key]: value }));
   }
 
-  function updateMapping(xmlPath: string, field: XmlFeedTargetKey | "") {
+  function updateMapping(xmlPath: string, field: XmlFeedMappedField | "") {
     setEditor((current) => {
       const mapping = { ...current.mapping };
       if (!field) delete mapping[xmlPath];
@@ -323,6 +329,7 @@ export function ApiFeedEditorPanel({
         mapping: next.mapping,
         categoryAliases: next.categoryAliases,
         brandAliases: next.brandAliases,
+        filterValueAliases: next.filterValueAliases,
         httpMethod: next.httpMethod,
         authType: next.authType,
         authHeader: next.authHeader,
@@ -372,6 +379,11 @@ export function ApiFeedEditorPanel({
               categories,
             ),
             brandAliases: mergeValueAliases(current.brandAliases, result.preview!.xmlBrands, brands),
+            filterValueAliases: mergeFilterValueAliases(
+              current.filterValueAliases,
+              result.preview!.xmlFilterValues ?? {},
+              filters,
+            ),
           };
         });
       });
@@ -456,6 +468,7 @@ export function ApiFeedEditorPanel({
       categories={categories}
       brands={brands}
       suppliers={suppliers}
+      filters={filters}
       editingFeed={feed}
       endpoints={endpoints}
       specTitle={specTitle}
@@ -652,6 +665,7 @@ function FeedEditor({
   categories,
   brands,
   suppliers,
+  filters,
   editingFeed,
   endpoints,
   specTitle,
@@ -673,25 +687,42 @@ function FeedEditor({
   categories: XmlFeedLookupOption[];
   brands: XmlFeedLookupOption[];
   suppliers: XmlFeedLookupOption[];
+  filters: XmlFeedFilterCatalogItem[];
   editingFeed: ApiProductFeedSummary | null;
   endpoints: ApiFeedDiscoveredEndpoint[];
   specTitle: string | null;
   onChange: <K extends keyof ApiFeedFormValues>(key: K, value: ApiFeedFormValues[K]) => void;
-  onMapping: (xmlPath: string, field: XmlFeedTargetKey | "") => void;
+  onMapping: (xmlPath: string, field: XmlFeedMappedField | "") => void;
   onPreview: () => void;
   onPickEndpoint: (endpoint: ApiFeedDiscoveredEndpoint) => void;
   onSave: () => void;
   onRun: () => void;
 }) {
   const [logsOpen, setLogsOpen] = useState(false);
-  const groupedFields = useMemo(
-    () =>
-      FIELD_GROUPS.map((group) => ({
-        ...group,
-        fields: XML_FEED_TARGET_FIELDS.filter((field) => field.group === group.id),
-      })),
-    [],
-  );
+  const groupedFields = useMemo(() => {
+    const groups: Array<{
+      id: string;
+      label: string;
+      fields: Array<{ key: XmlFeedMappedField; header: string }>;
+    }> = FIELD_GROUPS.map((group) => ({
+      ...group,
+      fields: XML_FEED_TARGET_FIELDS.filter((field) => field.group === group.id && field.key !== "filters").map(
+        (field) => ({ key: field.key as XmlFeedMappedField, header: field.header }),
+      ),
+    }));
+    if (filters.length > 0) {
+      groups.push({
+        id: "filtreler",
+        label: "Ürün filtreleri",
+        fields: filters.map((filter) => ({
+          key: xmlFeedFilterTargetKey(filter.id),
+          header: filter.name,
+        })),
+      });
+    }
+    return groups;
+  }, [filters]);
+  const mappedFilterIds = mappingFilterIds(editor.mapping);
   const variantPath = editor.variantPath.trim() || preview?.variantPath || "";
   const { product: productTags, variant: variantTags } = splitFeedTagsByVariant(xmlTags, variantPath);
 
@@ -1037,7 +1068,7 @@ function FeedEditor({
           <div className="mt-5 space-y-5">
             <FeedMappingTable
               title="Ürün alanları"
-              hint="Tüm SKU’larda ortak: ad, kategori, marka, açıklama."
+              hint="Tüm SKU’larda ortak: ad, kategori, marka, açıklama ve ürün filtreleri."
               pathHeader="JSON alanı"
               tags={productTags}
               mapping={editor.mapping}
@@ -1095,10 +1126,11 @@ function FeedEditor({
       </section>
 
       <section className="rounded-lg border border-[#e9ebec] bg-white p-5 shadow-sm">
-        <h3 className="text-sm font-semibold text-slate-800">3. Kategori ve marka eşlemesi</h3>
+        <h3 className="text-sm font-semibold text-slate-800">3. Kategori, marka ve filtre eşlemesi</h3>
         <p className="mt-1 text-sm text-slate-500">
-          API’deki her kategori ve marka değeri için mağazadaki kaydı seçin. Eşlenmeyen satırlarda
-          varsayılan kategori / marka kullanılır.
+          API’deki her kategori, marka ve filtre değeri için mağazadaki kaydı seçin. Eşlenmeyen
+          kategoride ürün adından tahmin veya varsayılan kategori kullanılır. Filtreler ürün
+          kartındaki özel filtrelerdir; beden ve renk varyant özelliği olarak kalır.
         </p>
         <div className="mt-4 grid gap-4 md:grid-cols-2">
           <label className="block text-sm">
@@ -1152,6 +1184,42 @@ function FeedEditor({
             onChange={(aliases) => onChange("brandAliases", aliases)}
           />
         </div>
+        {mappedFilterIds.length > 0 ? (
+          <div className="mt-6 grid gap-6 xl:grid-cols-2">
+            {mappedFilterIds.map((filterId) => {
+              const filter = filters.find((item) => item.id === filterId);
+              if (!filter || filter.inputType === "RANGE") return null;
+              const options =
+                filter.inputType === "BOOLEAN"
+                  ? [{ id: "yes", name: "Evet" }, { id: "no", name: "Hayır" }]
+                  : filter.values;
+              return (
+                <ValueMapTable
+                  key={filter.id}
+                  title={`Filtre: ${filter.name}`}
+                  emptyHint="Bu filtreyi eşleyip API’yi tekrar çekin."
+                  values={
+                    preview?.xmlFilterValues?.[filter.id] ??
+                    (editor.filterValueAliases[filter.id] ?? []).map((alias) => alias.from)
+                  }
+                  aliases={editor.filterValueAliases[filter.id] ?? []}
+                  options={options}
+                  onChange={(aliases) =>
+                    onChange("filterValueAliases", {
+                      ...editor.filterValueAliases,
+                      [filter.id]: aliases,
+                    })
+                  }
+                />
+              );
+            })}
+          </div>
+        ) : filters.length > 0 ? (
+          <p className="mt-6 rounded-md border border-dashed border-[#e9ebec] px-4 py-3 text-sm text-slate-500">
+            Ürün filtrelerini bağlamak için 2. adımda ilgili JSON alanını “Ürün filtreleri”
+            grubundan seçin. Materyal, yaka, sezon gibi alanlar otomatik önerilir.
+          </p>
+        ) : null}
       </section>
 
       <section className="rounded-lg border border-[#e9ebec] bg-white p-5 shadow-sm">

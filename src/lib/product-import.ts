@@ -25,6 +25,12 @@ import {
   formatVariantTitle,
 } from "@/lib/product-variants";
 import { slugify } from "@/lib/slug";
+import type { CategoryNodeBase } from "@/lib/category-tree";
+import { suggestProductCategory } from "@/lib/suggest-product-category";
+import {
+  splitMappedFilterValues,
+  type XmlFeedFilterCatalogItem,
+} from "@/lib/xml-product-feed-shared";
 
 export const PRODUCT_IMPORT_MAX_ROWS = 50000;
 export const PRODUCT_IMPORT_MAX_BYTES = 40 * 1024 * 1024;
@@ -80,6 +86,7 @@ export type ProductImportColumnKey = (typeof PRODUCT_IMPORT_COLUMNS)[number]["ke
 export type ProductImportRawRow = Partial<Record<ProductImportColumnKey, string>> & {
   rowNumber: number;
   externalId?: string;
+  filterValues?: Record<string, string>;
 };
 
 export type ProductImportPreviewStatus = "ready" | "zero_price" | "error";
@@ -126,7 +133,7 @@ export type ProductImportJobSummary = ProductImportFileStats & {
 };
 
 export type ProductImportLookups = {
-  categories: Array<{ id: string; name: string; slug: string }>;
+  categories: CategoryNodeBase[];
   brands: Array<{ id: string; name: string; slug: string }>;
   suppliers: Array<{ id: string; name: string; slug: string }>;
   attributes: Array<{
@@ -135,6 +142,7 @@ export type ProductImportLookups = {
     slug: string;
     values: Array<{ id: string; name: string; slug: string }>;
   }>;
+  filters: XmlFeedFilterCatalogItem[];
   defaultTaxPercent: number;
 };
 
@@ -176,6 +184,7 @@ export type ProductImportDraft = {
   seoTitle: string | null;
   seoDescription: string | null;
   variants: ProductImportVariantDraft[];
+  filterValues?: Record<string, string>;
 };
 
 export type ProductImportVariantDraft = {
@@ -282,7 +291,22 @@ export type PreparedImportedProduct = {
     isCover: boolean;
     sortOrder: number;
   }>;
+  filterAssignments: ProductImportFilterAssignment[];
 };
+
+export type ProductImportFilterAssignment = {
+  id: string;
+  productId: string;
+  filterId: string;
+  valueId: string | null;
+  numberValue: number | null;
+  booleanValue: boolean | null;
+};
+
+type ImportWriteClient = Pick<
+  typeof prisma,
+  "product" | "productVariant" | "productVariantSelection" | "productImage" | "productFilterAssignment" | "$executeRaw"
+>;
 
 export type ProductImportJobRawPayload = {
   rows: ProductImportRawRow[];
@@ -472,6 +496,180 @@ function resolveByNameOrSlug<T extends { id: string; name: string; slug: string 
   );
 }
 
+function resolveByNameOrSlugLoose<T extends { id: string; name: string; slug: string }>(
+  items: T[],
+  raw: string,
+): T | null {
+  const exact = resolveByNameOrSlug(items, raw);
+  if (exact) return exact;
+  const leaf = raw
+    .split(/[>|/]+/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .at(-1);
+  if (leaf && leaf !== raw.trim()) {
+    const leafHit = resolveByNameOrSlug(items, leaf);
+    if (leafHit) return leafHit;
+  }
+  const folded = slugify(raw);
+  if (folded.length < 4) return null;
+  return (
+    items.find((item) => {
+      if (item.slug.length < 4) return false;
+      return item.slug.startsWith(folded) || folded.startsWith(item.slug);
+    }) ?? null
+  );
+}
+
+export function resolveImportCategory(
+  raw: string,
+  title: string,
+  lookups: ProductImportLookups,
+): CategoryNodeBase | null {
+  const fromName = raw.trim() ? resolveByNameOrSlugLoose(lookups.categories, raw) : null;
+  if (fromName) return fromName;
+  if (!title.trim()) return null;
+  const suggested = suggestProductCategory(title, lookups.categories);
+  if (!suggested) return null;
+  return lookups.categories.find((item) => item.id === suggested.id) ?? null;
+}
+
+export function resolveImportBrand(raw: string, lookups: ProductImportLookups) {
+  return resolveByNameOrSlugLoose(lookups.brands, raw);
+}
+
+function resolveFilterChoice(
+  filter: XmlFeedFilterCatalogItem,
+  raw: string,
+): { id: string; name: string } | null {
+  const value = raw.trim();
+  if (!value) return null;
+  const slug = slugify(value);
+  const folded = value.toLocaleLowerCase("tr-TR");
+  return (
+    filter.values.find((item) => (item.slug || slugify(item.name)) === slug) ??
+    filter.values.find((item) => item.name.toLocaleLowerCase("tr-TR") === folded) ??
+    filter.values.find((item) => {
+      const optionSlug = item.slug || slugify(item.name);
+      if (optionSlug.length < 4 || slug.length < 4) return false;
+      return optionSlug.startsWith(slug) || slug.startsWith(optionSlug);
+    }) ??
+    null
+  );
+}
+
+function parseImportedFilterBoolean(raw: string): boolean | null {
+  const value = raw.trim().toLocaleLowerCase("tr-TR");
+  if (!value) return null;
+  switch (value) {
+    case "evet":
+    case "e":
+    case "yes":
+    case "true":
+    case "1":
+    case "var":
+    case "aktif":
+    case "açık":
+    case "acik":
+    case "on":
+      return true;
+    case "hayır":
+    case "hayir":
+    case "h":
+    case "no":
+    case "false":
+    case "0":
+    case "yok":
+    case "pasif":
+    case "kapalı":
+    case "kapali":
+    case "off":
+      return false;
+    default:
+      return null;
+  }
+}
+
+export function resolveImportedFilterAssignments(
+  productId: string,
+  filterValues: Record<string, string> | undefined,
+  filters: XmlFeedFilterCatalogItem[],
+): ProductImportFilterAssignment[] {
+  if (!filterValues) return [];
+  const rows: ProductImportFilterAssignment[] = [];
+  for (const [filterId, raw] of Object.entries(filterValues)) {
+    const filter = filters.find((item) => item.id === filterId);
+    const incoming = raw.trim();
+    if (!filter || !incoming) continue;
+    switch (filter.inputType) {
+      case "BOOLEAN": {
+        const booleanValue = parseImportedFilterBoolean(splitMappedFilterValues(incoming)[0] ?? incoming);
+        if (booleanValue == null) break;
+        rows.push({
+          id: newRecordId(),
+          productId,
+          filterId,
+          valueId: null,
+          numberValue: null,
+          booleanValue,
+        });
+        break;
+      }
+      case "RANGE": {
+        const numberValue = parseOptionalDecimal(splitMappedFilterValues(incoming)[0] ?? incoming);
+        if (numberValue == null) break;
+        rows.push({
+          id: newRecordId(),
+          productId,
+          filterId,
+          valueId: null,
+          numberValue,
+          booleanValue: null,
+        });
+        break;
+      }
+      case "MULTI_SELECT":
+      case "SWATCH": {
+        const seen = new Set<string>();
+        for (const part of splitMappedFilterValues(incoming)) {
+          const match = resolveFilterChoice(filter, part);
+          if (!match || seen.has(match.id)) continue;
+          seen.add(match.id);
+          rows.push({
+            id: newRecordId(),
+            productId,
+            filterId,
+            valueId: match.id,
+            numberValue: null,
+            booleanValue: null,
+          });
+        }
+        break;
+      }
+      default: {
+        const _exhaustive: never = filter.inputType;
+        return _exhaustive;
+      }
+    }
+  }
+  return rows;
+}
+
+export async function syncImportedProductFilters(
+  productId: string,
+  filterValues: Record<string, string> | undefined,
+  lookups: ProductImportLookups,
+  tx: ImportWriteClient = prisma,
+) {
+  const rows = resolveImportedFilterAssignments(productId, filterValues, lookups.filters);
+  const writableIds = [...new Set(rows.map((row) => row.filterId))];
+  if (writableIds.length === 0) return;
+  await tx.productFilterAssignment.deleteMany({
+    where: { productId, filterId: { in: writableIds } },
+  });
+  await tx.productFilterAssignment.createMany({ data: rows });
+}
+
 function parseVisibility(raw: string | undefined): ProductVisibility | null {
   const value = (raw ?? "").trim();
   if (!value) return "EVERYWHERE";
@@ -554,11 +752,11 @@ export function parseImageUrls(raw: string | undefined): { urls: string[]; inval
 }
 
 export async function loadProductImportLookups(): Promise<ProductImportLookups> {
-  const [categories, brands, suppliers, defaultTax, attributes] = await Promise.all([
+  const [categories, brands, suppliers, defaultTax, attributes, filters] = await Promise.all([
     prisma.productCategory.findMany({
       where: { isActive: true },
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
-      select: { id: true, name: true, slug: true },
+      select: { id: true, parentId: true, name: true, slug: true, sortOrder: true, isActive: true },
     }),
     prisma.brand.findMany({
       where: { isActive: true },
@@ -587,6 +785,22 @@ export async function loadProductImportLookups(): Promise<ProductImportLookups> 
         },
       },
     }),
+    prisma.productFilter.findMany({
+      where: { kind: "CUSTOM", isActive: true },
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        inputType: true,
+        unit: true,
+        values: {
+          where: { isActive: true },
+          orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+          select: { id: true, name: true, slug: true },
+        },
+      },
+    }),
   ]);
 
   return {
@@ -594,6 +808,7 @@ export async function loadProductImportLookups(): Promise<ProductImportLookups> 
     brands,
     suppliers,
     attributes,
+    filters,
     defaultTaxPercent: defaultTax?.percent ?? 20,
   };
 }
@@ -663,6 +878,13 @@ function mergeBaseRow(rows: ProductImportRawRow[]): ProductImportRawRow {
     const filled = firstCell(rows, key);
     if (filled) base[key] = filled;
   }
+  const filterValues = { ...(base.filterValues ?? {}) };
+  for (const row of rows.slice(1)) {
+    for (const [filterId, value] of Object.entries(row.filterValues ?? {})) {
+      if (!(filterValues[filterId] ?? "").trim() && value.trim()) filterValues[filterId] = value;
+    }
+  }
+  if (Object.keys(filterValues).length > 0) base.filterValues = filterValues;
   return base;
 }
 
@@ -857,13 +1079,14 @@ export function buildImportGroup(
   const title = (row.title ?? "").trim();
   const categoryRaw = (row.category ?? "").trim();
   if (!title) errors.push("Ürün adı zorunludur.");
-  if (!categoryRaw) errors.push("Kategori zorunludur.");
 
-  const category = categoryRaw ? resolveByNameOrSlug(lookups.categories, categoryRaw) : null;
-  if (categoryRaw && !category) errors.push(`Kategori bulunamadı: ${categoryRaw}`);
+  const category = resolveImportCategory(categoryRaw, title, lookups);
+  if (!category) {
+    errors.push(categoryRaw ? `Kategori bulunamadı: ${categoryRaw}` : "Kategori zorunludur.");
+  }
 
   const brandRaw = (row.brand ?? "").trim();
-  const brand = brandRaw ? resolveByNameOrSlug(lookups.brands, brandRaw) : null;
+  const brand = brandRaw ? resolveImportBrand(brandRaw, lookups) : null;
   if (brandRaw && !brand) errors.push(`Marka bulunamadı: ${brandRaw}`);
 
   const supplierRaw = (row.supplier ?? "").trim();
@@ -1079,6 +1302,7 @@ export function buildImportGroup(
       seoTitle: emptyToNull(row.seoTitle),
       seoDescription: emptyToNull(row.seoDescription, 500),
       variants,
+      filterValues: row.filterValues,
     },
     errors: [],
   };
@@ -1453,6 +1677,7 @@ export function prepareImportedProduct(
   draft: ProductImportDraft,
   used: ProductImportUsed,
   sortOrder: number,
+  filters: XmlFeedFilterCatalogItem[] = [],
 ): PreparedImportedProduct {
   const now = new Date();
   const productId = newRecordId();
@@ -1564,13 +1789,9 @@ export function prepareImportedProduct(
       isCover: index === 0,
       sortOrder: index,
     })),
+    filterAssignments: resolveImportedFilterAssignments(productId, draft.filterValues, filters),
   };
 }
-
-type ImportWriteClient = Pick<
-  typeof prisma,
-  "product" | "productVariant" | "productVariantSelection" | "productImage" | "$executeRaw"
->;
 
 function productCreateData(item: PreparedImportedProduct) {
   const { externalId: _externalId, ...product } = item.product;
@@ -1601,6 +1822,10 @@ export async function insertImportedProducts(
   const images = items.flatMap((item) => item.images);
   if (images.length > 0) {
     await tx.productImage.createMany({ data: images });
+  }
+  const filterAssignments = items.flatMap((item) => item.filterAssignments);
+  if (filterAssignments.length > 0) {
+    await tx.productFilterAssignment.createMany({ data: filterAssignments });
   }
   for (const item of items) {
     const externalId = item.product.externalId?.trim();

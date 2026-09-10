@@ -9,7 +9,7 @@ const SECTIONS = [
   { id: "kaynak", label: "1. Kaynak" },
   { id: "esleme", label: "2. Alan eşleme" },
   { id: "varyant", label: "Varyantlı ürünler" },
-  { id: "kategori", label: "3. Kategori ve marka" },
+  { id: "kategori", label: "3. Kategori, marka ve filtre" },
   { id: "kurallar", label: "4. Senkron kuralları" },
   { id: "calistir", label: "Kaydet ve çalıştır" },
   { id: "sorun", label: "Sık karşılaşılanlar" },
@@ -154,6 +154,11 @@ function XmlFeedHelpModal({ onClose }: { onClose: () => void }) {
                   Barkod veya SKU yoksa eşleme anahtarı genelde{" "}
                   <strong className="font-medium text-slate-800">Ürün ID</strong> (UrunKartiID) olur.
                 </li>
+                <li>
+                  Materyal, yaka, sezon gibi ürün özellikleri{" "}
+                  <strong className="font-medium text-slate-800">Ürün filtreleri</strong> grubuna
+                  bağlanır. Beden ve renk varyant (SKU) özelliği olarak kalır.
+                </li>
               </ul>
             </HelpSection>
 
@@ -230,10 +235,13 @@ function XmlFeedHelpModal({ onClose }: { onClose: () => void }) {
               </p>
             </HelpSection>
 
-            <HelpSection id="kategori" title="3. Kategori ve marka eşlemesi">
+            <HelpSection id="kategori" title="3. Kategori, marka ve filtre eşlemesi">
               <p>
-                XML’deki metinler mağaza kategorisi / markası ile birebir aynı olmayabilir. Her değer
-                için mağazadaki kaydı seçin. Eşlenmeyen satırda varsayılan kategori / marka kullanılır.
+                XML’deki metinler mağaza kategorisi / markası / filtre değeri ile birebir aynı
+                olmayabilir. Her değer için mağazadaki kaydı seçin. Kategori eşleşmezse ürün
+                adından tahmin edilir; o da olmazsa varsayılan kategori kullanılır. Eşlenen
+                filtreler yeni ürüne yazılır; mevcut üründe yalnızca “Filtreler” güncellemesi
+                açıksa değişir.
               </p>
             </HelpSection>
 

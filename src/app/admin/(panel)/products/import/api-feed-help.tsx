@@ -10,7 +10,7 @@ const SECTIONS = [
   { id: "dokuman", label: "Doküman ve OpenAPI" },
   { id: "esleme", label: "2. Alan eşleme" },
   { id: "varyant", label: "Varyantlı ürünler" },
-  { id: "kategori", label: "3. Kategori ve marka" },
+  { id: "kategori", label: "3. Kategori, marka ve filtre" },
   { id: "kurallar", label: "4. Senkron kuralları" },
   { id: "calistir", label: "Kaydet ve çalıştır" },
   { id: "sorun", label: "Sık karşılaşılanlar" },
@@ -267,6 +267,11 @@ function ApiFeedHelpModal({ onClose }: { onClose: () => void }) {
                   Barkod veya SKU yoksa eşleme anahtarı genelde <strong className="font-medium text-slate-800">API ürün ID</strong>{" "}
                   olur.
                 </li>
+                <li>
+                  Materyal, yaka, sezon gibi ürün özellikleri{" "}
+                  <strong className="font-medium text-slate-800">Ürün filtreleri</strong> grubuna
+                  bağlanır. Beden ve renk varyant (SKU) özelliği olarak kalır.
+                </li>
               </ul>
               <p className="mt-3">
                 5. adımdaki “Güncellenecek alanlar” hangi bilgilerin sonraki senkronlarda üzerine
@@ -330,22 +335,24 @@ function ApiFeedHelpModal({ onClose }: { onClose: () => void }) {
               </p>
             </HelpSection>
 
-            <HelpSection id="kategori" title="3. Kategori ve marka eşlemesi">
+            <HelpSection id="kategori" title="3. Kategori, marka ve filtre eşlemesi">
               <p>
-                API’deki metinler (ör. “Elektronik”, “mens clothing”) mağaza kategorisi / markası
-                ile birebir aynı olmayabilir. Her değer için mağazadaki kaydı seçin.
+                API’deki metinler (ör. “Elektronik”, “mens clothing”) mağaza kategorisi / markası /
+                filtre değeri ile birebir aynı olmayabilir. Her değer için mağazadaki kaydı seçin.
               </p>
               <ul className="mt-3 list-disc space-y-1.5 pl-5">
                 <li>
-                  Liste, kategori ve marka alanlarını eşleyip API’yi çektikten sonra dolar.
+                  Liste, kategori, marka ve filtre alanlarını eşleyip API’yi çektikten sonra dolar.
                 </li>
                 <li>
-                  Eşlenmeyen satırda <strong className="font-medium text-slate-800">varsayılan
-                  kategori / marka</strong> kullanılır.
+                  Eşlenmeyen kategoride ürün adından tahmin edilir; o da olmazsa{" "}
+                  <strong className="font-medium text-slate-800">varsayılan kategori / marka</strong>{" "}
+                  kullanılır.
                 </li>
                 <li>
                   Yeni ürün eklemek için ya kategori alanı eşlenmeli ya da varsayılan kategori
-                  seçilmelidir.
+                  seçilmelidir. Filtreler yeni ürüne yazılır; mevcut üründe yalnızca “Filtreler”
+                  güncellemesi açıksa değişir.
                 </li>
               </ul>
             </HelpSection>

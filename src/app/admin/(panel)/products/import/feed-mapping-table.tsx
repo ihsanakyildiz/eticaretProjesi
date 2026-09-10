@@ -1,6 +1,6 @@
 "use client";
 
-import { isXmlFeedTargetKey, type XmlFeedTagPreview, type XmlFeedTargetKey } from "@/lib/xml-product-feed-shared";
+import { isXmlFeedMappedField, type XmlFeedMappedField, type XmlFeedTagPreview } from "@/lib/xml-product-feed-shared";
 
 const inputClass =
   "w-full rounded-md border border-[#e9ebec] bg-white px-3 py-2.5 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-[#0ab39c] focus:ring-2 focus:ring-[#0ab39c]/20";
@@ -25,13 +25,13 @@ export function FeedMappingTable({
   hint: string;
   pathHeader: string;
   tags: XmlFeedTagPreview[];
-  mapping: Record<string, XmlFeedTargetKey>;
+  mapping: Record<string, XmlFeedMappedField>;
   groupedFields: Array<{
     id: string;
     label: string;
-    fields: Array<{ key: XmlFeedTargetKey; header: string }>;
+    fields: Array<{ key: XmlFeedMappedField; header: string }>;
   }>;
-  onMapping: (xmlPath: string, field: XmlFeedTargetKey | "") => void;
+  onMapping: (xmlPath: string, field: XmlFeedMappedField | "") => void;
   pathStyle?: "plain" | "xml";
 }) {
   if (tags.length === 0) return null;
@@ -67,7 +67,7 @@ export function FeedMappingTable({
                     value={mapping[tag.path] ?? ""}
                     onChange={(event) => {
                       const value = event.target.value;
-                      onMapping(tag.path, isXmlFeedTargetKey(value) ? value : "");
+                      onMapping(tag.path, isXmlFeedMappedField(value) ? value : "");
                     }}
                   >
                     <option value="">Eşleme</option>
