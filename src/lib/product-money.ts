@@ -1,8 +1,44 @@
-export function parseMajorToMinor(raw: string): number | null {
-  const normalized = raw.trim().replace(/\s/g, "").replace(",", ".");
-  if (!normalized) return null;
-  const value = Number(normalized);
+/**
+ * Firma fiyat metni: 266.000 / 266,000 → 266; 1.234,56 / 1,234.56 → 1234.56;
+ * 1.234.567 → 1234567. Tek ayırıcı her zaman ondalıktır.
+ */
+export function parseFeedMajor(raw: string): number | null {
+  const compact = raw.trim();
+  if (!compact) return null;
+  let text = compact.replace(/[^\d,.\-]/g, "");
+  if (!text || text === "-" || text === "." || text === ",") return null;
+
+  const hasComma = text.includes(",");
+  const hasDot = text.includes(".");
+
+  if (hasComma && hasDot) {
+    if (text.lastIndexOf(",") > text.lastIndexOf(".")) {
+      text = text.replace(/\./g, "").replace(",", ".");
+    } else {
+      text = text.replace(/,/g, "");
+    }
+  } else if (hasDot) {
+    const parts = text.split(".");
+    if (parts.length > 2 && parts.slice(1).every((part) => part.length === 3)) {
+      text = parts.join("");
+    }
+  } else if (hasComma) {
+    const parts = text.split(",");
+    if (parts.length > 2 && parts.slice(1).every((part) => part.length === 3)) {
+      text = parts.join("");
+    } else {
+      text = text.replace(",", ".");
+    }
+  }
+
+  const value = Number(text);
   if (!Number.isFinite(value) || value < 0) return null;
+  return value;
+}
+
+export function parseMajorToMinor(raw: string): number | null {
+  const value = parseFeedMajor(raw);
+  if (value == null) return null;
   return Math.round(value * 100);
 }
 
@@ -11,11 +47,7 @@ export function formatMinorToMajorInput(minor: number): string {
 }
 
 export function formatMinorTry(minor: number): string {
-  return new Intl.NumberFormat("tr-TR", {
-    style: "currency",
-    currency: "TRY",
-    minimumFractionDigits: 2,
-  }).format(minor / 100);
+  return formatMinorTl(minor);
 }
 
 export function formatMinorTl(minor: number): string {

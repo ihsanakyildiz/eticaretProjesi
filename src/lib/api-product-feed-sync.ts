@@ -31,7 +31,7 @@ import {
 import { prisma } from "@/lib/prisma";
 import { uniqueBarcodeOrNull } from "@/lib/product-barcode-db";
 import { writeCatalogStock } from "@/lib/inventory";
-import { resolveImportedListPrices, taxExcludedMinor } from "@/lib/product-money";
+import { parseFeedMajor, resolveImportedListPrices, taxExcludedMinor } from "@/lib/product-money";
 import { extractEditorUploadPathsFromHtml } from "@/lib/rich-text-uploads";
 import { slugify } from "@/lib/slug";
 import { deletePublicAsset } from "@/lib/uploads";
@@ -106,20 +106,7 @@ function applySkuPrefix(value: string, prefix: string) {
 }
 
 function parseXmlMajor(raw: string) {
-  const compact = raw.trim();
-  if (!compact) return null;
-  let text = compact.replace(/[^\d,.\-]/g, "");
-  if (!text) return null;
-  if (/^\d{1,3}(\.\d{3})+(,\d+)?$/.test(text)) {
-    text = text.replace(/\./g, "").replace(",", ".");
-  } else if (text.includes(",") && !text.includes(".")) {
-    text = text.replace(",", ".");
-  } else {
-    text = text.replace(/,/g, "");
-  }
-  const value = Number(text);
-  if (!Number.isFinite(value) || value < 0) return null;
-  return value;
+  return parseFeedMajor(raw);
 }
 
 function parseXmlStock(raw: string) {
