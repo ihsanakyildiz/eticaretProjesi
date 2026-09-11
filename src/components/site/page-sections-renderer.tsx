@@ -14,6 +14,7 @@ import type { PricingBillingOptions } from "@/lib/pricing";
 import {
   getContactFormSettings,
   getContactInfoBlockSettings,
+  sectionHideClassName,
 } from "@/lib/page-sections";
 
 export type PageSectionsContactInfo = {
@@ -68,13 +69,20 @@ const ContactInfoSection = dynamic(() =>
 
 function SectionShell({
   anchorId,
+  className,
   children,
 }: {
   anchorId?: string;
+  className?: string;
   children: React.ReactNode;
 }) {
-  if (!anchorId) return <>{children}</>;
-  return <div id={anchorId}>{children}</div>;
+  const classes = className?.trim() || undefined;
+  if (!anchorId && !classes) return <>{children}</>;
+  return (
+    <div id={anchorId || undefined} className={classes}>
+      {children}
+    </div>
+  );
 }
 
 function RichTextSection({
@@ -179,13 +187,17 @@ export function PageSectionsRenderer({
     nested = false,
   ): React.ReactNode => {
         const anchor = section.settings.anchorId;
+        const hideClass = sectionHideClassName(section.settings.hideBreakpoints);
         const shell = (node: React.ReactNode) =>
           nested ? (
-            <div key={section.id} className="pg-nested-item">
+            <div
+              key={section.id}
+              className={["pg-nested-item", hideClass].filter(Boolean).join(" ")}
+            >
               {node}
             </div>
           ) : (
-            <SectionShell key={section.id} anchorId={anchor}>
+            <SectionShell key={section.id} anchorId={anchor} className={hideClass || undefined}>
               {node}
             </SectionShell>
           );
@@ -253,8 +265,7 @@ export function PageSectionsRenderer({
               />,
             );
           case "CARDS":
-            return (
-              <SectionShell key={section.id} anchorId={anchor}>
+            return shell(
                 <HomeServices
                   title={section.title}
                   subtitle={section.subtitle}
@@ -282,12 +293,11 @@ export function PageSectionsRenderer({
                     description: card.description ?? undefined,
                   }))}
                 />
-              </SectionShell>
             );
           case "ADVANCED_CARD": {
             const card = section.cards[0] ?? null;
             return (
-              <SectionShell key={section.id} anchorId={anchor}>
+              <SectionShell key={section.id} anchorId={anchor} className={hideClass || undefined}>
                 <HomeWhyUs
                   card={
                     card
@@ -317,7 +327,7 @@ export function PageSectionsRenderer({
           }
           case "PROJECTS":
             return (
-              <SectionShell key={section.id} anchorId={anchor}>
+              <SectionShell key={section.id} anchorId={anchor} className={hideClass || undefined}>
                 <HomeProjects
                   title={section.title}
                   subtitle={section.subtitle}
@@ -338,7 +348,7 @@ export function PageSectionsRenderer({
             );
           case "WORKS":
             return (
-              <SectionShell key={section.id} anchorId={anchor}>
+              <SectionShell key={section.id} anchorId={anchor} className={hideClass || undefined}>
                 <HomeWorks
                   title={section.title}
                   subtitle={section.subtitle}
@@ -358,7 +368,7 @@ export function PageSectionsRenderer({
             );
           case "PRODUCTS":
             return (
-              <SectionShell key={section.id} anchorId={anchor}>
+              <SectionShell key={section.id} anchorId={anchor} className={hideClass || undefined}>
                 <HomeProductRail
                   title={section.title}
                   subtitle={section.subtitle}
@@ -390,7 +400,7 @@ export function PageSectionsRenderer({
             );
           case "BLOG":
             return (
-              <SectionShell key={section.id} anchorId={anchor}>
+              <SectionShell key={section.id} anchorId={anchor} className={hideClass || undefined}>
                 <HomeInsights
                   title={section.title}
                   subtitle={section.subtitle}
@@ -411,7 +421,7 @@ export function PageSectionsRenderer({
             );
           case "FAQ":
             return (
-              <SectionShell key={section.id} anchorId={anchor}>
+              <SectionShell key={section.id} anchorId={anchor} className={hideClass || undefined}>
                 <HomeFaq
                   title={section.title}
                   subtitle={section.subtitle}
@@ -425,7 +435,7 @@ export function PageSectionsRenderer({
             );
           case "RICH_TEXT":
             return (
-              <SectionShell key={section.id} anchorId={anchor}>
+              <SectionShell key={section.id} anchorId={anchor} className={hideClass || undefined}>
                 <RichTextSection
                   title={section.title}
                   subtitle={section.subtitle}
@@ -435,7 +445,7 @@ export function PageSectionsRenderer({
             );
           case "PRICING":
             return (
-              <SectionShell key={section.id} anchorId={anchor}>
+              <SectionShell key={section.id} anchorId={anchor} className={hideClass || undefined}>
                 <HomePricing
                   title={section.title}
                   subtitle={section.subtitle}
@@ -457,7 +467,7 @@ export function PageSectionsRenderer({
             );
           case "CTA":
             return (
-              <SectionShell key={section.id} anchorId={anchor}>
+              <SectionShell key={section.id} anchorId={anchor} className={hideClass || undefined}>
                 <CtaSection
                   title={section.title}
                   subtitle={section.subtitle}

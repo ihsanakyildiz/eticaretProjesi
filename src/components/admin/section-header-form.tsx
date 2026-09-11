@@ -7,10 +7,12 @@ import {
   updatePageSectionHeaderAction,
   type SectionFormState,
 } from "@/app/admin/(panel)/pages/actions";
+import { SectionHideBreakpointsFields } from "@/components/admin/section-hide-breakpoints";
 import {
   getPageSectionTypeMeta,
   sectionSupportsEyebrow,
   type PageSectionTypeValue,
+  type SectionHideBreakpoint,
 } from "@/lib/page-sections";
 
 const initialState: SectionFormState = {};
@@ -23,6 +25,7 @@ type SectionHeaderFormProps = {
   subtitle?: string | null;
   eyebrow?: string | null;
   anchorId?: string | null;
+  hideBreakpoints?: SectionHideBreakpoint[];
   /** Grid satırı için admin etiketi ve anchor göster */
   showAdminFields?: boolean;
   compact?: boolean;
@@ -36,6 +39,7 @@ export function SectionHeaderForm({
   subtitle,
   eyebrow,
   anchorId,
+  hideBreakpoints,
   showAdminFields = false,
   compact = false,
 }: SectionHeaderFormProps) {
@@ -140,6 +144,10 @@ export function SectionHeaderForm({
           />
         </div>
       </div>
+
+      {showAdminFields ? (
+        <SectionHideBreakpointsFields selected={hideBreakpoints} />
+      ) : null}
 
       <button
         type="submit"

@@ -172,3 +172,35 @@
   padding-left: 0 !important;
   padding-right: 0 !important;
 }
+
+/* Gelişmiş sayfa bölümleri — Bootstrap 5 bantlarında gizle */
+@media (max-width: 575.98px) {
+  .pg-hide-xs {
+    display: none !important;
+  }
+}
+@media (min-width: 576px) and (max-width: 767.98px) {
+  .pg-hide-sm {
+    display: none !important;
+  }
+}
+@media (min-width: 768px) and (max-width: 991.98px) {
+  .pg-hide-md {
+    display: none !important;
+  }
+}
+@media (min-width: 992px) and (max-width: 1199.98px) {
+  .pg-hide-lg {
+    display: none !important;
+  }
+}
+@media (min-width: 1200px) and (max-width: 1399.98px) {
+  .pg-hide-xl {
+    display: none !important;
+  }
+}
+@media (min-width: 1400px) {
+  .pg-hide-xxl {
+    display: none !important;
+  }
+}

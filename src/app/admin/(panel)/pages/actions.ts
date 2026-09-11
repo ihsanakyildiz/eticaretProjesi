@@ -24,6 +24,7 @@ import {
   isProductCategorySectionSource,
   isCardColumnsPerRow,
   isCardSliderEffect,
+  parseHideBreakpoints,
   parseSectionSettings,
   parseSliderDelayMs,
   parseSliderSpeedMs,
@@ -829,6 +830,9 @@ export async function updatePageSectionHeaderAction(
       ...(sectionSupportsEyebrow(type) && formData.has("eyebrow")
         ? { eyebrow: eyebrowRaw || undefined }
         : {}),
+      ...(formData.has("hideBreakpointsTouched")
+        ? { hideBreakpoints: parseHideBreakpoints(formData.getAll("hideBreakpoints")) }
+        : {}),
       ...(existingSettings.gridCol ? { gridCol: existingSettings.gridCol } : {}),
       ...(type === "GRID_ROW" && existingSettings.gridRow
         ? { gridRow: existingSettings.gridRow }
@@ -1335,6 +1339,9 @@ export async function updatePageSectionAction(
       formData.get("contactInfoShowMap") === "true";
 
     const existingSettings = parseSectionSettings(section.settings);
+    const hideBreakpoints = formData.has("hideBreakpointsTouched")
+      ? parseHideBreakpoints(formData.getAll("hideBreakpoints"))
+      : existingSettings.hideBreakpoints;
 
     const removedEditorPaths =
       type === "RICH_TEXT" || type === "CTA"
@@ -1455,6 +1462,7 @@ export async function updatePageSectionAction(
       ...(type === "GRID_ROW" && existingSettings.gridRow
         ? { gridRow: existingSettings.gridRow }
         : {}),
+      hideBreakpoints,
     });
 
     await prisma.$transaction(async (tx) => {

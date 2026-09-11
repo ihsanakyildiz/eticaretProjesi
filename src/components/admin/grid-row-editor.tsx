@@ -638,6 +638,7 @@ export function GridRowEditor({
         subtitle={section.subtitle}
         eyebrow={settings.eyebrow}
         anchorId={settings.anchorId}
+        hideBreakpoints={settings.hideBreakpoints}
         showAdminFields
       />
 

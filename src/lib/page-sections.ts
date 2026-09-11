@@ -180,6 +180,39 @@ export const CARD_SLIDER_EFFECTS = [
 
 export type CardSliderEffect = (typeof CARD_SLIDER_EFFECTS)[number]["value"];
 
+/** Bootstrap 5 aralıkları — her kutu yalnızca o bantta gizler */
+export const SECTION_HIDE_BREAKPOINTS = [
+  { value: "xs", label: "xs Gizle", hint: "<576px" },
+  { value: "sm", label: "sm Gizle", hint: "≥576px" },
+  { value: "md", label: "md Gizle", hint: "≥768px" },
+  { value: "lg", label: "lg Gizle", hint: "≥992px" },
+  { value: "xl", label: "xl Gizle", hint: "≥1200px" },
+  { value: "xxl", label: "xxl Gizle", hint: "≥1400px" },
+] as const;
+
+export type SectionHideBreakpoint = (typeof SECTION_HIDE_BREAKPOINTS)[number]["value"];
+
+export function isSectionHideBreakpoint(value: string): value is SectionHideBreakpoint {
+  return SECTION_HIDE_BREAKPOINTS.some((item) => item.value === value);
+}
+
+export function parseHideBreakpoints(value: unknown): SectionHideBreakpoint[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const unique: SectionHideBreakpoint[] = [];
+  for (const item of value) {
+    if (typeof item !== "string" || !isSectionHideBreakpoint(item)) continue;
+    if (!unique.includes(item)) unique.push(item);
+  }
+  return unique.length > 0 ? unique : undefined;
+}
+
+export function sectionHideClassName(
+  breakpoints: SectionHideBreakpoint[] | null | undefined,
+) {
+  if (!breakpoints?.length) return "";
+  return breakpoints.map((item) => `pg-hide-${item}`).join(" ");
+}
+
 export const PRODUCT_SECTION_SOURCES = [
   "NEW",
   "BEST_SELLERS",
@@ -427,6 +460,8 @@ export type PageSectionSettings = {
   gridRow?: GridRowConfig;
   /** Grid kolonuna yerleştirme (çocuk bölüm) */
   gridCol?: GridColPlacement;
+  /** Seçilen ekran bantlarında bölümü gizle (çoklu seçim) */
+  hideBreakpoints?: SectionHideBreakpoint[];
 };
 
 export const SECTIONS_WITH_EYEBROW = [
@@ -593,6 +628,8 @@ export function parseSectionSettings(raw: string | null | undefined): PageSectio
     if (gridRow) settings.gridRow = gridRow;
     const gridCol = parseGridColPlacement(obj.gridCol);
     if (gridCol) settings.gridCol = gridCol;
+    const hideBreakpoints = parseHideBreakpoints(obj.hideBreakpoints);
+    if (hideBreakpoints) settings.hideBreakpoints = hideBreakpoints;
     return settings;
   } catch {
     return {};
@@ -722,6 +759,8 @@ export function stringifySectionSettings(settings: PageSectionSettings): string 
     const gridCol = parseGridColPlacement(settings.gridCol);
     if (gridCol) cleaned.gridCol = gridCol;
   }
+  const hideBreakpoints = parseHideBreakpoints(settings.hideBreakpoints);
+  if (hideBreakpoints) cleaned.hideBreakpoints = hideBreakpoints;
 
   if (Object.keys(cleaned).length === 0) return null;
   return JSON.stringify(cleaned);

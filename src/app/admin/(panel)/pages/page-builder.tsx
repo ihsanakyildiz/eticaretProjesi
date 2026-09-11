@@ -40,6 +40,7 @@ import {
 import { AdminSwitch } from "@/components/admin/admin-switch";
 import { ContactFormFieldsEditor } from "@/components/admin/contact-form-fields-editor";
 import { GridRowEditor } from "@/components/admin/grid-row-editor";
+import { SectionHideBreakpointsFields } from "@/components/admin/section-hide-breakpoints";
 import { RichTextEditor } from "@/components/admin/rich-text-editor";
 import {
   getDefaultContactFormConfig,
@@ -403,8 +404,8 @@ function ProductsSectionFields({
                     className="w-full rounded-md border border-[#e9ebec] px-3 py-2 text-sm outline-none focus:border-[#405189]"
                   />
                   <p className="mt-1 text-[11px] text-slate-500">
-                    Fade / coverflow / kart destesi tek tek ürün gösterir; slide
-                    yan yana sayıyı kullanır.
+                    Slide ve fade seçilen sütun sayısını korur (fade sayfa sayfa
+                    geçer). Coverflow / kart destesi tek ürün odaklıdır.
                   </p>
                 </div>
               </div>
@@ -699,6 +700,8 @@ function SectionEditor({
           </>
         )}
       </div>
+
+      <SectionHideBreakpointsFields selected={settings.hideBreakpoints} />
 
       {section.type === "HERO" ? (
         <div>
@@ -1399,6 +1402,7 @@ function SortableSectionCard({
   onDelete: () => void;
 }) {
   const meta = getPageSectionTypeMeta(section.type);
+  const hideBreakpoints = parseSectionSettings(section.settings).hideBreakpoints;
   const {
     attributes,
     listeners,
@@ -1444,6 +1448,7 @@ function SortableSectionCard({
           <p className="text-xs text-slate-500">
             {meta.label}
             {!section.isActive ? " · gizli" : ""}
+            {hideBreakpoints?.length ? ` · ${hideBreakpoints.join(", ")} gizli` : ""}
           </p>
         </button>
 

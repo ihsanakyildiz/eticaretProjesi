@@ -1,6 +1,12 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
 @import "../styles/page-grid.css";
+@import "../../node_modules/swiper/swiper.css";
+@import "../../node_modules/swiper/modules/navigation.css";
+@import "../../node_modules/swiper/modules/pagination.css";
+@import "../../node_modules/swiper/modules/effect-fade.css";
+@import "../../node_modules/swiper/modules/effect-coverflow.css";
+@import "../../node_modules/swiper/modules/effect-cards.css";
 
 :root {
   --background: #f3f6f9;
@@ -148,8 +154,104 @@ body {
   opacity: 1;
 }
 
+.site-product-swiper {
+  overflow: hidden;
+}
+
+.site-product-swiper .swiper {
+  overflow: hidden;
+}
+
+.site-product-swiper .swiper-wrapper {
+  align-items: stretch;
+}
+
 .site-product-swiper .swiper-slide {
+  box-sizing: border-box;
   height: auto;
+}
+
+/* Swiper JS çalışmadan önce slaytlar %100 olduğu için kartlar şişmesin */
+.site-product-swiper[data-effect="slide"] .swiper-slide,
+.site-product-swiper[data-effect="coverflow"] .swiper-slide {
+  width: calc((100% - 12px) / 2);
+}
+
+.site-product-swiper[data-cols="3"][data-effect="slide"] .swiper-slide,
+.site-product-swiper[data-cols="3"][data-effect="coverflow"] .swiper-slide {
+  width: calc(100% / 1.15);
+}
+
+@media (min-width: 480px) {
+  .site-product-swiper[data-cols="8"][data-effect="slide"] .swiper-slide,
+  .site-product-swiper[data-cols="8"][data-effect="coverflow"] .swiper-slide {
+    width: calc((100% - 24px) / 3);
+  }
+}
+
+@media (min-width: 640px) {
+  .site-product-swiper[data-cols="3"][data-effect="slide"] .swiper-slide,
+  .site-product-swiper[data-cols="3"][data-effect="coverflow"] .swiper-slide {
+    width: calc((100% - 14px) / 2);
+  }
+
+  .site-product-swiper[data-cols="4"][data-effect="slide"] .swiper-slide,
+  .site-product-swiper[data-cols="4"][data-effect="coverflow"] .swiper-slide,
+  .site-product-swiper[data-cols="5"][data-effect="slide"] .swiper-slide,
+  .site-product-swiper[data-cols="5"][data-effect="coverflow"] .swiper-slide {
+    width: calc((100% - 28px) / 3);
+  }
+}
+
+@media (min-width: 768px) {
+  .site-product-swiper[data-cols="8"][data-effect="slide"] .swiper-slide,
+  .site-product-swiper[data-cols="8"][data-effect="coverflow"] .swiper-slide {
+    width: calc((100% - 36px) / 4);
+  }
+}
+
+@media (min-width: 1024px) {
+  .site-product-swiper[data-cols="3"][data-effect="slide"] .swiper-slide,
+  .site-product-swiper[data-cols="3"][data-effect="coverflow"] .swiper-slide {
+    width: calc((100% - 32px) / 3);
+  }
+
+  .site-product-swiper[data-cols="4"][data-effect="slide"] .swiper-slide,
+  .site-product-swiper[data-cols="4"][data-effect="coverflow"] .swiper-slide,
+  .site-product-swiper[data-cols="5"][data-effect="slide"] .swiper-slide,
+  .site-product-swiper[data-cols="5"][data-effect="coverflow"] .swiper-slide {
+    width: calc((100% - 48px) / 4);
+  }
+
+  .site-product-swiper[data-cols="8"][data-effect="slide"] .swiper-slide,
+  .site-product-swiper[data-cols="8"][data-effect="coverflow"] .swiper-slide {
+    width: calc((100% - 70px) / 6);
+  }
+}
+
+@media (min-width: 1280px) {
+  .site-product-swiper[data-cols="5"][data-effect="slide"] .swiper-slide,
+  .site-product-swiper[data-cols="5"][data-effect="coverflow"] .swiper-slide {
+    width: calc((100% - 64px) / 5);
+  }
+
+  .site-product-swiper[data-cols="8"][data-effect="slide"] .swiper-slide,
+  .site-product-swiper[data-cols="8"][data-effect="coverflow"] .swiper-slide {
+    width: calc((100% - 98px) / 8);
+  }
+}
+
+.site-product-swiper[data-effect="fade"] .swiper-slide {
+  width: 100%;
+}
+
+.site-product-swiper[data-effect="cards"] {
+  max-width: 18rem;
+  margin-inline: auto;
+}
+
+.site-product-swiper[data-effect="cards"] .swiper-slide {
+  width: 100%;
 }
 
 .site-hero-swiper .swiper-pagination {

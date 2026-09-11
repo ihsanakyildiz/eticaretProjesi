@@ -36,21 +36,34 @@ function resolveColumns(cardsPerRow: CardColumnsPerRow): CardColumnsPerRow {
   }
 }
 
-function productGridClass(columns: CardColumnsPerRow) {
+function productTrackClass(columns: CardColumnsPerRow) {
   switch (columns) {
     case 8:
-      return "mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8";
+      return "grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8";
     case 5:
-      return "mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5";
+      return "grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5";
     case 4:
-      return "mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4";
+      return "grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4";
     case 3:
-      return "mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3";
+      return "grid grid-cols-2 gap-3 sm:grid-cols-3";
     default: {
       const _exhaustive: never = columns;
       return _exhaustive;
     }
   }
+}
+
+function productGridClass(columns: CardColumnsPerRow) {
+  return `mt-6 ${productTrackClass(columns)}`;
+}
+
+function chunkProducts<T>(items: T[], size: number) {
+  const pages: T[][] = [];
+  const step = Math.max(1, size);
+  for (let i = 0; i < items.length; i += step) {
+    pages.push(items.slice(i, i + step));
+  }
+  return pages;
 }
 
 function productShellClass(columns: CardColumnsPerRow) {
@@ -168,7 +181,10 @@ export function HomeProductRail({
   const heading = title?.trim() || null;
   const kicker = eyebrow?.trim() || null;
   const lead = subtitle?.trim() || null;
-  const canLoop = sliderLoop && products.length > Math.ceil(columns);
+  const fadePages = effect === "fade" ? chunkProducts(products, columns) : null;
+  const canLoop = fadePages
+    ? sliderLoop && fadePages.length > 1
+    : sliderLoop && products.length > Math.ceil(columns);
   const modules = [
     ...(sliderNavigation ? [Navigation] : []),
     ...(sliderPagination ? [Pagination] : []),
@@ -220,16 +236,23 @@ export function HomeProductRail({
         </div>
 
         {enableSlider ? (
-          <div className="site-cards-swiper site-product-swiper mt-6">
+          <div
+            className="site-cards-swiper site-product-swiper mt-6"
+            data-cols={columns}
+            data-effect={effect}
+          >
             <Swiper
               modules={modules}
               effect={effect === "slide" ? "slide" : effect}
               grabCursor
               loop={canLoop}
               speed={sliderSpeed}
-              spaceBetween={12}
+              spaceBetween={effect === "fade" ? 0 : 12}
               slidesPerView={productMobileSlides(columns, effect)}
               watchOverflow
+              observer
+              observeParents
+              autoHeight={effect === "fade"}
               centeredSlides={effect === "coverflow" || effect === "cards"}
               coverflowEffect={
                 effect === "coverflow"
@@ -279,13 +302,33 @@ export function HomeProductRail({
               }}
               className={sliderPagination ? "!pb-12" : undefined}
             >
-              {products.map((product, index) => (
-                <SwiperSlide key={product.id} className="!h-auto">
-                  <div className="h-full px-0.5 py-1">
-                    <ProductCard product={product} imagePriority={index < 4} />
-                  </div>
-                </SwiperSlide>
-              ))}
+              {fadePages
+                ? fadePages.map((page, pageIndex) => (
+                    <SwiperSlide key={page.map((item) => item.id).join("-")} className="!h-auto">
+                      <div className={productTrackClass(columns)}>
+                        {page.map((product, index) => (
+                          <ProductCard
+                            key={product.id}
+                            product={product}
+                            imagePriority={pageIndex === 0 && index < 4}
+                          />
+                        ))}
+                      </div>
+                    </SwiperSlide>
+                  ))
+                : products.map((product, index) => (
+                    <SwiperSlide key={product.id} className="!h-auto">
+                      <div
+                        className={
+                          effect === "cards"
+                            ? "mx-auto h-full w-full max-w-[17rem] px-0.5 py-1"
+                            : "h-full px-0.5 py-1"
+                        }
+                      >
+                        <ProductCard product={product} imagePriority={index < 4} />
+                      </div>
+                    </SwiperSlide>
+                  ))}
             </Swiper>
           </div>
         ) : (
