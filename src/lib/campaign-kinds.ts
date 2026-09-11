@@ -98,6 +98,16 @@ export function campaignOfferLabel(kind: CampaignKindCode, valueInt: number) {
   }
 }
 
+export function campaignNameDiffersFromLabel(name: string, label: string) {
+  const normalize = (value: string) =>
+    value
+      .trim()
+      .toLocaleLowerCase("tr")
+      .replace(/[!?.,;:]+/g, "")
+      .replace(/\s+/g, " ");
+  return normalize(name) !== normalize(label);
+}
+
 export function campaignPhaseLabel(phase: CampaignPhase) {
   switch (phase) {
     case "scheduled":

@@ -5,7 +5,13 @@ import { Loader2 } from "lucide-react";
 import type { ProductListVariantRow } from "@/lib/admin-product-list";
 import { formatMinorToMajorInput, formatMinorTry, parseMajorToMinor } from "@/lib/product-money";
 import { hasStoredCampaign } from "@/lib/product-sale";
-import { listProductVariantsAction, updateProductVariantQuickAction, type ProductSaleResult } from "./actions";
+import {
+  listProductVariantsAction,
+  toggleVariantFeedSyncLockAction,
+  updateProductVariantQuickAction,
+  type ProductSaleResult,
+} from "./actions";
+import { FEED_SYNC_LOCK_TITLE, FeedSyncLockCheckbox } from "./product-list-feed-lock";
 import { ProductSaleModal, SalePlusButton, type ProductSaleTarget } from "./product-list-sale-modal";
 import { QuickEditCell } from "./product-list-quick-edit";
 
@@ -24,6 +30,8 @@ function VariantQuickRow({
   onUpdated: (next: ProductListVariantRow) => void;
   onOpenSale: (target: ProductSaleTarget) => void;
 }) {
+  const [lockPending, setLockPending] = useState(false);
+
   const saveField = (patch: { barcode?: string; priceMinor?: number; stockQuantity?: number }) =>
     updateProductVariantQuickAction({
       variantId: variant.id,
@@ -47,8 +55,29 @@ function VariantQuickRow({
       })
       .catch(() => ({ error: "Kayıt güncellenemedi." }));
 
+  const saveFeedLock = (next: boolean) => {
+    const previous = variant.feedSyncLocked;
+    setLockPending(true);
+    onUpdated({ ...variant, feedSyncLocked: next });
+    void toggleVariantFeedSyncLockAction({
+      variantId: variant.id,
+      feedSyncLocked: next,
+    })
+      .then((result) => {
+        if (result.error || !result.variant) {
+          onUpdated({ ...variant, feedSyncLocked: previous });
+          return;
+        }
+        onUpdated(result.variant);
+      })
+      .catch(() => {
+        onUpdated({ ...variant, feedSyncLocked: previous });
+      })
+      .finally(() => setLockPending(false));
+  };
+
   return (
-    <div className="grid grid-cols-[minmax(0,1.6fr)_110px_minmax(140px,1fr)_148px_90px] items-start gap-2 px-4 py-2.5">
+    <div className="grid grid-cols-[minmax(0,1.6fr)_110px_minmax(140px,1fr)_148px_90px_48px] items-start gap-2 px-4 py-2.5">
       <div className="flex min-w-0 items-center gap-2.5">
         <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-md bg-white">
           {variant.image ? (
@@ -131,6 +160,12 @@ function VariantQuickRow({
         }}
         onCommit={(value) => saveField({ stockQuantity: Number.parseInt(value, 10) })}
       />
+      <FeedSyncLockCheckbox
+        checked={variant.feedSyncLocked}
+        disabled={!canUpdate || lockPending}
+        label={`${variant.title} XML/API koruması`}
+        onChange={saveFeedLock}
+      />
     </div>
   );
 }
@@ -208,12 +243,13 @@ export function ProductListVariantsPanel({
 
   return (
     <div className="border-b border-[#e9ebec] bg-[#f8fafc]" role="region" aria-labelledby={headingId}>
-      <div className="grid grid-cols-[minmax(0,1.6fr)_110px_minmax(140px,1fr)_148px_90px] gap-2 border-b border-[#e9ebec] px-4 py-2 text-[11px] font-semibold tracking-wide text-slate-400 uppercase">
+      <div className="grid grid-cols-[minmax(0,1.6fr)_110px_minmax(140px,1fr)_148px_90px_48px] gap-2 border-b border-[#e9ebec] px-4 py-2 text-[11px] font-semibold tracking-wide text-slate-400 uppercase">
         <span id={headingId}>Varyant</span>
         <span>SKU</span>
         <span>Barkod</span>
         <span>Fiyat</span>
         <span>Stok</span>
+        <span title={FEED_SYNC_LOCK_TITLE}>Koru</span>
       </div>
       {lockStock ? (
         <p className="border-b border-[#e9ebec] px-4 py-1.5 text-[11px] text-slate-500">

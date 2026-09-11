@@ -35,6 +35,12 @@ import { extractEditorUploadPathsFromHtml } from "@/lib/rich-text-uploads";
 import { slugify } from "@/lib/slug";
 import { deletePublicAsset } from "@/lib/uploads";
 import { parseXmlDocument, detectXmlItemPath, extractXmlItems, mapFeedItemToRawRows, takeFeedItemSlice, collectMissingMappedFeedTags } from "@/lib/xml-product-feed";
+import { campaignLockedFeedPrices, loadUnrestoredCampaignProductIds } from "@/lib/campaigns";
+import {
+  excludeFeedLockedProductFilter,
+  feedSyncUpdateLocks,
+  loadFeedSyncLocks,
+} from "@/lib/feed-sync-locks";
 import { withPrismaRetry } from "@/lib/prisma-retry";
 import { fetchXmlFeedText } from "@/lib/xml-product-feed-fetch";
 import {
@@ -576,6 +582,9 @@ async function updateMatchedProduct(
   stockPolicy: XmlFeedStockPolicy,
   skipVariant = false,
   skipProduct = false,
+  lockPrices = false,
+  lockStock = false,
+  lockSaleClose = false,
 ) {
   const taxPercent = hit.taxRatePercent || lookups.defaultTaxPercent;
   const markup = Number(feed.priceMarkupPercent);
@@ -658,6 +667,7 @@ async function updateMatchedProduct(
     if (supplier) productData.supplierId = supplier.id;
   }
   if (
+    !lockPrices &&
     (allowsUpdate(updateFields, "price") ||
       allowsUpdate(updateFields, "discount") ||
       allowsUpdate(updateFields, "compareAt")) &&
@@ -708,12 +718,14 @@ async function updateMatchedProduct(
 
   productData.outOfStockBehavior = stockPolicy.outOfStockBehavior;
 
-  if (closeForSale) {
-    productData.availableForOrder = false;
-    productData.isActive = false;
-  } else {
-    productData.availableForOrder = true;
-    productData.isActive = true;
+  if (!lockSaleClose) {
+    if (closeForSale) {
+      productData.availableForOrder = false;
+      productData.isActive = false;
+    } else {
+      productData.availableForOrder = true;
+      productData.isActive = true;
+    }
   }
 
   if (!skipProduct) {
@@ -734,12 +746,14 @@ async function updateMatchedProduct(
     }
   }
 
+  const didClose = closeForSale && !skipProduct && !lockSaleClose;
   if (skipVariant || !hit.variantId) {
-    return { closed: closeForSale && !skipProduct, reasons: closeForSale && !skipProduct ? closeReasons : [] };
+    return { closed: didClose, reasons: didClose ? closeReasons : [] };
   }
 
   const variantData: Record<string, unknown> = {};
   if (
+    !lockPrices &&
     (allowsUpdate(updateFields, "price") ||
       allowsUpdate(updateFields, "discount") ||
       allowsUpdate(updateFields, "compareAt")) &&
@@ -749,7 +763,9 @@ async function updateMatchedProduct(
     variantData.priceMinor = storedPrice.chargeMinor;
     variantData.compareAtMinor = storedPrice.listMinor;
   }
-  if (allowsUpdate(updateFields, "stock") && stock != null) variantData.stockQuantity = stock;
+  if (!lockStock && allowsUpdate(updateFields, "stock") && stock != null) {
+    variantData.stockQuantity = stock;
+  }
   if (allowsUpdate(updateFields, "barcode") && row.barcode?.trim()) {
     const barcode = await uniqueBarcodeOrNull(row.barcode, hit.variantId);
     if (barcode) variantData.barcode = barcode;
@@ -761,11 +777,11 @@ async function updateMatchedProduct(
     await withPrismaRetry(() =>
       prisma.productVariant.update({ where: { id: hit.variantId }, data: variantData }),
     );
-    if (allowsUpdate(updateFields, "stock") && stock != null) {
+    if (!lockStock && allowsUpdate(updateFields, "stock") && stock != null) {
       await writeCatalogStock(prisma, hit.variantId, stock, { note: "XML stok senkronu" });
     }
   }
-  return { closed: closeForSale && !skipProduct, reasons: closeForSale && !skipProduct ? closeReasons : [] };
+  return { closed: didClose, reasons: didClose ? closeReasons : [] };
 }
 
 type XmlRowFailure = {
@@ -898,13 +914,14 @@ function collectProductUploadPaths(product: {
   return [...paths];
 }
 
-async function deleteUnsoldSupplierProducts(supplierId: string) {
+async function deleteUnsoldSupplierProducts(supplierId: string, excludeProductIds: Set<string>) {
   let deleted = 0;
   const batchSize = 40;
   for (;;) {
     const candidates = await prisma.product.findMany({
       where: {
         supplierId,
+        ...excludeFeedLockedProductFilter(excludeProductIds),
         orderItems: { none: {} },
         variants: { none: { orderItems: { some: {} } } },
       },
@@ -1073,6 +1090,8 @@ export async function syncXmlFeedRun(runId: string) {
           updateTitle: feed.updateTitle,
         }),
     );
+    const campaignPriceLocks = await loadUnrestoredCampaignProductIds();
+    const feedLocks = await loadFeedSyncLocks();
     const stockPolicy: XmlFeedStockPolicy = {
       stockLimit: valueMaps.stockLimit,
       outOfStockBehavior: valueMaps.outOfStockBehavior,
@@ -1215,6 +1234,7 @@ export async function syncXmlFeedRun(runId: string) {
         try {
           const skipVariant = item.action === "append";
           const skipProduct = productTouched.has(item.hit.productId);
+          const syncLocks = feedSyncUpdateLocks(item.hit, feedLocks, campaignPriceLocks);
           const updated = await updateMatchedProduct(
             item.hit,
             item.row,
@@ -1225,6 +1245,9 @@ export async function syncXmlFeedRun(runId: string) {
             stockPolicy,
             skipVariant,
             skipProduct,
+            syncLocks.lockPrices,
+            syncLocks.lockStock,
+            syncLocks.lockSaleClose,
           );
           if (updated.closed) warningCollector.noteClosed(updated.reasons);
           productTouched.add(item.hit.productId);
@@ -1258,11 +1281,15 @@ export async function syncXmlFeedRun(runId: string) {
                   taxPercent,
                 )
               : null;
-            const stored = resolveImportedListPrices({
-              saleMinor: priced?.minor ?? 0,
-              discountMinor: discounted?.minor ?? null,
-              compareAtMinor: compared?.minor ?? null,
-            });
+            const stored = await campaignLockedFeedPrices(
+              item.hit.productId,
+              resolveImportedListPrices({
+                saleMinor: priced?.minor ?? 0,
+                discountMinor: discounted?.minor ?? null,
+                compareAtMinor: compared?.minor ?? null,
+              }),
+              campaignPriceLocks,
+            );
             const stock = item.row.stock ? parseXmlStock(item.row.stock) : 0;
             if (item.row.sku) item.row.sku = applySkuPrefix(item.row.sku, feed.skuPrefix);
             await appendImportedVariant({
@@ -1393,7 +1420,9 @@ export async function syncXmlFeedRun(runId: string) {
         where: { supplierId: feed.supplierId },
         select: { id: true },
       });
-      const missing = owned.map((item) => item.id).filter((id) => !seenProductIds.has(id));
+      const missing = owned
+        .map((item) => item.id)
+        .filter((id) => !seenProductIds.has(id) && !feedLocks.productIds.has(id));
       for (let index = 0; index < missing.length; index += 200) {
         const chunk = missing.slice(index, index + 200);
         if (chunk.length === 0) continue;
@@ -1414,6 +1443,7 @@ export async function syncXmlFeedRun(runId: string) {
         const rows = await prisma.product.findMany({
           where: {
             supplierId: feed.supplierId,
+            ...excludeFeedLockedProductFilter(feedLocks.productIds),
             OR: [{ availableForOrder: true }, { isActive: true }],
           },
           select: { id: true },
@@ -1431,7 +1461,7 @@ export async function syncXmlFeedRun(runId: string) {
     }
 
     if (stockPolicy.deleteUnsold && feed.supplierId && items.length > 0) {
-      const deleted = await deleteUnsoldSupplierProducts(feed.supplierId);
+      const deleted = await deleteUnsoldSupplierProducts(feed.supplierId, feedLocks.productIds);
       counts.deleted += deleted;
       if (deleted > 0) importedAny = true;
     }

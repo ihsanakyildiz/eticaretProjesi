@@ -1686,6 +1686,8 @@ model ProductVariant {
   image          String?                   @db.VarChar(500)
   /// Sıralı attributeId:valueId|... — aynı kombinasyon üründe tek olabilir
   combinationKey String                    @db.VarChar(500)
+  /// İşaretliyse XML/API senkronu fiyat, stok ve satışı değiştirmez
+  feedSyncLocked Boolean                   @default(false)
   sortOrder      Int                       @default(0)
   createdAt      DateTime                  @default(now())
   updatedAt      DateTime                  @updatedAt
@@ -1699,6 +1701,7 @@ model ProductVariant {
   @@index([productId, isActive])
   @@index([productId, isDefault])
   @@index([saleEndsAt])
+  @@index([feedSyncLocked])
   @@map("product_variants")
 }
 

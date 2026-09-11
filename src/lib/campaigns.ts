@@ -91,6 +91,37 @@ function uniqueIds(values: string[]) {
   return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
 }
 
+/** Kampanya fiyatı hâlâ uygulanan (geri alınmamış) ürünler. */
+export async function loadUnrestoredCampaignProductIds(): Promise<Set<string>> {
+  try {
+    const rows = await prisma.$queryRaw<Array<{ productId: string }>>`
+      SELECT DISTINCT productId
+      FROM campaign_products
+      WHERE restoredAt IS NULL
+    `;
+    return new Set(rows.map((row) => row.productId));
+  } catch {
+    return new Set();
+  }
+}
+
+export async function campaignLockedFeedPrices(
+  productId: string,
+  fallback: { chargeMinor: number; listMinor: number | null },
+  lockedIds: Set<string>,
+): Promise<{ chargeMinor: number; listMinor: number | null }> {
+  if (!lockedIds.has(productId)) return fallback;
+  const current = await prisma.product.findUnique({
+    where: { id: productId },
+    select: { basePriceMinor: true, compareAtMinor: true },
+  });
+  if (!current) return fallback;
+  return {
+    chargeMinor: current.basePriceMinor,
+    listMinor: current.compareAtMinor,
+  };
+}
+
 async function loadBusyCampaignProductIds(now = new Date(), ignoreCampaignId?: string) {
   try {
     const rows = await prisma.$queryRaw<Array<{ productId: string }>>`

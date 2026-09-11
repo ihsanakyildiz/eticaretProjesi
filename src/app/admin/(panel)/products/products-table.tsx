@@ -53,10 +53,12 @@ import {
   deleteProductAction,
   duplicateProductAction,
   toggleProductActiveAction,
+  toggleVariantFeedSyncLockAction,
   updateProductVariantQuickAction,
   type ProductSaleResult,
 } from "./actions";
 import { ProductListVariantsPanel } from "./product-list-expand";
+import { FEED_SYNC_LOCK_TITLE, FeedSyncLockCheckbox } from "./product-list-feed-lock";
 import { ProductSaleModal, SalePlusButton, type ProductSaleTarget } from "./product-list-sale-modal";
 import { QuickEditCell } from "./product-list-quick-edit";
 
@@ -509,6 +511,7 @@ export function ProductsTable({
     >
   >({});
   const [saleTarget, setSaleTarget] = useState<ProductSaleTarget | null>(null);
+  const [feedLockOverrides, setFeedLockOverrides] = useState<Record<string, boolean>>({});
   const from = total === 0 ? 0 : (page - 1) * pageSize + 1;
   const to = Math.min(page * pageSize, total);
 
@@ -554,6 +557,23 @@ export function ProductsTable({
       }
       setActionError(null);
       router.refresh();
+    });
+  };
+
+  const toggleFeedLock = (product: ProductRow, next: boolean) => {
+    if (!product.defaultVariantId) return;
+    setFeedLockOverrides((prev) => ({ ...prev, [product.id]: next }));
+    startTransition(async () => {
+      const result = await toggleVariantFeedSyncLockAction({
+        variantId: product.defaultVariantId!,
+        feedSyncLocked: next,
+      });
+      if (result.error) {
+        setFeedLockOverrides((prev) => ({ ...prev, [product.id]: !next }));
+        setActionError(result.error);
+        return;
+      }
+      setActionError(null);
     });
   };
 
@@ -617,7 +637,7 @@ export function ProductsTable({
   };
 
   const productGridClass =
-    "grid grid-cols-[minmax(0,2fr)_110px_minmax(0,1fr)_130px_100px_44px_176px_40px] gap-2";
+    "grid grid-cols-[minmax(0,2fr)_110px_minmax(0,1fr)_130px_100px_48px_44px_176px_40px] gap-2";
 
   return (
     <>
@@ -654,13 +674,14 @@ export function ProductsTable({
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <div className="min-w-[980px]">
+            <div className="min-w-[1030px]">
               <div className={`${productGridClass} border-b border-[#e9ebec] bg-[#f3f6f9] px-4 py-2.5 text-xs font-semibold tracking-wide text-slate-500 uppercase`}>
                 <span>Ürün</span>
                 <span>SKU</span>
                 <span>Kategori</span>
                 <span>Fiyat</span>
                 <span>Stok</span>
+                <span title={FEED_SYNC_LOCK_TITLE}>Koru</span>
                 <span>Durum</span>
                 <span className="text-right">İşlem</span>
                 <span className="sr-only">Varyantlar</span>
@@ -809,6 +830,18 @@ export function ProductsTable({
                           stockQuantity: Number.parseInt(value, 10),
                         })
                       }
+                    />
+                  )}
+                  {hasVariants ? (
+                    <span className="pt-1.5 text-xs text-slate-400" title="Varyant satırından işaretleyin">
+                      —
+                    </span>
+                  ) : (
+                    <FeedSyncLockCheckbox
+                      checked={feedLockOverrides[product.id] ?? product.feedSyncLocked}
+                      disabled={!canQuickEdit || isPending}
+                      label={`${product.title} XML/API koruması`}
+                      onChange={(next) => toggleFeedLock(product, next)}
                     />
                   )}
                   <span className="flex items-center gap-1 pt-1.5">

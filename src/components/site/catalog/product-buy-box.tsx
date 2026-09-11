@@ -10,7 +10,7 @@ import { SaleCountdown, useTickingNow } from "@/components/site/catalog/sale-cou
 import { pickSellableVariants } from "@/lib/catalog-storefront";
 import { fallbackSwatchHex } from "@/lib/product-attributes";
 import { productSaleUnitShort } from "@/lib/product-editor";
-import { campaignCartPriceMinor, type CatalogCampaignBadge } from "@/lib/campaign-kinds";
+import { campaignCartPriceMinor, campaignNameDiffersFromLabel, type CatalogCampaignBadge } from "@/lib/campaign-kinds";
 import { formatMinorTry, taxIncludedMinor } from "@/lib/product-money";
 import { resolveSalePrice } from "@/lib/product-sale";
 import { isVariantPurchasable, type OutOfStockBehavior } from "@/lib/product-stock";
@@ -215,6 +215,11 @@ export function ProductBuyBox({
           ) : (
             <SiteImageFallback fill />
           )}
+          {campaign ? (
+            <span className="absolute top-3 left-3 z-10 rounded-md bg-rose-600 px-2.5 py-1 text-xs font-bold text-white shadow-sm">
+              {campaign.label}
+            </span>
+          ) : null}
         </div>
         {gallery.length > 1 ? (
           <div className="mt-3 flex flex-wrap gap-2">
@@ -291,13 +296,8 @@ export function ProductBuyBox({
             Sepette {formatMinorTry(cartPriceIncl)}
           </p>
         ) : null}
-        {campaign ? (
-          <p className="mt-2 text-sm font-semibold text-rose-600">
-            <span className="mr-2 inline-flex rounded-md bg-rose-600 px-2 py-0.5 text-xs font-bold text-white">
-              {campaign.label}
-            </span>
-            {campaign.name}
-          </p>
+        {campaign && campaignNameDiffersFromLabel(campaign.name, campaign.label) ? (
+          <p className="mt-2 text-sm font-semibold text-rose-600">{campaign.name}</p>
         ) : null}
         {resolvedSale?.onSale && resolvedSale.saleEndsAt ? (
           <SaleCountdown endsAt={resolvedSale.saleEndsAt} />

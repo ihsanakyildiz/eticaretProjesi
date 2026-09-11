@@ -30,6 +30,7 @@ export type ProductRow = {
   stockQuantity: number;
   variantCount: number;
   defaultVariantId: string | null;
+  feedSyncLocked: boolean;
   createdAt: string;
   campaignName: string | null;
   campaignLabel: string | null;
@@ -49,6 +50,7 @@ export type ProductListVariantRow = {
   image: string | null;
   isActive: boolean;
   isDefault: boolean;
+  feedSyncLocked: boolean;
 };
 
 export const ADMIN_PRODUCTS_PAGE_SIZE = 40;
@@ -675,7 +677,7 @@ export async function loadAdminProductPage(
               productId: { in: productIds },
               OR: [{ isDefault: true }, { combinationKey: DEFAULT_VARIANT_COMBINATION_KEY }],
             },
-            select: { id: true, productId: true, isDefault: true },
+            select: { id: true, productId: true, isDefault: true, feedSyncLocked: true },
           }),
           prisma
             .$queryRaw<
@@ -709,12 +711,17 @@ export async function loadAdminProductPage(
     ]),
   );
   const defaultVariantByProduct = new Map<string, string>();
+  const defaultFeedLockByProduct = new Map<string, boolean>();
   for (const row of defaultVariants) {
-    if (row.isDefault) defaultVariantByProduct.set(row.productId, row.id);
+    if (row.isDefault) {
+      defaultVariantByProduct.set(row.productId, row.id);
+      defaultFeedLockByProduct.set(row.productId, row.feedSyncLocked);
+    }
   }
   for (const row of defaultVariants) {
     if (!defaultVariantByProduct.has(row.productId)) {
       defaultVariantByProduct.set(row.productId, row.id);
+      defaultFeedLockByProduct.set(row.productId, row.feedSyncLocked);
     }
   }
 
@@ -746,6 +753,7 @@ export async function loadAdminProductPage(
         stockQuantity: stats?.stock ?? 0,
         variantCount: stats?.variants ?? 0,
         defaultVariantId: defaultVariantByProduct.get(product.id) ?? null,
+        feedSyncLocked: defaultFeedLockByProduct.get(product.id) ?? false,
         createdAt: product.createdAt.toISOString(),
         campaignName: campaignNames.get(product.id)?.name ?? null,
         campaignLabel: campaignNames.get(product.id)?.label ?? null,
@@ -768,6 +776,7 @@ const productListVariantSelect = {
   image: true,
   isActive: true,
   isDefault: true,
+  feedSyncLocked: true,
   combinationKey: true,
 } as const;
 
@@ -786,6 +795,7 @@ function toProductListVariantRow(
     image: string | null;
     isActive: boolean;
     isDefault: boolean;
+    feedSyncLocked: boolean;
     combinationKey: string;
   },
 ): ProductListVariantRow {
@@ -803,6 +813,7 @@ function toProductListVariantRow(
     image: row.image,
     isActive: row.isActive,
     isDefault: row.isDefault,
+    feedSyncLocked: row.feedSyncLocked,
   };
 }
 

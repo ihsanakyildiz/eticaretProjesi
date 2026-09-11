@@ -1184,6 +1184,37 @@ export async function updateProductVariantQuickAction(input: {
   }
 }
 
+export async function toggleVariantFeedSyncLockAction(input: {
+  variantId: string;
+  feedSyncLocked: boolean;
+}): Promise<{ error?: string; variant?: ProductListVariantRow }> {
+  const gate = await requirePermission("products", "update");
+  if (!gate.ok) return { error: gate.error };
+
+  const variantId = String(input.variantId ?? "").trim();
+  if (!variantId) return { error: "Varyant bulunamadı." };
+
+  const existing = await prisma.productVariant.findUnique({
+    where: { id: variantId },
+    select: { id: true, productId: true },
+  });
+  if (!existing) return { error: "Varyant bulunamadı." };
+
+  try {
+    await prisma.productVariant.update({
+      where: { id: existing.id },
+      data: { feedSyncLocked: Boolean(input.feedSyncLocked) },
+    });
+    const variants = await loadProductListVariants(existing.productId);
+    const variant = variants?.find((row) => row.id === existing.id);
+    if (!variant) return { error: "Kayıt güncellendi ancak yeniden okunamadı." };
+    return { variant };
+  } catch (error) {
+    console.error(error);
+    return { error: "XML/API koruması güncellenirken bir hata oluştu." };
+  }
+}
+
 export type ProductSaleResult = {
   error?: string;
   variant?: ProductListVariantRow;

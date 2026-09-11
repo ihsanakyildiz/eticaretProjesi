@@ -12,7 +12,7 @@ import {
   catalogCardPrice,
   type CatalogProductCard,
 } from "@/lib/catalog-storefront";
-import { campaignCartPriceMinor } from "@/lib/campaign-kinds";
+import { campaignCartPriceMinor, campaignNameDiffersFromLabel } from "@/lib/campaign-kinds";
 import { formatMinorTry, taxIncludedMinor } from "@/lib/product-money";
 
 export function ProductCard({
@@ -83,17 +83,15 @@ export function ProductCard({
         ) : (
           <SiteImageFallback fill />
         )}
-        {campaign || onSale || discount ? (
+        {campaign ? (
+          <span className="absolute top-2 left-2 z-10 max-w-[calc(100%-1rem)] rounded-md bg-rose-600 px-2 py-1 text-[11px] font-bold text-white shadow-sm">
+            {campaign.label}
+          </span>
+        ) : onSale || discount ? (
           <span className="absolute top-2 left-2 z-10 flex max-w-[calc(100%-1rem)] flex-col items-start gap-1">
-            {campaign ? (
-              <span className="rounded-md bg-rose-600 px-2 py-1 text-[11px] font-bold text-white shadow-sm">
-                {campaign.label}
-              </span>
-            ) : onSale || discount ? (
-              <span className="rounded-md bg-rose-600 px-2 py-1 text-[11px] font-bold tracking-wide text-white uppercase shadow-sm">
-                İndirim
-              </span>
-            ) : null}
+            <span className="rounded-md bg-rose-600 px-2 py-1 text-[11px] font-bold tracking-wide text-white uppercase shadow-sm">
+              İndirim
+            </span>
             {discount ? (
               <span className="rounded-md bg-rose-700/95 px-2 py-0.5 text-[11px] font-bold text-white shadow-sm">
                 %{discount}
@@ -135,10 +133,9 @@ export function ProductCard({
           ) : (
             <p className="text-xs text-site-muted">Fiyat için iletişime geçin</p>
           )}
-          {campaign ? (
+          {campaign && campaignNameDiffersFromLabel(campaign.name, campaign.label) ? (
             <p className="mt-1 line-clamp-2 text-[11px] font-semibold text-rose-600">
               {campaign.name}
-              {campaign.label !== campaign.name ? ` · ${campaign.label}` : ""}
             </p>
           ) : null}
           {countdownAt ? <SaleCountdown endsAt={countdownAt} compact /> : null}
