@@ -5,10 +5,13 @@ import { requirePermission, requirePermissionOrThrow } from "@/lib/staff-permiss
 import { revalidatePath } from "next/cache";
 import type { CardLayout, CardMediaType, CardType } from "@prisma/client";
 import {
+  CAMPAIGN_BANNER_DEFAULT_TITLE,
   isCardLayout,
   isCardType,
+  parseCampaignBannerFlag,
   serializeCardFeatures,
 } from "@/lib/cards";
+import { ensureCardCampaignBannerColumn } from "@/lib/ensure-card-schema";
 import { prisma } from "@/lib/prisma";
 import {
   deletePublicAsset,
@@ -66,10 +69,18 @@ function parseCardPayload(formData: FormData) {
   const layoutRaw = String(formData.get("layout") ?? "MEDIA_LEFT").trim();
   const layout: CardLayout = isCardLayout(layoutRaw) ? layoutRaw : "MEDIA_LEFT";
 
-  const title = String(formData.get("title") ?? "").trim();
+  const isCampaignBanner = parseCampaignBannerFlag(
+    formData.get("isCampaignBanner"),
+    type,
+  );
+  const title =
+    String(formData.get("title") ?? "").trim() ||
+    (isCampaignBanner ? CAMPAIGN_BANNER_DEFAULT_TITLE : "");
   const href = String(formData.get("href") ?? "").trim() || "#";
   const icon = String(formData.get("icon") ?? "").trim();
-  const mediaType = parseMediaType(String(formData.get("mediaType") ?? "ICON"));
+  const mediaType = isCampaignBanner
+    ? "IMAGE"
+    : parseMediaType(String(formData.get("mediaType") ?? "ICON"));
   const sortOrder = Number.parseInt(String(formData.get("sortOrder") ?? "0"), 10);
   const isActive =
     formData.get("isActive") === "on" || formData.get("isActive") === "true";
@@ -97,6 +108,7 @@ function parseCardPayload(formData: FormData) {
   return {
     type,
     layout,
+    isCampaignBanner,
     title,
     href,
     icon,
@@ -141,13 +153,15 @@ export async function createCardAction(
   const data = parseCardPayload(formData);
   const fieldErrors: Record<string, string> = {};
 
-  if (!data.title) fieldErrors.title = "Kart başlığı zorunludur.";
+  if (!data.isCampaignBanner && !data.title) {
+    fieldErrors.title = "Kart başlığı zorunludur.";
+  }
 
   if (data.type === "CLASSIC") {
     if (!data.href || data.href === "#") {
       fieldErrors.href = "Sayfa linki zorunludur.";
     }
-    if (data.mediaType === "ICON" && !data.icon) {
+    if (!data.isCampaignBanner && data.mediaType === "ICON" && !data.icon) {
       fieldErrors.icon = "İkon seçin veya görsel tipine geçin.";
     }
   }
@@ -157,6 +171,7 @@ export async function createCardAction(
   }
 
   try {
+    await ensureCardCampaignBannerColumn();
     let image: string | null = null;
     let profileImage: string | null = null;
 
@@ -205,6 +220,7 @@ export async function createCardAction(
     await prisma.card.create({
       data: {
         type: data.type,
+        isCampaignBanner: data.isCampaignBanner,
         title: data.title,
         href: data.href,
         layout: data.type === "ADVANCED" ? data.layout : "MEDIA_LEFT",
@@ -259,13 +275,15 @@ export async function updateCardAction(
   const data = parseCardPayload(formData);
   const fieldErrors: Record<string, string> = {};
 
-  if (!data.title) fieldErrors.title = "Kart başlığı zorunludur.";
+  if (!data.isCampaignBanner && !data.title) {
+    fieldErrors.title = "Kart başlığı zorunludur.";
+  }
 
   if (data.type === "CLASSIC") {
     if (!data.href || data.href === "#") {
       fieldErrors.href = "Sayfa linki zorunludur.";
     }
-    if (data.mediaType === "ICON" && !data.icon) {
+    if (!data.isCampaignBanner && data.mediaType === "ICON" && !data.icon) {
       fieldErrors.icon = "İkon seçin veya görsel tipine geçin.";
     }
   }
@@ -275,6 +293,7 @@ export async function updateCardAction(
   }
 
   try {
+    await ensureCardCampaignBannerColumn();
     const existing = await prisma.card.findUnique({ where: { id } });
     if (!existing) return { error: "Kart bulunamadı." };
 
@@ -334,6 +353,7 @@ export async function updateCardAction(
       where: { id },
       data: {
         type: data.type,
+        isCampaignBanner: data.isCampaignBanner,
         title: data.title,
         href: data.href,
         layout: data.type === "ADVANCED" ? data.layout : existing.layout,

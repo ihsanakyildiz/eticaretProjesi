@@ -1120,6 +1120,8 @@ enum CardLayout {
 model Card {
   id        String        @id @default(cuid())
   type      CardType      @default(CLASSIC)
+  /// Klasik kart içinde tam genişlik kampanya görseli (yalnızca görsel + link)
+  isCampaignBanner Boolean @default(false)
   title     String        @db.VarChar(191)
   /// Gelişmiş kartta bölüm rozeti (örn. Neden Biz)
   badgeText String?       @db.VarChar(120)

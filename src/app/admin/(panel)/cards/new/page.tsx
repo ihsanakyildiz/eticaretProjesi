@@ -40,7 +40,8 @@ export default function NewCardTypePickerPage() {
           </h2>
           <p className="mt-2 text-sm leading-relaxed text-slate-500">
             Başlık, Lucide ikon veya görsel ve tıklanınca açılacak sayfa linki.
-            Ana sayfa hizmet kartları için uygundur.
+            İsterseniz kampanya banner olarak yalnızca görsel + link
+            ekleyebilirsiniz.
           </p>
           <p className="mt-4 text-sm font-semibold text-[#0ab39c]">Devam et →</p>
         </Link>

@@ -32,7 +32,33 @@ export type ServiceCardItem = {
   icon?: string | null;
   image?: string | null;
   mediaType?: "IMAGE" | "ICON" | string | null;
+  isCampaignBanner?: boolean;
 };
+
+type ServiceBlock =
+  | { kind: "banner"; card: ServiceCardItem; index: number }
+  | {
+      kind: "cards";
+      items: Array<{ card: ServiceCardItem; index: number }>;
+    };
+
+function groupServiceItems(cards: ServiceCardItem[]): ServiceBlock[] {
+  const blocks: ServiceBlock[] = [];
+  for (let index = 0; index < cards.length; index += 1) {
+    const card = cards[index]!;
+    if (card.isCampaignBanner) {
+      blocks.push({ kind: "banner", card, index });
+      continue;
+    }
+    const last = blocks[blocks.length - 1];
+    if (last?.kind === "cards") {
+      last.items.push({ card, index });
+    } else {
+      blocks.push({ kind: "cards", items: [{ card, index }] });
+    }
+  }
+  return blocks;
+}
 
 export type HomeServicesCta = {
   show?: boolean;
@@ -81,6 +107,30 @@ const FALLBACK_SERVICES: ServiceCardItem[] = [
     href: "/hizmetler",
   },
 ];
+
+function CampaignBanner({ card }: { card: ServiceCardItem }) {
+  if (!card.image) return null;
+  const href = card.href?.trim();
+  const banner = (
+    <div className="relative aspect-[21/9] w-full overflow-hidden rounded-3xl border border-site-border bg-site-card shadow-sm sm:aspect-[3/1]">
+      <SiteImage
+        src={card.image}
+        alt={card.title}
+        fill
+        className="object-cover transition duration-500 group-hover:scale-[1.02]"
+        sizes="100vw"
+      />
+    </div>
+  );
+
+  if (!href || href === "#") return banner;
+
+  return (
+    <SiteLink href={href} className="group block">
+      {banner}
+    </SiteLink>
+  );
+}
 
 function ServiceCard({
   card,
@@ -206,10 +256,10 @@ export function HomeServices({
 
   const gridClass =
     columns === 5
-      ? "mt-12 grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5"
+      ? "grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5"
       : columns === 4
-        ? "mt-12 grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5 lg:grid-cols-3 xl:grid-cols-4"
-        : "mt-12 grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5 lg:grid-cols-3";
+        ? "grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5 lg:grid-cols-3 xl:grid-cols-4"
+        : "grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5 lg:grid-cols-3";
 
   const shellClass =
     columns === 5
@@ -239,6 +289,86 @@ export function HomeServices({
         };
 
   const compactCards = columns >= 4;
+  const blocks = groupServiceItems(cards);
+
+  const renderCardGrid = (
+    items: Array<{ card: ServiceCardItem; index: number }>,
+  ) => {
+    if (enableSlider) {
+      return (
+        <div className="site-cards-swiper">
+          <Swiper
+            modules={modules}
+            effect={effect === "slide" ? "slide" : effect}
+            grabCursor
+            loop={items.length > columns}
+            speed={700}
+            spaceBetween={20}
+            slidesPerView={1}
+            centeredSlides={effect === "coverflow" || effect === "cards"}
+            coverflowEffect={
+              effect === "coverflow"
+                ? {
+                    rotate: 18,
+                    stretch: 0,
+                    depth: 120,
+                    modifier: 1,
+                    slideShadows: false,
+                  }
+                : undefined
+            }
+            cardsEffect={
+              effect === "cards"
+                ? { perSlideOffset: 8, perSlideRotate: 2 }
+                : undefined
+            }
+            fadeEffect={effect === "fade" ? { crossFade: true } : undefined}
+            autoplay={
+              sliderAutoplay
+                ? {
+                    delay: 3500,
+                    disableOnInteraction: false,
+                    pauseOnMouseEnter: true,
+                  }
+                : false
+            }
+            navigation
+            pagination={{ clickable: true }}
+            breakpoints={sliderBreakpoints}
+            className="!pb-12"
+          >
+            {items.map(({ card, index }) => (
+              <SwiperSlide
+                key={`${card.title}-${card.href}-${index}`}
+                className="!h-auto"
+              >
+                <div className="h-full px-1 py-2">
+                  <ServiceCard
+                    card={card}
+                    index={index}
+                    compact={compactCards}
+                  />
+                </div>
+              </SwiperSlide>
+            ))}
+          </Swiper>
+        </div>
+      );
+    }
+
+    return (
+      <div className={gridClass}>
+        {items.map(({ card, index }) => (
+          <ServiceCard
+            key={`${card.title}-${card.href}-${index}`}
+            card={card}
+            index={index}
+            compact={compactCards}
+          />
+        ))}
+      </div>
+    );
+  };
 
   return (
     <section className="relative overflow-hidden py-20">
@@ -254,76 +384,29 @@ export function HomeServices({
           <p className="mt-3 text-site-muted">{lead}</p>
         </div>
 
-        {enableSlider ? (
-          <div className="site-cards-swiper mt-12">
-            <Swiper
-              modules={modules}
-              effect={effect === "slide" ? "slide" : effect}
-              grabCursor
-              loop={cards.length > columns}
-              speed={700}
-              spaceBetween={20}
-              slidesPerView={1}
-              centeredSlides={effect === "coverflow" || effect === "cards"}
-              coverflowEffect={
-                effect === "coverflow"
-                  ? {
-                      rotate: 18,
-                      stretch: 0,
-                      depth: 120,
-                      modifier: 1,
-                      slideShadows: false,
-                    }
-                  : undefined
-              }
-              cardsEffect={
-                effect === "cards"
-                  ? { perSlideOffset: 8, perSlideRotate: 2 }
-                  : undefined
-              }
-              fadeEffect={effect === "fade" ? { crossFade: true } : undefined}
-              autoplay={
-                sliderAutoplay
-                  ? {
-                      delay: 3500,
-                      disableOnInteraction: false,
-                      pauseOnMouseEnter: true,
-                    }
-                  : false
-              }
-              navigation
-              pagination={{ clickable: true }}
-              breakpoints={sliderBreakpoints}
-              className="!pb-12"
-            >
-              {cards.map((card, index) => (
-                <SwiperSlide
-                  key={`${card.title}-${card.href}-${index}`}
-                  className="!h-auto"
-                >
-                  <div className="h-full px-1 py-2">
-                    <ServiceCard
-                      card={card}
-                      index={index}
-                      compact={compactCards}
-                    />
+        <div className="mt-12 space-y-8">
+          {blocks.map((block, blockIndex) => {
+            switch (block.kind) {
+              case "banner":
+                return (
+                  <CampaignBanner
+                    key={`${block.card.title}-${block.card.href}-${block.index}`}
+                    card={block.card}
+                  />
+                );
+              case "cards":
+                return (
+                  <div key={`cards-${block.items[0]?.index ?? blockIndex}`}>
+                    {renderCardGrid(block.items)}
                   </div>
-                </SwiperSlide>
-              ))}
-            </Swiper>
-          </div>
-        ) : (
-          <div className={gridClass}>
-            {cards.map((card, index) => (
-              <ServiceCard
-                key={`${card.title}-${card.href}-${index}`}
-                card={card}
-                index={index}
-                compact={compactCards}
-              />
-            ))}
-          </div>
-        )}
+                );
+              default: {
+                const _exhaustive: never = block;
+                return _exhaustive;
+              }
+            }
+          })}
+        </div>
 
         {showPrimary || showSecondary ? (
           <div className="mt-10 flex flex-wrap items-center justify-center gap-3">

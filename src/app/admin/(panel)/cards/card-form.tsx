@@ -20,7 +20,11 @@ import { AdminSwitch } from "@/components/admin/admin-switch";
 import { LucideIconPicker } from "@/components/admin/lucide-icon-picker";
 import { RichTextEditor } from "@/components/admin/rich-text-editor";
 import { SearchableSelect } from "@/components/admin/searchable-select";
-import { CARD_LAYOUT_OPTIONS, parseCardFeatures } from "@/lib/cards";
+import {
+  CAMPAIGN_BANNER_DEFAULT_TITLE,
+  CARD_LAYOUT_OPTIONS,
+  parseCardFeatures,
+} from "@/lib/cards";
 import {
   createCardAction,
   updateCardAction,
@@ -39,6 +43,7 @@ type PageOption = {
 export type CardFormValues = {
   id?: string;
   type?: CardType;
+  isCampaignBanner?: boolean;
   title?: string;
   badgeText?: string | null;
   subtitle?: string | null;
@@ -84,6 +89,9 @@ export function CardForm({
   const action = mode === "create" ? createCardAction : updateCardAction;
   const [state, formAction, isPending] = useActionState(action, initialState);
 
+  const [isCampaignBanner, setIsCampaignBanner] = useState(
+    cardType === "CLASSIC" && Boolean(initial?.isCampaignBanner),
+  );
   const [title, setTitle] = useState(initial?.title ?? "");
   const [badgeText, setBadgeText] = useState(initial?.badgeText ?? "Neden Biz");
   const [subtitle, setSubtitle] = useState(initial?.subtitle ?? "");
@@ -134,6 +142,10 @@ export function CardForm({
     }
   }, [state.success, router]);
 
+  useEffect(() => {
+    if (isCampaignBanner) setMediaType("IMAGE");
+  }, [isCampaignBanner]);
+
   const selectOptions = useMemo(
     () =>
       pageOptions.map((page) => ({
@@ -162,6 +174,8 @@ export function CardForm({
     "w-full rounded-md border border-[#e9ebec] bg-white px-3 py-2.5 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-[#0ab39c] focus:ring-2 focus:ring-[#0ab39c]/20";
 
   const isAdvanced = cardType === "ADVANCED";
+  const isClassic = !isAdvanced;
+  const isBanner = isClassic && isCampaignBanner;
 
   return (
     <form action={submitAction} className="space-y-6">
@@ -169,6 +183,11 @@ export function CardForm({
         <input type="hidden" name="id" value={initial.id} />
       ) : null}
       <input type="hidden" name="type" value={cardType} />
+      <input
+        type="hidden"
+        name="isCampaignBanner"
+        value={isCampaignBanner ? "true" : "false"}
+      />
       <input type="hidden" name="image" value={image} />
       <input type="hidden" name="profileImage" value={profileImage} />
       <input type="hidden" name="mediaType" value={mediaType} />
@@ -185,47 +204,99 @@ export function CardForm({
         <div className="border-b border-[#e9ebec] px-5 py-4">
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-base font-semibold text-slate-800">
-              {isAdvanced ? "Gelişmiş Kart" : "Klasik Kart"}
+              {isAdvanced
+                ? "Gelişmiş Kart"
+                : isBanner
+                  ? "Kampanya Banner"
+                  : "Klasik Kart"}
             </h2>
             <span
               className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
                 isAdvanced
                   ? "bg-[#405189]/10 text-[#405189]"
-                  : "bg-[#0ab39c]/10 text-[#0ab39c]"
+                  : isBanner
+                    ? "bg-amber-50 text-amber-700"
+                    : "bg-[#0ab39c]/10 text-[#0ab39c]"
               }`}
             >
-              {isAdvanced ? "Split / Why Us" : "Hizmet kartı"}
+              {isAdvanced
+                ? "Split / Why Us"
+                : isBanner
+                  ? "Görsel + link"
+                  : "Hizmet kartı"}
             </span>
           </div>
           <p className="mt-1 text-sm text-slate-500">
             {isAdvanced
               ? "Görsel yerleşimi, zengin açıklama, özellik listesi ve profil / istatistik alanı"
-              : "Başlık, görsel veya ikon ve tıklanınca açılacak sayfa"}
+              : isBanner
+                ? "Tam genişlik kampanya görseli ve tıklanınca açılacak sayfa"
+                : "Başlık, görsel veya ikon ve tıklanınca açılacak sayfa"}
           </p>
         </div>
 
         <div className="grid gap-5 p-5 md:grid-cols-2">
-          <div className={isAdvanced ? "" : "md:col-span-2"}>
-            <label htmlFor="title" className="mb-1.5 block text-sm font-medium text-slate-700">
-              {isAdvanced ? "Bölüm başlığı *" : "Kart başlığı *"}
-            </label>
+          {isClassic ? (
+            <div className="md:col-span-2">
+              <p className="mb-1.5 text-sm font-medium text-slate-700">
+                Kart düzeni
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsCampaignBanner(false)}
+                  className={`rounded-md border px-3 py-2 text-sm font-medium transition ${
+                    !isCampaignBanner
+                      ? "border-[#0ab39c] bg-[#0ab39c]/10 text-[#0ab39c]"
+                      : "border-[#e9ebec] text-slate-600 hover:bg-slate-50"
+                  }`}
+                >
+                  Klasik kart
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsCampaignBanner(true)}
+                  className={`rounded-md border px-3 py-2 text-sm font-medium transition ${
+                    isCampaignBanner
+                      ? "border-amber-400 bg-amber-50 text-amber-700"
+                      : "border-[#e9ebec] text-slate-600 hover:bg-slate-50"
+                  }`}
+                >
+                  Kampanya Banner
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {isBanner ? (
             <input
-              id="title"
+              type="hidden"
               name="title"
-              required
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder={
-                isAdvanced
-                  ? "Örn. Büyük ve küçük organizasyonlara çözüm üretiyoruz"
-                  : "Örn. Web Tasarım"
-              }
-              className={inputClass}
+              value={title.trim() || CAMPAIGN_BANNER_DEFAULT_TITLE}
             />
-            {state.fieldErrors?.title ? (
-              <p className="mt-1.5 text-xs text-rose-600">{state.fieldErrors.title}</p>
-            ) : null}
-          </div>
+          ) : (
+            <div className={isAdvanced ? "" : "md:col-span-2"}>
+              <label htmlFor="title" className="mb-1.5 block text-sm font-medium text-slate-700">
+                {isAdvanced ? "Bölüm başlığı *" : "Kart başlığı *"}
+              </label>
+              <input
+                id="title"
+                name="title"
+                required
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder={
+                  isAdvanced
+                    ? "Örn. Büyük ve küçük organizasyonlara çözüm üretiyoruz"
+                    : "Örn. Web Tasarım"
+                }
+                className={inputClass}
+              />
+              {state.fieldErrors?.title ? (
+                <p className="mt-1.5 text-xs text-rose-600">{state.fieldErrors.title}</p>
+              ) : null}
+            </div>
+          )}
 
           {isAdvanced ? (
             <div>
@@ -270,22 +341,26 @@ export function CardForm({
             </div>
           ) : null}
 
-          <div className="md:col-span-2">
-            <p className="mb-2 text-sm font-medium text-slate-700">
-              Açıklama (yazı editörü)
-            </p>
-            <RichTextEditor
-              name="description"
-              value={description}
-              onChange={setDescription}
-              variant="compact"
-              placeholder={
-                isAdvanced
-                  ? "Kısa tanıtım metnini yazın…"
-                  : "Kartın kısa açıklamasını yazın…"
-              }
-            />
-          </div>
+          {!isBanner ? (
+            <div className="md:col-span-2">
+              <p className="mb-2 text-sm font-medium text-slate-700">
+                Açıklama (yazı editörü)
+              </p>
+              <RichTextEditor
+                name="description"
+                value={description}
+                onChange={setDescription}
+                variant="compact"
+                placeholder={
+                  isAdvanced
+                    ? "Kısa tanıtım metnini yazın…"
+                    : "Kartın kısa açıklamasını yazın…"
+                }
+              />
+            </div>
+          ) : (
+            <input type="hidden" name="description" value="" />
+          )}
 
           {isAdvanced ? (
             <div className="md:col-span-2">
@@ -325,7 +400,7 @@ export function CardForm({
             </div>
           ) : null}
 
-          {!isAdvanced ? (
+          {isClassic && !isBanner ? (
             <div className="md:col-span-2">
               <p className="mb-1.5 text-sm font-medium text-slate-700">
                 Görsel kaynağı *
@@ -357,7 +432,7 @@ export function CardForm({
             </div>
           ) : null}
 
-          {!isAdvanced && mediaType === "ICON" ? (
+          {isClassic && !isBanner && mediaType === "ICON" ? (
             <div className="md:col-span-2">
               <p className="mb-2 text-sm font-medium text-slate-700">İkon seçimi</p>
               <LucideIconPicker value={icon} onChange={setIcon} />
@@ -372,10 +447,20 @@ export function CardForm({
           {isAdvanced || mediaType === "IMAGE" ? (
             <div className="md:col-span-2">
               <p className="mb-2 text-sm font-medium text-slate-700">
-                {isAdvanced ? "Ana görsel" : "Kart görseli"}
+                {isAdvanced
+                  ? "Ana görsel"
+                  : isBanner
+                    ? "Banner görseli *"
+                    : "Kart görseli"}
               </p>
               <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
-                <div className="flex h-36 w-44 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-dashed border-[#e9ebec] bg-[#f3f6f9]">
+                <div
+                  className={`flex shrink-0 items-center justify-center overflow-hidden rounded-lg border border-dashed border-[#e9ebec] bg-[#f3f6f9] ${
+                    isBanner
+                      ? "h-36 w-full max-w-xl sm:w-[28rem]"
+                      : "h-36 w-44"
+                  }`}
+                >
                   {preview ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
@@ -425,7 +510,11 @@ export function CardForm({
                       setPreview(URL.createObjectURL(file));
                     }}
                   />
-                  <p className="text-xs text-slate-400">PNG, JPG veya WEBP</p>
+                  <p className="text-xs text-slate-400">
+                    {isBanner
+                      ? "PNG, JPG veya WEBP · geniş banner önerilir (ör. 1600×400)"
+                      : "PNG, JPG veya WEBP"}
+                  </p>
                   {state.fieldErrors?.image ? (
                     <p className="text-xs text-rose-600">
                       {state.fieldErrors.image}

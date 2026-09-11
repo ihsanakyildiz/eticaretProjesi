@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { AdminPublicLink } from "@/components/admin/admin-public-link";
+import { ensureCardCampaignBannerColumn } from "@/lib/ensure-card-schema";
 import { prisma } from "@/lib/prisma";
 import { resolvePageSeo } from "@/lib/seo";
 import type { PageSectionTypeValue } from "@/lib/page-sections";
@@ -92,6 +93,7 @@ async function loadRelationOptions(selected: {
 }
 
 async function loadBuilderOptions() {
+  await ensureCardCampaignBannerColumn().catch(() => undefined);
   const [
     classicCards,
     advancedCards,
@@ -111,7 +113,7 @@ async function loadBuilderOptions() {
     prisma.card.findMany({
       where: { type: "CLASSIC" },
       orderBy: [{ sortOrder: "asc" }, { title: "asc" }],
-      select: { id: true, title: true, isActive: true },
+      select: { id: true, title: true, isActive: true, isCampaignBanner: true },
     }),
     prisma.card.findMany({
       where: { type: "ADVANCED" },
@@ -203,7 +205,7 @@ async function loadBuilderOptions() {
   return {
     cardOptions: classicCards.map((card) => ({
       id: card.id,
-      label: card.title,
+      label: card.isCampaignBanner ? `${card.title} (Banner)` : card.title,
       isActive: card.isActive,
     })),
     advancedCardOptions: advancedCards.map((card) => ({

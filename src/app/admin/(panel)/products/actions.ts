@@ -30,6 +30,7 @@ import { isAdvancedInventoryEnabled } from "@/lib/advanced-inventory";
 import { writeCatalogStock } from "@/lib/inventory";
 import { pruneIncompleteCombinations } from "@/lib/product-combinations";
 import { prisma } from "@/lib/prisma";
+import { ensureFeedSyncLockedColumn } from "@/lib/feed-sync-locks";
 import {
   buildVariantCombinationKey,
   DEFAULT_VARIANT_COMBINATION_KEY,
@@ -1201,6 +1202,7 @@ export async function toggleVariantFeedSyncLockAction(input: {
   if (!existing) return { error: "Varyant bulunamadı." };
 
   try {
+    await ensureFeedSyncLockedColumn();
     await prisma.productVariant.update({
       where: { id: existing.id },
       data: { feedSyncLocked: Boolean(input.feedSyncLocked) },

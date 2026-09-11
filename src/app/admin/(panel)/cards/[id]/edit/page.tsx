@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { ensureCardCampaignBannerColumn } from "@/lib/ensure-card-schema";
 import { prisma } from "@/lib/prisma";
 import { CardForm } from "../../card-form";
 
@@ -20,6 +21,7 @@ export async function generateMetadata({
 
 export default async function EditCardPage({ params }: EditCardPageProps) {
   const { id } = await params;
+  await ensureCardCampaignBannerColumn().catch(() => undefined);
   const card = await prisma.card.findUnique({ where: { id } });
   if (!card) notFound();
 
@@ -48,7 +50,12 @@ export default async function EditCardPage({ params }: EditCardPageProps) {
         <p className="mt-2 text-sm text-slate-500">
           {card.title}{" "}
           <span className="text-slate-400">
-            · {card.type === "ADVANCED" ? "Gelişmiş" : "Klasik"}
+            ·{" "}
+            {card.type === "ADVANCED"
+              ? "Gelişmiş"
+              : card.isCampaignBanner
+                ? "Kampanya Banner"
+                : "Klasik"}
           </span>
         </p>
       </div>
@@ -59,6 +66,7 @@ export default async function EditCardPage({ params }: EditCardPageProps) {
         initial={{
           id: card.id,
           type: card.type,
+          isCampaignBanner: card.isCampaignBanner,
           title: card.title,
           badgeText: card.badgeText,
           subtitle: card.subtitle,

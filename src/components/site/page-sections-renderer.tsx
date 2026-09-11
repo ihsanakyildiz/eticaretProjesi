@@ -291,6 +291,7 @@ export function PageSectionsRenderer({
                     image: card.image,
                     mediaType: card.mediaType,
                     description: card.description ?? undefined,
+                    isCampaignBanner: card.isCampaignBanner === true,
                   }))}
                 />
             );

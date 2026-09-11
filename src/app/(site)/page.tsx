@@ -16,6 +16,7 @@ import { getCachedHomepageAdvanced } from "@/lib/pages";
 import { getActivePricingPlans, getPricingBillingOptions } from "@/lib/pricing";
 import { auth } from "@/auth";
 import { getMembershipFlags } from "@/lib/membership";
+import { ensureCardCampaignBannerColumn } from "@/lib/ensure-card-schema";
 import { prisma } from "@/lib/prisma";
 import { resolveHomeMetadata } from "@/lib/seo";
 import { getSettingsMap } from "@/lib/settings";
@@ -128,6 +129,8 @@ export default async function HomePage() {
       </>
     );
   }
+
+  await ensureCardCampaignBannerColumn().catch(() => undefined);
 
   const [hero, cards, clients, projects, projectFeatures, works, workCategories, posts, faqGroup, pricingPlans] =
     await Promise.all([
@@ -285,6 +288,7 @@ export default async function HomePage() {
             image: card.image,
             mediaType: card.mediaType,
             description: card.description ?? undefined,
+            isCampaignBanner: card.isCampaignBanner === true,
           }))}
         />
       </div>

@@ -20,6 +20,7 @@ import { deleteCardAction, toggleCardActiveAction } from "./actions";
 export type CardRow = {
   id: string;
   type: "CLASSIC" | "ADVANCED";
+  isCampaignBanner: boolean;
   title: string;
   mediaType: "IMAGE" | "ICON";
   image: string | null;
@@ -122,7 +123,13 @@ export function CardsTable({ cards }: { cards: CardRow[] }) {
     const needle = query.trim().toLocaleLowerCase("tr-TR");
     if (!needle) return cards;
     return cards.filter((card) =>
-      [card.title, card.href, card.icon ?? "", card.type]
+      [
+        card.title,
+        card.href,
+        card.icon ?? "",
+        card.type,
+        card.isCampaignBanner ? "banner" : "",
+      ]
         .join(" ")
         .toLocaleLowerCase("tr-TR")
         .includes(needle),
@@ -201,9 +208,11 @@ export function CardsTable({ cards }: { cards: CardRow[] }) {
                       <p className="mt-0.5 text-[11px] text-slate-400">
                         {card.type === "ADVANCED"
                           ? "Split yerleşim"
-                          : card.mediaType === "IMAGE"
-                            ? "Görsel"
-                            : `İkon · ${card.icon ?? "—"}`}
+                          : card.isCampaignBanner
+                            ? "Kampanya banner"
+                            : card.mediaType === "IMAGE"
+                              ? "Görsel"
+                              : `İkon · ${card.icon ?? "—"}`}
                       </p>
                     </div>
                   </div>
@@ -211,6 +220,10 @@ export function CardsTable({ cards }: { cards: CardRow[] }) {
                     {card.type === "ADVANCED" ? (
                       <span className="inline-flex rounded-full bg-[#405189]/10 px-2.5 py-1 text-[11px] font-semibold text-[#405189]">
                         Gelişmiş
+                      </span>
+                    ) : card.isCampaignBanner ? (
+                      <span className="inline-flex rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700">
+                        Banner
                       </span>
                     ) : (
                       <span className="inline-flex rounded-full bg-[#0ab39c]/10 px-2.5 py-1 text-[11px] font-semibold text-[#0ab39c]">

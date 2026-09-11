@@ -39,7 +39,8 @@ export default async function NewClassicCardPage() {
           Yeni Klasik Kart
         </h1>
         <p className="mt-2 text-sm text-slate-500">
-          Başlık, ikon/görsel ve açılacak sayfa linkini belirleyin.
+          Klasik kart veya kampanya banner seçin. Banner’da yalnızca görsel ve
+          link yeterlidir.
         </p>
       </div>
       <CardForm mode="create" cardType="CLASSIC" pageOptions={pageOptions} />

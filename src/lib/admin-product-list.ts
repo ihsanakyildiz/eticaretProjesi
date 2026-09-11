@@ -8,6 +8,7 @@ import {
 } from "@/lib/category-tree";
 import { prisma } from "@/lib/prisma";
 import { campaignOfferLabel } from "@/lib/campaign-kinds";
+import { ensureFeedSyncLockedColumn } from "@/lib/feed-sync-locks";
 import { toIsoOrNull } from "@/lib/product-sale";
 import { DEFAULT_VARIANT_COMBINATION_KEY } from "@/lib/product-variants";
 
@@ -603,6 +604,9 @@ async function loadLookupsAndCategories(force = false) {
 export async function loadAdminProductPage(
   query: AdminProductListQuery,
 ): Promise<AdminProductListResult> {
+  await ensureFeedSyncLockedColumn().catch((error) => {
+    console.error(error);
+  });
   const pageSize = ADMIN_PRODUCTS_PAGE_SIZE;
   const needsCategoryTree = Boolean(query.categoryId) && query.categoryId !== ADMIN_PRODUCT_NONE;
   const lookupsTask = loadLookupsAndCategories();
@@ -672,13 +676,7 @@ export async function loadAdminProductPage(
             _count: { _all: true },
             _sum: { stockQuantity: true },
           }),
-          prisma.productVariant.findMany({
-            where: {
-              productId: { in: productIds },
-              OR: [{ isDefault: true }, { combinationKey: DEFAULT_VARIANT_COMBINATION_KEY }],
-            },
-            select: { id: true, productId: true, isDefault: true, feedSyncLocked: true },
-          }),
+          loadDefaultVariantsForList(productIds),
           prisma
             .$queryRaw<
               Array<{ productId: string; name: string; kind: string; valueInt: number }>
@@ -762,7 +760,7 @@ export async function loadAdminProductPage(
   };
 }
 
-const productListVariantSelect = {
+const productListVariantSelectBase = {
   id: true,
   productId: true,
   title: true,
@@ -776,9 +774,33 @@ const productListVariantSelect = {
   image: true,
   isActive: true,
   isDefault: true,
-  feedSyncLocked: true,
   combinationKey: true,
 } as const;
+
+const productListVariantSelect = {
+  ...productListVariantSelectBase,
+  feedSyncLocked: true,
+} as const;
+
+async function loadDefaultVariantsForList(productIds: string[]) {
+  const where = {
+    productId: { in: productIds },
+    OR: [{ isDefault: true }, { combinationKey: DEFAULT_VARIANT_COMBINATION_KEY }],
+  };
+  try {
+    return await prisma.productVariant.findMany({
+      where,
+      select: { id: true, productId: true, isDefault: true, feedSyncLocked: true },
+    });
+  } catch (error) {
+    console.error(error);
+    const rows = await prisma.productVariant.findMany({
+      where,
+      select: { id: true, productId: true, isDefault: true },
+    });
+    return rows.map((row) => ({ ...row, feedSyncLocked: false }));
+  }
+}
 
 function toProductListVariantRow(
   row: {
@@ -820,17 +842,48 @@ function toProductListVariantRow(
 export async function loadProductListVariants(
   productId: string,
 ): Promise<ProductListVariantRow[] | null> {
+  await ensureFeedSyncLockedColumn().catch((error) => {
+    console.error(error);
+  });
   const product = await prisma.product.findUnique({
     where: { id: productId },
     select: { id: true },
   });
   if (!product) return null;
 
-  const rows = await prisma.productVariant.findMany({
-    where: { productId },
-    orderBy: [{ sortOrder: "asc" }, { isDefault: "desc" }, { title: "asc" }],
-    select: productListVariantSelect,
-  });
+  const orderBy = [{ sortOrder: "asc" as const }, { isDefault: "desc" as const }, { title: "asc" as const }];
+  let rows: Array<{
+    id: string;
+    productId: string;
+    title: string;
+    sku: string;
+    barcode: string | null;
+    priceMinor: number;
+    compareAtMinor: number | null;
+    saleStartsAt: Date | null;
+    saleEndsAt: Date | null;
+    stockQuantity: number;
+    image: string | null;
+    isActive: boolean;
+    isDefault: boolean;
+    feedSyncLocked: boolean;
+    combinationKey: string;
+  }>;
+  try {
+    rows = await prisma.productVariant.findMany({
+      where: { productId },
+      orderBy,
+      select: productListVariantSelect,
+    });
+  } catch (error) {
+    console.error(error);
+    const fallback = await prisma.productVariant.findMany({
+      where: { productId },
+      orderBy,
+      select: productListVariantSelectBase,
+    });
+    rows = fallback.map((row) => ({ ...row, feedSyncLocked: false }));
+  }
   const combinations = rows.filter(
     (row) => row.combinationKey !== DEFAULT_VARIANT_COMBINATION_KEY,
   );

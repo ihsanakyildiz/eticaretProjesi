@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { LayoutGrid, Plus } from "lucide-react";
 import { Can } from "@/components/admin/admin-permissions";
+import { ensureCardCampaignBannerColumn } from "@/lib/ensure-card-schema";
 import { prisma } from "@/lib/prisma";
 import { CardsTable } from "./cards-table";
 
@@ -11,11 +12,13 @@ export const metadata: Metadata = {
 };
 
 export default async function CardsPage() {
+  await ensureCardCampaignBannerColumn().catch(() => undefined);
   const cards = await prisma.card.findMany({
     orderBy: [{ sortOrder: "asc" }, { title: "asc" }],
     select: {
       id: true,
       type: true,
+      isCampaignBanner: true,
       title: true,
       mediaType: true,
       image: true,
@@ -39,8 +42,9 @@ export default async function CardsPage() {
               Kartlar
             </h1>
             <p className="mt-2 max-w-2xl text-sm text-slate-500">
-              Klasik hizmet kartları veya gelişmiş “Neden Biz” tarzı split kartlar
-              oluşturun. Yeni kart eklerken tipi seçersiniz.
+              Klasik hizmet kartları, kampanya banner’ları veya gelişmiş “Neden
+              Biz” tarzı split kartlar oluşturun. Yeni kart eklerken tipi
+              seçersiniz.
             </p>
           </div>
           <Can resource="cards" action="create">

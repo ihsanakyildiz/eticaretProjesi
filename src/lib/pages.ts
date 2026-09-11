@@ -1,5 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import { unstable_cache } from "next/cache";
+import { ensureCardCampaignBannerColumn } from "@/lib/ensure-card-schema";
 import { prisma } from "@/lib/prisma";
 import {
   getProductCategoriesBySource,
@@ -121,6 +122,7 @@ export type AdvancedPageWithSections = Prisma.PageGetPayload<{
 export type DbPageSection = AdvancedPageWithSections["sections"][number];
 
 export async function getAdvancedPageBySlug(slug: string) {
+  await ensureCardCampaignBannerColumn().catch(() => undefined);
   return prisma.page.findFirst({
     where: { slug, type: "ADVANCED", isActive: true },
     include: {
@@ -196,6 +198,7 @@ export type ResolvedPageSection = {
   cards: {
     id: string;
     type: string;
+    isCampaignBanner: boolean;
     title: string;
     badgeText: string | null;
     subtitle: string | null;
@@ -533,7 +536,7 @@ export async function resolvePageSections(
         const picked = section.cards
           .map((row) => row.card)
           .filter((card) => card.isActive && card.type === "CLASSIC");
-        base.cards = (
+        const resolvedCards = (
           picked.length > 0
             ? picked
             : await prisma.card.findMany({
@@ -542,6 +545,10 @@ export async function resolvePageSections(
                 take: limit,
               })
         ).slice(0, limit);
+        base.cards = resolvedCards.map((card) => ({
+          ...card,
+          isCampaignBanner: card.isCampaignBanner === true,
+        }));
         break;
       }
       case "ADVANCED_CARD": {

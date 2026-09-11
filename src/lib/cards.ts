@@ -50,8 +50,19 @@ export function serializeCardFeatures(features: string[]): string | null {
   return cleaned.length ? JSON.stringify(cleaned) : null;
 }
 
+export const CAMPAIGN_BANNER_DEFAULT_TITLE = "Kampanya Banner";
+
 export function isCardType(value: string): value is CardType {
   return value === "CLASSIC" || value === "ADVANCED";
+}
+
+export function parseCampaignBannerFlag(
+  raw: FormDataEntryValue | null | undefined,
+  type: CardType,
+): boolean {
+  if (type !== "CLASSIC") return false;
+  const value = String(raw ?? "").trim().toLowerCase();
+  return value === "on" || value === "true" || value === "1";
 }
 
 export function isCardLayout(value: string): value is CardLayout {
