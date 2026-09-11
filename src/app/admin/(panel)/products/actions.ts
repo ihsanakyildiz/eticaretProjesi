@@ -13,9 +13,9 @@ import {
   type ProductVariantDraft,
 } from "@/lib/product-editor";
 import {
-  loadProductListVariants,
   type ProductListVariantRow,
 } from "@/lib/admin-product-list";
+import { loadProductListVariants } from "@/lib/admin-product-list-server";
 import { parseMajorToMinor } from "@/lib/product-money";
 import {
   clearedSaleWrite,
