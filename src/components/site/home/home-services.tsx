@@ -232,12 +232,13 @@ export function HomeServices({
   const heading =
     title === undefined
       ? "Hizmet özelliklerimizi keşfedin"
-      : title.trim() || null;
+      : title?.trim() || null;
   const lead =
     subtitle === undefined
       ? "Tasarım, yazılım ve dijital büyüme için uçtan uca çözümler."
-      : subtitle.trim() || null;
-  const badge = eyebrow === undefined ? "••• Hizmetlerimiz" : eyebrow.trim() || null;
+      : subtitle?.trim() || null;
+  const badge =
+    eyebrow === undefined ? "••• Hizmetlerimiz" : eyebrow?.trim() || null;
   const hasHeading = Boolean(heading || lead || badge);
   const columns: CardColumnsPerRow =
     cardsPerRow === 4 || cardsPerRow === 5 ? cardsPerRow : 3;
