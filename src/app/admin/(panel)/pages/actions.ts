@@ -1218,6 +1218,15 @@ export async function updatePageSectionAction(
         : type === "PRODUCT_CATEGORIES"
           ? childrenParentId
           : null;
+    if (
+      type === "PRODUCT_CATEGORIES" &&
+      categoryScope === "parent" &&
+      !childrenParentId
+    ) {
+      return {
+        error: "Alt kategoriler için bir üst kategori seçin ve bölümü kaydedin.",
+      };
+    }
     const productBrandId = scopedBrandIds[0] ?? null;
     const productFilterValueId = scopedFilterValueIds[0] ?? null;
     const limitRaw = Number.parseInt(String(formData.get("limit") ?? ""), 10);

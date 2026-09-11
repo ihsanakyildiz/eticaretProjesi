@@ -345,9 +345,8 @@ function ApiFeedHelpModal({ onClose }: { onClose: () => void }) {
                   Liste, kategori, marka ve filtre alanlarını eşleyip API’yi çektikten sonra dolar.
                 </li>
                 <li>
-                  Eşlenmeyen kategoride ürün adından tahmin edilir; o da olmazsa{" "}
-                  <strong className="font-medium text-slate-800">varsayılan kategori / marka</strong>{" "}
-                  kullanılır.
+                  Eşlenmeyen kategori veya markadaki ürünler çekilmez. Varsayılan kategori /
+                  marka yalnızca kaynakta bu alan boşsa kullanılır.
                 </li>
                 <li>
                   Yeni ürün eklemek için ya kategori alanı eşlenmeli ya da varsayılan kategori
@@ -432,7 +431,8 @@ function ApiFeedHelpModal({ onClose }: { onClose: () => void }) {
                 <li>
                   <strong className="font-medium text-slate-800">Ürünler satışa kapalı geldi:</strong>{" "}
                   fiyat 0, görsel yok veya stok kapatma kuralı tetiklenmiş olabilir. Güncellenecek
-                  alanları ve stok anahtarlarını kontrol edin.
+                  alanları ve stok anahtarlarını kontrol edin. Kaynak listesindeki turuncu Uyarı,
+                  kategori/marka/etiket değişimini de gösterir.
                 </li>
                 <li>
                   <strong className="font-medium text-slate-800">Çalıştır soluk:</strong> kaynak

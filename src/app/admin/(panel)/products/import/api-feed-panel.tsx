@@ -20,6 +20,11 @@ import {
 } from "lucide-react";
 import { AdminSwitch } from "@/components/admin/admin-switch";
 import { useCan, useCanWrite } from "@/components/admin/admin-permissions";
+import {
+  FeedSyncWarningBadge,
+  FeedSyncWarningDetailAlert,
+  FeedSyncWarningListAlert,
+} from "@/components/admin/feed-sync-warning-alert";
 import { IMPORT_PATHS } from "./import-paths";
 import { FeedMappingTable } from "./feed-mapping-table";
 import {
@@ -198,6 +203,16 @@ export function ApiFeedListPanel({ initialFeeds }: { initialFeeds: ApiProductFee
       {feeds.some((feed) => feed.running)
         ? feeds.filter((feed) => feed.running).map((feed) => <ApiSyncProgressBar key={feed.id} feed={feed} />)
         : null}
+
+      <FeedSyncWarningListAlert
+        feeds={feeds.map((feed) => ({
+          id: feed.id,
+          name: feed.name,
+          href: IMPORT_PATHS.apiFeed(feed.id),
+          supplierName: feed.supplierName,
+          lastSyncWarnings: feed.lastSyncWarnings,
+        }))}
+      />
 
       <FeedList
         feeds={feeds}
@@ -561,7 +576,10 @@ function FeedList({
                 {feed.lastMessage ? <p className="mt-1 text-xs text-slate-400">{feed.lastMessage}</p> : null}
               </td>
               <td className="px-4 py-3">
-                <StatusBadge feed={feed} />
+                <div className="flex flex-col items-start gap-1">
+                  <StatusBadge feed={feed} />
+                  <FeedSyncWarningBadge report={feed.lastSyncWarnings} />
+                </div>
               </td>
               <td className="px-4 py-3">
                 {canWrite ? (
@@ -728,6 +746,10 @@ function FeedEditor({
 
   return (
     <div className="space-y-5">
+      <FeedSyncWarningDetailAlert
+        report={editingFeed?.lastSyncWarnings}
+        companyName={editingFeed?.supplierName || editor.name}
+      />
       <div className="flex flex-wrap items-center justify-between gap-2">
         <Link href={IMPORT_PATHS.api} className="text-sm font-medium text-[#405189]">
           ← Kaynak listesine dön
@@ -1128,9 +1150,10 @@ function FeedEditor({
       <section className="rounded-lg border border-[#e9ebec] bg-white p-5 shadow-sm">
         <h3 className="text-sm font-semibold text-slate-800">3. Kategori, marka ve filtre eşlemesi</h3>
         <p className="mt-1 text-sm text-slate-500">
-          API’deki her kategori, marka ve filtre değeri için mağazadaki kaydı seçin. Eşlenmeyen
-          kategoride ürün adından tahmin veya varsayılan kategori kullanılır. Filtreler ürün
-          kartındaki özel filtrelerdir; beden ve renk varyant özelliği olarak kalır.
+          API’deki her kategori ve marka değeri için mağazadaki kaydı seçin. Eşlenmeyen kategori
+          veya markadaki ürünler çekilmez; sitede satmadığınız ürünler kataloga girmez. Varsayılan
+          kategori / marka yalnızca kaynakta bu alan boşsa kullanılır. Filtreler ürün kartındaki
+          özel filtrelerdir; beden ve renk varyant özelliği olarak kalır.
         </p>
         <div className="mt-4 grid gap-4 md:grid-cols-2">
           <label className="block text-sm">
@@ -1170,6 +1193,7 @@ function FeedEditor({
           <ValueMapTable
             title="Kategoriler"
             emptyHint="Kategori alanını eşleyip API’yi tekrar çekin."
+            emptyOption="Çekme"
             values={preview?.xmlCategories ?? editor.categoryAliases.map((alias) => alias.from)}
             aliases={editor.categoryAliases}
             options={categories}
@@ -1178,6 +1202,7 @@ function FeedEditor({
           <ValueMapTable
             title="Markalar"
             emptyHint="Marka alanını eşleyip API’yi tekrar çekin."
+            emptyOption="Çekme"
             values={preview?.xmlBrands ?? editor.brandAliases.map((alias) => alias.from)}
             aliases={editor.brandAliases}
             options={brands}
@@ -1578,6 +1603,7 @@ function ApiFeedRunsModal({ feedId, onClose }: { feedId: string; onClose: () => 
 function ValueMapTable({
   title,
   emptyHint,
+  emptyOption = "Eşleme",
   values,
   aliases,
   options,
@@ -1585,6 +1611,7 @@ function ValueMapTable({
 }: {
   title: string;
   emptyHint: string;
+  emptyOption?: string;
   values: string[];
   aliases: XmlFeedCategoryAlias[];
   options: XmlFeedLookupOption[];
@@ -1638,7 +1665,7 @@ function ValueMapTable({
                       value={selected.get(value) ?? ""}
                       onChange={(event) => onChange(upsertValueAlias(aliases, value, event.target.value))}
                     >
-                      <option value="">Eşleme</option>
+                      <option value="">{emptyOption}</option>
                       {options.map((item) => (
                         <option key={item.id} value={item.name}>
                           {"- ".repeat(item.depth ?? 0)}

@@ -24,6 +24,7 @@ import {
   type XmlFeedLiveProgress,
   type XmlProductFeedRunSummary,
 } from "@/lib/xml-product-feed-shared";
+import { feedSyncWarningCount } from "@/lib/feed-sync-warnings";
 import { computeNextRunAt } from "@/lib/xml-product-feed-store";
 
 export { computeNextRunAt };
@@ -184,6 +185,7 @@ export function toApiFeedSummary(
     brandAliases: valueMaps.brands,
     filterValueAliases: valueMaps.filterValueAliases,
     discovery: valueMaps.discovery,
+    lastSyncWarnings: valueMaps.lastSyncWarnings,
     matchBy: asMatchBy(feed.matchBy),
     skuPrefix: feed.skuPrefix,
     httpUser: feed.httpUser,
@@ -268,6 +270,7 @@ export async function listApiFeedProgress(): Promise<XmlFeedLiveProgress[]> {
         lastUpdatedCount: true,
         lastSkippedCount: true,
         lastFailedCount: true,
+        categoryMapJson: true,
       },
     }),
     listApiFeedActiveRuns(),
@@ -275,6 +278,7 @@ export async function listApiFeedProgress(): Promise<XmlFeedLiveProgress[]> {
   const activeByFeed = new Map(activeRuns.map((run) => [run.feedId, run]));
   return feeds.map((feed) => {
     const active = activeByFeed.get(feed.id);
+    const lastSyncWarnings = parseXmlFeedValueMaps(feed.categoryMapJson).lastSyncWarnings;
     return {
       id: feed.id,
       running: Boolean(active),
@@ -286,6 +290,8 @@ export async function listApiFeedProgress(): Promise<XmlFeedLiveProgress[]> {
       lastFailedCount: feed.lastFailedCount,
       runningCursor: progressFromActive(active).cursor,
       runningItemCount: progressFromActive(active).itemCount,
+      lastSyncWarnings,
+      warningCount: feedSyncWarningCount(lastSyncWarnings),
     };
   });
 }
@@ -311,6 +317,16 @@ export async function getApiFeed(id: string) {
 export async function saveApiFeedRecord(values: ApiFeedFormValues, existingPass?: string | null) {
   const intervalMinutes = Math.min(10080, Math.max(5, Math.round(values.intervalMinutes) || 60));
   const markup = Number(String(values.priceMarkupPercent).replace(",", "."));
+  const existing = values.id
+    ? await prisma.apiProductFeed.findUnique({
+        where: { id: values.id },
+        select: { categoryMapJson: true },
+      })
+    : null;
+  const lastSyncWarnings =
+    existing != null
+      ? parseXmlFeedValueMaps(existing.categoryMapJson).lastSyncWarnings
+      : values.lastSyncWarnings;
   const data = {
     name: values.name.trim().slice(0, 191),
     url: values.url.trim().slice(0, 1000),
@@ -334,6 +350,7 @@ export async function saveApiFeedRecord(values: ApiFeedFormValues, existingPass?
       },
       values.variantPath,
       values.filterValueAliases,
+      lastSyncWarnings,
     ),
     requestJson: serializeApiFeedRequestJson(values),
     matchBy: values.matchBy,

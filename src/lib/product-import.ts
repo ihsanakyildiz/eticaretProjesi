@@ -87,6 +87,10 @@ export type ProductImportRawRow = Partial<Record<ProductImportColumnKey, string>
   rowNumber: number;
   externalId?: string;
   filterValues?: Record<string, string>;
+  categoryRejected?: boolean;
+  brandRejected?: boolean;
+  categorySource?: string;
+  brandSource?: string;
 };
 
 export type ProductImportPreviewStatus = "ready" | "zero_price" | "error";
@@ -496,6 +500,24 @@ function resolveByNameOrSlug<T extends { id: string; name: string; slug: string 
   );
 }
 
+export function feedImportSkipFlags(row: ProductImportRawRow, lookups: ProductImportLookups) {
+  const categoryRaw = (row.category ?? "").trim();
+  const brandRaw = (row.brand ?? "").trim();
+  return {
+    category: Boolean(
+      row.categoryRejected || (categoryRaw && !resolveByNameOrSlug(lookups.categories, categoryRaw)),
+    ),
+    brand: Boolean(row.brandRejected || (brandRaw && !resolveByNameOrSlug(lookups.brands, brandRaw))),
+  };
+}
+
+export function feedImportSkipReason(row: ProductImportRawRow, lookups: ProductImportLookups): string | null {
+  const flags = feedImportSkipFlags(row, lookups);
+  if (flags.category) return "Kategori eşlenmedi.";
+  if (flags.brand) return "Marka eşlenmedi.";
+  return null;
+}
+
 function resolveByNameOrSlugLoose<T extends { id: string; name: string; slug: string }>(
   items: T[],
   raw: string,
@@ -885,6 +907,16 @@ function mergeBaseRow(rows: ProductImportRawRow[]): ProductImportRawRow {
     }
   }
   if (Object.keys(filterValues).length > 0) base.filterValues = filterValues;
+  if (rows.some((row) => row.categoryRejected)) base.categoryRejected = true;
+  if (rows.some((row) => row.brandRejected)) base.brandRejected = true;
+  if (!(base.categorySource ?? "").trim()) {
+    const source = rows.map((row) => (row.categorySource ?? "").trim()).find(Boolean);
+    if (source) base.categorySource = source;
+  }
+  if (!(base.brandSource ?? "").trim()) {
+    const source = rows.map((row) => (row.brandSource ?? "").trim()).find(Boolean);
+    if (source) base.brandSource = source;
+  }
   return base;
 }
 

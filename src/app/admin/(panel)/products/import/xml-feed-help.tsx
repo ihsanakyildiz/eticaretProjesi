@@ -237,9 +237,9 @@ function XmlFeedHelpModal({ onClose }: { onClose: () => void }) {
 
             <HelpSection id="kategori" title="3. Kategori, marka ve filtre eşlemesi">
               <p>
-                XML’deki metinler mağaza kategorisi / markası / filtre değeri ile birebir aynı
-                olmayabilir. Her değer için mağazadaki kaydı seçin. Kategori eşleşmezse ürün
-                adından tahmin edilir; o da olmazsa varsayılan kategori kullanılır. Eşlenen
+                XML’deki metinler mağaza kategorisi / markası ile birebir aynı olmayabilir. Her
+                değer için mağazadaki kaydı seçin. Eşlenmeyen kategori veya markadaki ürünler
+                çekilmez. Varsayılan kategori yalnızca kaynakta kategori yoksa kullanılır. Eşlenen
                 filtreler yeni ürüne yazılır; mevcut üründe yalnızca “Filtreler” güncellemesi
                 açıksa değişir.
               </p>
@@ -293,8 +293,9 @@ function XmlFeedHelpModal({ onClose }: { onClose: () => void }) {
                   okunur. Düz etiketse Beden / Renk / Ebat alanını özellik değerine bağlayın.
                 </li>
                 <li>
-                  <strong className="font-medium text-slate-800">Çift ürün:</strong> eşleme anahtarı
-                  boş veya her SKU’da değişiyor. Sabit bir kart ID / barkod bağlayın.
+                  <strong className="font-medium text-slate-800">Ürünler kendiliğinden satışa kapandı:</strong>{" "}
+                  kaynak listesinde turuncu Uyarı görünür. Firma kategori/marka kapatmış veya eşlenen
+                  etiketin adını değiştirmiş olabilir. Eşleme sayfasındaki uyarıdan kontrol edin.
                 </li>
               </ul>
             </HelpSection>

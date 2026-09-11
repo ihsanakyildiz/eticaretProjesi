@@ -317,7 +317,16 @@ function ProductCategoriesSectionFields({
   const settings = parseSectionSettings(section.settings);
   const initialSource = settings.productCategorySource ?? "ROOTS";
   const [source, setSource] = useState<ProductCategorySectionSource>(initialSource);
+  const [parentCategoryId, setParentCategoryId] = useState(section.productCategoryId ?? "");
   const scope = productCategorySourceScope(source);
+
+  useEffect(() => {
+    setSource(settings.productCategorySource ?? "ROOTS");
+  }, [settings.productCategorySource]);
+
+  useEffect(() => {
+    setParentCategoryId(section.productCategoryId ?? "");
+  }, [section.productCategoryId]);
 
   return (
     <>
@@ -392,7 +401,8 @@ function ProductCategoriesSectionFields({
           </label>
           <select
             name="productCategoryId"
-            defaultValue={section.productCategoryId ?? ""}
+            value={parentCategoryId}
+            onChange={(event) => setParentCategoryId(event.target.value)}
             className="w-full rounded-md border border-[#e9ebec] px-3 py-2 text-sm outline-none focus:border-[#405189]"
           >
             <option value="">Kategori seçin</option>
@@ -403,8 +413,14 @@ function ProductCategoriesSectionFields({
             ))}
           </select>
           <p className="mt-1 text-[11px] text-slate-500">
-            Bu kategorinin bir alt seviyesindeki kategoriler listelenir.
+            Bu kategorinin doğrudan alt kategorileri listelenir. Üst kategoriyi
+            seçip bölümü kaydetmeden sitede görünmez.
           </p>
+          {!parentCategoryId ? (
+            <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
+              Üst kategori seçilmeden bu bölüm sitede boş kalır.
+            </p>
+          ) : null}
         </div>
       ) : null}
 

@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { resolvePageSeo } from "@/lib/seo";
 import type { PageSectionTypeValue } from "@/lib/page-sections";
 import { publicPageHref } from "@/lib/public-urls";
+import { buildCategoryTree, flattenCategoryTree } from "@/lib/category-tree";
 import { AdvancedPageMetaForm } from "../../advanced-page-meta-form";
 import { ClassicPageForm } from "../../classic-page-form";
 import {
@@ -166,7 +167,14 @@ async function loadBuilderOptions() {
     }),
     prisma.productCategory.findMany({
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
-      select: { id: true, name: true, isActive: true },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        parentId: true,
+        sortOrder: true,
+        isActive: true,
+      },
     }),
     prisma.brand.findMany({
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
@@ -248,9 +256,13 @@ async function loadBuilderOptions() {
       isActive: product.isActive,
       meta: product.category?.name ?? null,
     })),
-    productCategoryOptions: productCategories
+    productCategoryOptions: flattenCategoryTree(buildCategoryTree(productCategories))
       .filter((category) => category.isActive)
-      .map((category) => ({ id: category.id, label: category.name })),
+      .map((category) => ({
+        id: category.id,
+        label: `${"— ".repeat(category.depth)}${category.name}`,
+        isActive: category.isActive,
+      })),
     productBrandOptions: productBrands
       .filter((brand) => brand.isActive)
       .map((brand) => ({ id: brand.id, label: brand.name })),

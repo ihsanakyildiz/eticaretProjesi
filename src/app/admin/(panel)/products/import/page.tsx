@@ -3,6 +3,7 @@ import Link from "next/link";
 import { FileSpreadsheet, Rss, Webhook } from "lucide-react";
 import { ImportPageHeader, ImportSectionNav } from "./import-section-nav";
 import { IMPORT_PATHS } from "./import-paths";
+import { FeedSyncWarningCatalogBanner } from "@/components/admin/feed-sync-warning-catalog-banner";
 
 export const metadata: Metadata = {
   title: "Ürün yükle",
@@ -38,6 +39,7 @@ export default function ProductImportHubPage() {
         description="Yeni ürün yükleyin, mevcut ürünleri Excel ile güncelleyin veya tedarikçi XML / API kaynaklarını zamanlayın. Aynı barkod veya ürün kodu kabul edilmez."
       />
       <ImportSectionNav />
+      <FeedSyncWarningCatalogBanner />
       <div className="grid gap-4 md:grid-cols-3">
         {CARDS.map((card) => (
           <Link

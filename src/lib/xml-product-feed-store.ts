@@ -18,6 +18,7 @@ import {
   type XmlProductFeedRunSummary,
   type XmlProductFeedSummary,
 } from "@/lib/xml-product-feed-shared";
+import { feedSyncWarningCount } from "@/lib/feed-sync-warnings";
 
 type FeedRecord = Awaited<ReturnType<typeof prisma.xmlProductFeed.findMany>>[number];
 type RunRecord = Awaited<ReturnType<typeof prisma.xmlProductFeedRun.findMany>>[number];
@@ -166,6 +167,7 @@ export function toFeedSummary(
     brandAliases: valueMaps.brands,
     filterValueAliases: valueMaps.filterValueAliases,
     discovery: valueMaps.discovery,
+    lastSyncWarnings: valueMaps.lastSyncWarnings,
     matchBy: asMatchBy(feed.matchBy),
     skuPrefix: feed.skuPrefix,
     httpUser: feed.httpUser,
@@ -247,6 +249,7 @@ export async function listXmlFeedProgress(): Promise<XmlFeedLiveProgress[]> {
         lastUpdatedCount: true,
         lastSkippedCount: true,
         lastFailedCount: true,
+        categoryMapJson: true,
       },
     }),
     listXmlFeedActiveRuns(),
@@ -254,6 +257,7 @@ export async function listXmlFeedProgress(): Promise<XmlFeedLiveProgress[]> {
   const activeByFeed = new Map(activeRuns.map((run) => [run.feedId, run]));
   return feeds.map((feed) => {
     const active = activeByFeed.get(feed.id);
+    const lastSyncWarnings = parseXmlFeedValueMaps(feed.categoryMapJson).lastSyncWarnings;
     return {
       id: feed.id,
       running: Boolean(active),
@@ -265,6 +269,8 @@ export async function listXmlFeedProgress(): Promise<XmlFeedLiveProgress[]> {
       lastFailedCount: feed.lastFailedCount,
       runningCursor: progressFromActive(active).cursor,
       runningItemCount: progressFromActive(active).itemCount,
+      lastSyncWarnings,
+      warningCount: feedSyncWarningCount(lastSyncWarnings),
     };
   });
 }
@@ -295,6 +301,16 @@ export function computeNextRunAt(intervalMinutes: number, from = new Date()) {
 export async function saveXmlFeedRecord(values: XmlFeedFormValues, existingPass?: string | null) {
   const intervalMinutes = Math.min(10080, Math.max(5, Math.round(values.intervalMinutes) || 60));
   const markup = Number(String(values.priceMarkupPercent).replace(",", "."));
+  const existing = values.id
+    ? await prisma.xmlProductFeed.findUnique({
+        where: { id: values.id },
+        select: { categoryMapJson: true },
+      })
+    : null;
+  const lastSyncWarnings =
+    existing != null
+      ? parseXmlFeedValueMaps(existing.categoryMapJson).lastSyncWarnings
+      : values.lastSyncWarnings;
   const data = {
     name: values.name.trim().slice(0, 191),
     url: values.url.trim().slice(0, 1000),
@@ -318,6 +334,7 @@ export async function saveXmlFeedRecord(values: XmlFeedFormValues, existingPass?
       },
       values.variantPath,
       values.filterValueAliases,
+      lastSyncWarnings,
     ),
     matchBy: values.matchBy,
     skuPrefix: values.skuPrefix.trim().slice(0, 40),

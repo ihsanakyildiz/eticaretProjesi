@@ -4,6 +4,7 @@ import { XMLParser } from "fast-xml-parser";
 import type { ProductImportColumnKey, ProductImportRawRow } from "@/lib/product-import";
 import {
   applyCategoryAlias,
+  applyMappedAlias,
   isXmlFeedFilterTargetKey,
   isXmlFeedTargetKey,
   splitMappedFilterValues,
@@ -469,6 +470,21 @@ export function listXmlItemPaths(item: Record<string, unknown>, prefix = "", dep
   return [...new Set(paths)];
 }
 
+export function collectMissingMappedFeedTags(
+  items: Record<string, unknown>[],
+  mapping: Record<string, string>,
+  sampleCount = 40,
+) {
+  if (items.length === 0) return [];
+  const present = new Set<string>();
+  for (const item of items.slice(0, sampleCount)) {
+    for (const path of listXmlItemPaths(item)) present.add(path);
+  }
+  return Object.keys(mapping)
+    .map((path) => path.trim())
+    .filter((path) => path.length > 0 && !present.has(path));
+}
+
 function suggestFieldForPath(path: string): XmlFeedTargetKey | null {
   const last = (path.split(".").pop() ?? path).replace(/^@/, "");
   const token = normalizeToken(last);
@@ -893,8 +909,22 @@ function mergeParentVariantRow(
 ): ProductImportRawRow {
   const merged: ProductImportRawRow = { ...parent, ...variant, rowNumber: variant.rowNumber };
   if (!(variant.title ?? "").trim()) merged.title = parent.title;
-  if (!(variant.category ?? "").trim()) merged.category = parent.category;
-  if (!(variant.brand ?? "").trim()) merged.brand = parent.brand;
+  if (!(variant.category ?? "").trim()) {
+    merged.category = parent.category;
+    merged.categoryRejected = parent.categoryRejected;
+    merged.categorySource = parent.categorySource;
+  } else {
+    merged.categoryRejected = variant.categoryRejected;
+    merged.categorySource = variant.categorySource || parent.categorySource;
+  }
+  if (!(variant.brand ?? "").trim()) {
+    merged.brand = parent.brand;
+    merged.brandRejected = parent.brandRejected;
+    merged.brandSource = parent.brandSource;
+  } else {
+    merged.brandRejected = variant.brandRejected;
+    merged.brandSource = variant.brandSource || parent.brandSource;
+  }
   if (!(variant.content ?? "").trim()) merged.content = parent.content;
   if (!(variant.summary ?? "").trim()) merged.summary = parent.summary;
   if (!(variant.imageUrl ?? "").trim()) merged.imageUrl = parent.imageUrl;
@@ -1192,8 +1222,18 @@ export function mapXmlItemToRawRow(
           : uniqueValues.length <= 1
             ? (uniqueValues[0] ?? "")
             : uniqueValues.join(" | ");
-    if (field.key === "category") joined = applyCategoryAlias(joined, categoryAliases);
-    if (field.key === "brand") joined = applyCategoryAlias(joined, brandAliases);
+    if (field.key === "category") {
+      row.categorySource = joined;
+      const mapped = applyMappedAlias(joined, categoryAliases);
+      joined = mapped.value;
+      if (mapped.rejected) row.categoryRejected = true;
+    }
+    if (field.key === "brand") {
+      row.brandSource = joined;
+      const mapped = applyMappedAlias(joined, brandAliases);
+      joined = mapped.value;
+      if (mapped.rejected) row.brandRejected = true;
+    }
     if (field.key === "externalId") {
       row.externalId = joined.slice(0, 191);
       continue;

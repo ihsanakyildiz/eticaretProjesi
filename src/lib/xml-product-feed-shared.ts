@@ -1,4 +1,9 @@
 import { slugify } from "@/lib/slug";
+import {
+  parseFeedSyncWarningReport,
+  type FeedSaleCloseReason,
+  type FeedSyncWarningReport,
+} from "@/lib/feed-sync-warnings";
 
 export const XML_FEED_MAX_BYTES = 25 * 1024 * 1024;
 export const XML_FEED_MAX_ITEMS = 20000;
@@ -146,17 +151,28 @@ export function xmlFeedShouldCloseForSale(
   stock: number | null,
   flags: XmlFeedCatalogFlags & { stockLimit: number; outOfStockBehavior: XmlFeedOutOfStockBehavior },
 ) {
-  if (flags.closeAllForSale) return true;
-  if (xmlFeedClosesForLowStock(stock, flags.stockLimit, flags.outOfStockBehavior)) return true;
-  if (!flags.closeZeroStock) return false;
-  if (stock == null) return false;
-  if (stock > 0) return false;
+  return xmlFeedSaleCloseReasons(stock, flags).length > 0;
+}
+
+export function xmlFeedSaleCloseReasons(
+  stock: number | null,
+  flags: XmlFeedCatalogFlags & { stockLimit: number; outOfStockBehavior: XmlFeedOutOfStockBehavior },
+): FeedSaleCloseReason[] {
+  const reasons: FeedSaleCloseReason[] = [];
+  if (flags.closeAllForSale) reasons.push("close_all");
+  if (xmlFeedClosesForLowStock(stock, flags.stockLimit, flags.outOfStockBehavior)) {
+    reasons.push("stock_limit");
+  }
+  if (!flags.closeZeroStock) return reasons;
+  if (stock == null) return reasons;
+  if (stock > 0) return reasons;
   switch (flags.outOfStockBehavior) {
     case "ALLOW":
-      return false;
+      return reasons;
     case "DENY":
     case "DEFAULT":
-      return true;
+      reasons.push("zero_stock");
+      return reasons;
     default: {
       const _exhaustive: never = flags.outOfStockBehavior;
       return _exhaustive;
@@ -182,8 +198,8 @@ export const XML_FEED_TARGET_FIELDS = [
     group: "stok",
     hint: "API/XML açık-kapalı değeri. active, açık, 1 → satışa açık; inactive, kapalı, 0 → satışa kapalı.",
   },
-  { key: "category", header: "Kategori", group: "sınıflama", hint: "Eşleşmezse ürün adından önerilir veya varsayılan kategori kullanılır" },
-  { key: "brand", header: "Marka", group: "sınıflama", hint: "Eşleşmezse mevcut marka korunur; satış durumu değişmez" },
+  { key: "category", header: "Kategori", group: "sınıflama", hint: "Eşlenmezse ürün çekilmez. Kaynakta kategori yoksa varsayılan kullanılır" },
+  { key: "brand", header: "Marka", group: "sınıflama", hint: "Eşlenmezse ürün çekilmez. Kaynakta marka yoksa boş kalabilir" },
   { key: "supplier", header: "Tedarikçi", group: "sınıflama", hint: "Boşsa kaynak tedarikçisi" },
   { key: "filters", header: "Filtreler", group: "sınıflama", hint: "Eşlenen ürün filtrelerini yaz. Kapalıysa yalnızca yeni üründe uygulanır" },
   { key: "summary", header: "Kısa açıklama", group: "içerik", hint: "" },
@@ -312,6 +328,7 @@ export type XmlFeedFormValues = {
   brandAliases: XmlFeedCategoryAlias[];
   filterValueAliases: Record<string, XmlFeedCategoryAlias[]>;
   discovery: XmlFeedDiscovery | null;
+  lastSyncWarnings: FeedSyncWarningReport | null;
   matchBy: XmlFeedMatchBy;
   skuPrefix: string;
   httpUser: string;
@@ -367,6 +384,7 @@ export type XmlProductFeedSummary = {
   brandAliases: XmlFeedCategoryAlias[];
   filterValueAliases: Record<string, XmlFeedCategoryAlias[]>;
   discovery: XmlFeedDiscovery | null;
+  lastSyncWarnings: FeedSyncWarningReport | null;
   matchBy: XmlFeedMatchBy;
   skuPrefix: string;
   httpUser: string | null;
@@ -413,6 +431,8 @@ export type XmlFeedLiveProgress = {
   lastFailedCount: number;
   runningCursor: number;
   runningItemCount: number;
+  lastSyncWarnings: FeedSyncWarningReport | null;
+  warningCount: number;
 };
 
 export type XmlFeedLookupOption = {
@@ -517,6 +537,7 @@ export function emptyXmlFeedForm(): XmlFeedFormValues {
     brandAliases: [],
     filterValueAliases: {},
     discovery: null,
+    lastSyncWarnings: null,
     matchBy: "BARCODE",
     skuPrefix: "",
     httpUser: "",
@@ -767,6 +788,7 @@ export function parseXmlFeedValueMaps(raw: string): {
   filterValueAliases: Record<string, XmlFeedCategoryAlias[]>;
   updateFields: XmlFeedTargetKey[] | null;
   discovery: XmlFeedDiscovery | null;
+  lastSyncWarnings: FeedSyncWarningReport | null;
   variantPath: string;
   stockLimit: number;
   outOfStockBehavior: XmlFeedOutOfStockBehavior;
@@ -780,6 +802,7 @@ export function parseXmlFeedValueMaps(raw: string): {
     filterValueAliases: {} as Record<string, XmlFeedCategoryAlias[]>,
     updateFields: null as XmlFeedTargetKey[] | null,
     discovery: null as XmlFeedDiscovery | null,
+    lastSyncWarnings: null as FeedSyncWarningReport | null,
     variantPath: "",
     stockLimit: 0,
     outOfStockBehavior: "DENY" as XmlFeedOutOfStockBehavior,
@@ -815,6 +838,7 @@ export function parseXmlFeedValueMaps(raw: string): {
           filterValueAliases: parseFilterValueAliases(record.filterValueAliases),
           updateFields: parseXmlFeedUpdateFields(record.updateFields),
           discovery: parseDiscovery(record.discovery),
+          lastSyncWarnings: parseFeedSyncWarningReport(record.lastSyncWarnings),
           variantPath: typeof record.variantPath === "string" ? record.variantPath : "",
           stockLimit,
           outOfStockBehavior,
@@ -869,6 +893,7 @@ export function serializeXmlFeedValueMaps(
   },
   variantPath = "",
   filterValueAliases: Record<string, XmlFeedCategoryAlias[]> = {},
+  lastSyncWarnings: FeedSyncWarningReport | null = null,
 ) {
   const filterAliases: Record<string, Record<string, string>> = {};
   for (const [filterId, aliases] of Object.entries(filterValueAliases)) {
@@ -888,6 +913,7 @@ export function serializeXmlFeedValueMaps(
     closeZeroStock: catalogFlags.closeZeroStock === true,
     deleteUnsold: catalogFlags.deleteUnsold === true,
     variantPath: variantPath.trim().slice(0, 500),
+    ...(lastSyncWarnings && lastSyncWarnings.items.length > 0 ? { lastSyncWarnings } : {}),
   });
 }
 
@@ -998,6 +1024,7 @@ export function feedToForm(feed: XmlProductFeedSummary): XmlFeedFormValues {
     brandAliases: feed.brandAliases,
     filterValueAliases: feed.filterValueAliases,
     discovery: feed.discovery,
+    lastSyncWarnings: feed.lastSyncWarnings,
     matchBy: feed.matchBy,
     skuPrefix: feed.skuPrefix,
     httpUser: feed.httpUser ?? "",
@@ -1029,17 +1056,30 @@ export function splitMappedFilterValues(raw: string) {
     .filter(Boolean);
 }
 
-export function applyCategoryAlias(raw: string, aliases: XmlFeedCategoryAlias[]) {
+export function applyMappedAlias(raw: string, aliases: XmlFeedCategoryAlias[]): {
+  value: string;
+  rejected: boolean;
+} {
   const value = raw.trim();
-  if (!value) return "";
+  if (!value) return { value: "", rejected: false };
   const exact = aliases.find((item) => item.from === value);
-  if (exact) return exact.to;
+  if (exact) {
+    const to = exact.to.trim();
+    return to ? { value: to, rejected: false } : { value: "", rejected: true };
+  }
   const folded = value.toLocaleLowerCase("tr-TR");
   const loose = aliases.find((item) => item.from.toLocaleLowerCase("tr-TR") === folded);
-  if (loose) return loose.to;
+  if (loose) {
+    const to = loose.to.trim();
+    return to ? { value: to, rejected: false } : { value: "", rejected: true };
+  }
   if (value.includes(">")) {
     const leaf = value.split(">").map((part) => part.trim()).filter(Boolean).at(-1);
-    if (leaf && leaf !== value) return applyCategoryAlias(leaf, aliases);
+    if (leaf && leaf !== value) return applyMappedAlias(leaf, aliases);
   }
-  return value;
+  return { value, rejected: false };
+}
+
+export function applyCategoryAlias(raw: string, aliases: XmlFeedCategoryAlias[]) {
+  return applyMappedAlias(raw, aliases).value;
 }

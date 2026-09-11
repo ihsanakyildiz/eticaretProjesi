@@ -369,17 +369,15 @@ export function PageSectionsRenderer({
               </SectionShell>
             );
           case "PRODUCT_CATEGORIES":
-            return (
-              <SectionShell key={section.id} anchorId={anchor}>
-                <HomeCategoryRail
+            return shell(
+              <HomeCategoryRail
                   title={section.title}
                   subtitle={section.subtitle}
                   eyebrow={section.settings.eyebrow}
-                  categories={section.catalogCategories}
+                  categories={section.catalogCategories ?? []}
                   cardsPerRow={section.settings.cardsPerRow ?? 4}
                   showProductCount={section.settings.showProductCount !== false}
-                />
-              </SectionShell>
+                />,
             );
           case "BLOG":
             return (

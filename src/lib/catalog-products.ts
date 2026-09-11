@@ -665,15 +665,22 @@ export async function getProductCategoriesBySource(query: {
         .filter((row): row is (typeof index)[number] => Boolean(row))
         .map(toCard);
     }
-    case "ROOTS":
-      return index.filter((row) => !row.parentId).slice(0, limit).map(toCard);
+    case "ROOTS": {
+      const roots = index.filter((row) => !row.parentId);
+      const list = roots.length > 0 ? roots : index;
+      return list.slice(0, limit).map(toCard);
+    }
     case "CHILDREN": {
       const parentId = query.parentId?.trim();
       if (!parentId) return [];
-      return index
-        .filter((row) => row.parentId === parentId)
-        .slice(0, limit)
-        .map(toCard);
+      const direct = index.filter((row) => row.parentId === parentId);
+      if (direct.length > 0) return direct.slice(0, limit).map(toCard);
+      const descendantIds = collectDescendantIds(index, parentId);
+      descendantIds.delete(parentId);
+      const nested = index.filter((row) => descendantIds.has(row.id));
+      if (nested.length > 0) return nested.slice(0, limit).map(toCard);
+      const parent = index.find((row) => row.id === parentId);
+      return parent ? [toCard(parent)] : [];
     }
     case "ALL":
       return index.slice(0, limit).map(toCard);

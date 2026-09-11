@@ -37,24 +37,29 @@ export function HomeCategoryRail({
   showProductCount?: boolean;
 }) {
   const { categoryHref } = useCatalogUrls();
-  if (categories.length === 0) return null;
+  const heading = title?.trim() || "Kategoriler";
+  const kicker = eyebrow?.trim() || null;
+  const lead = subtitle?.trim() || null;
 
   return (
     <section className="border-b border-site-border py-12 sm:py-14">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        {eyebrow ? (
+        {kicker ? (
           <p className="text-xs font-semibold tracking-wide text-site-primary uppercase">
-            {eyebrow}
+            {kicker}
           </p>
         ) : null}
-        {title ? (
+        {heading ? (
           <h2 className="mt-1 font-display text-2xl font-bold text-site-fg sm:text-3xl">
-            {title}
+            {heading}
           </h2>
         ) : null}
-        {subtitle ? (
-          <p className="mt-2 max-w-2xl text-sm text-site-muted">{subtitle}</p>
+        {lead ? (
+          <p className="mt-2 max-w-2xl text-sm text-site-muted">{lead}</p>
         ) : null}
+        {categories.length === 0 ? (
+          <p className="mt-6 text-sm text-site-muted">Bu bölümde gösterilecek kategori yok.</p>
+        ) : (
         <div className={gridClass(cardsPerRow)}>
           {categories.map((category, index) => (
             <SiteLink
@@ -89,6 +94,7 @@ export function HomeCategoryRail({
             </SiteLink>
           ))}
         </div>
+        )}
       </div>
     </section>
   );

@@ -9,13 +9,12 @@ import {
   createProductImportUsed,
   ensureImportAttributeValues,
   ensureImportAttributesFromRows,
+  feedImportSkipFlags,
   groupImportRawRows,
   hydrateProductImportUsed,
   insertImportedProductsSafely,
   loadProductImportLookups,
   prepareImportedProduct,
-  resolveImportBrand,
-  resolveImportCategory,
   skuKey,
   syncImportedProductFilters,
   uniquesFromUsed,
@@ -35,7 +34,7 @@ import { parseFeedMajor, resolveImportedListPrices, taxExcludedMinor } from "@/l
 import { extractEditorUploadPathsFromHtml } from "@/lib/rich-text-uploads";
 import { slugify } from "@/lib/slug";
 import { deletePublicAsset } from "@/lib/uploads";
-import { parseXmlDocument, detectXmlItemPath, extractXmlItems, mapFeedItemToRawRows, takeFeedItemSlice } from "@/lib/xml-product-feed";
+import { parseXmlDocument, detectXmlItemPath, extractXmlItems, mapFeedItemToRawRows, takeFeedItemSlice, collectMissingMappedFeedTags } from "@/lib/xml-product-feed";
 import { withPrismaRetry } from "@/lib/prisma-retry";
 import { fetchXmlFeedText } from "@/lib/xml-product-feed-fetch";
 import {
@@ -44,6 +43,7 @@ import {
   parseXmlFeedValueMaps,
   updateFieldsFromFlags,
   xmlFeedShouldCloseForSale,
+  xmlFeedSaleCloseReasons,
   parseFeedSaleStatus,
   XML_FEED_MAX_IMAGES,
   type XmlFeedMatchBy as SharedMatchBy,
@@ -53,6 +53,13 @@ import {
   type XmlFeedTargetKey,
 } from "@/lib/xml-product-feed-shared";
 import { computeNextRunAt } from "@/lib/xml-product-feed-store";
+import {
+  appendFeedSyncWarningsToRunMessage,
+  createFeedSyncWarningCollector,
+  formatFeedLastMessageWithWarnings,
+  mergeLastSyncWarningsIntoMapJson,
+  type FeedSaleCloseReason,
+} from "@/lib/feed-sync-warnings";
 
 type MatchHit = {
   productId: string;
@@ -195,13 +202,28 @@ function applyRowDefaults(
     const rawId = (row.externalId ?? row.productKey ?? "").trim();
     if (rawId) next.externalId = rawId.slice(0, 191);
   }
-  const categoryHit = resolveImportCategory(next.category ?? "", next.title ?? "", lookups);
-  if (categoryHit) next.category = categoryHit.name;
-  else if (defaults.categoryName) next.category = defaults.categoryName;
-  const brandHit = next.brand ? resolveImportBrand(next.brand, lookups) : null;
-  if (brandHit) next.brand = brandHit.name;
-  else if (defaults.brandName) next.brand = defaults.brandName;
-  else next.brand = "";
+  if (!next.categoryRejected) {
+    const categoryRaw = (next.category ?? "").trim();
+    if (categoryRaw) {
+      const category = resolveLookup(lookups.categories, categoryRaw);
+      if (category) next.category = category.name;
+      else next.categoryRejected = true;
+    } else if (defaults.categoryName) {
+      next.category = defaults.categoryName;
+    }
+  }
+  if (!next.brandRejected) {
+    const brandRaw = (next.brand ?? "").trim();
+    if (brandRaw) {
+      const brand = resolveLookup(lookups.brands, brandRaw);
+      if (brand) next.brand = brand.name;
+      else next.brandRejected = true;
+    } else if (defaults.brandName) {
+      next.brand = defaults.brandName;
+    }
+  } else {
+    next.brand = "";
+  }
   if (next.supplier && !resolveLookup(lookups.suppliers, next.supplier)) {
     next.supplier = defaults.supplierName;
   } else if (!next.supplier && defaults.supplierName) {
@@ -578,16 +600,17 @@ async function updateMatchedProduct(
 
   const productData: Record<string, unknown> = {};
   const xmlImageUrls = xmlImageUrlsFromRow(row);
-  let closeForSale = xmlFeedShouldCloseForSale(stock, stockPolicy);
+  const closeReasons: FeedSaleCloseReason[] = xmlFeedSaleCloseReasons(stock, stockPolicy);
   if (allowsUpdate(updateFields, "price") && (priced == null || priced.minor <= 0)) {
-    closeForSale = true;
+    closeReasons.push("zero_price");
   }
   if (allowsUpdate(updateFields, "imageUrl") && xmlImageUrls.length === 0) {
-    closeForSale = true;
+    closeReasons.push("no_image");
   }
   if (parseFeedSaleStatus(row.availableForOrder) === false) {
-    closeForSale = true;
+    closeReasons.push("feed_closed");
   }
+  const closeForSale = closeReasons.length > 0;
   if (allowsUpdate(updateFields, "title") && row.title?.trim()) {
     productData.title = row.title.trim().slice(0, 191);
   }
@@ -623,11 +646,11 @@ async function updateMatchedProduct(
     if (value != null) productData.depthCm = value;
   }
   if (allowsUpdate(updateFields, "category") && row.category?.trim()) {
-    const category = resolveImportCategory(row.category, row.title ?? "", lookups);
+    const category = resolveLookup(lookups.categories, row.category);
     if (category) productData.categoryId = category.id;
   }
   if (allowsUpdate(updateFields, "brand") && row.brand?.trim()) {
-    const brand = resolveImportBrand(row.brand, lookups);
+    const brand = resolveLookup(lookups.brands, row.brand);
     if (brand) productData.brandId = brand.id;
   }
   if (allowsUpdate(updateFields, "supplier") && row.supplier?.trim()) {
@@ -711,7 +734,9 @@ async function updateMatchedProduct(
     }
   }
 
-  if (skipVariant || !hit.variantId) return;
+  if (skipVariant || !hit.variantId) {
+    return { closed: closeForSale && !skipProduct, reasons: closeForSale && !skipProduct ? closeReasons : [] };
+  }
 
   const variantData: Record<string, unknown> = {};
   if (
@@ -740,6 +765,7 @@ async function updateMatchedProduct(
       await writeCatalogStock(prisma, hit.variantId, stock, { note: "XML stok senkronu" });
     }
   }
+  return { closed: closeForSale && !skipProduct, reasons: closeForSale && !skipProduct ? closeReasons : [] };
 }
 
 type XmlRowFailure = {
@@ -1062,6 +1088,8 @@ export async function syncXmlFeedRun(runId: string) {
       brandName: lookups.brands.find((item) => item.id === feed.defaultBrandId)?.name ?? "",
       supplierName: lookups.suppliers.find((item) => item.id === feed.supplierId)?.name ?? "",
     };
+    const warningCollector = createFeedSyncWarningCollector();
+    const missingMappedTags = collectMissingMappedFeedTags(items, mapping);
 
     const used = createProductImportUsed(lookups);
     await hydrateProductImportUsed(used);
@@ -1097,6 +1125,10 @@ export async function syncXmlFeedRun(runId: string) {
         );
         rawRows.push(...rows);
         rowNumber += rows.length;
+      }
+      for (const row of rawRows) {
+        if (row.categorySource) warningCollector.noteCategorySource(row.categorySource);
+        if (row.brandSource) warningCollector.noteBrandSource(row.brandSource);
       }
       const skuHits = await loadMatches(
         "SKU",
@@ -1160,17 +1192,30 @@ export async function syncXmlFeedRun(runId: string) {
             counts.skipped += 1;
             continue;
           }
-          toCreate.push(applyRowDefaults(item.row, feed, lookups, defaults, stockPolicy));
+          const next = applyRowDefaults(item.row, feed, lookups, defaults, stockPolicy);
+          const skipFlags = feedImportSkipFlags(next, lookups);
+          if (skipFlags.category || skipFlags.brand) {
+            counts.skipped += 1;
+            warningCollector.noteSkip(next, false, skipFlags);
+            continue;
+          }
+          toCreate.push(next);
           continue;
         }
         if (!item.hit) {
           counts.skipped += 1;
           continue;
         }
+        const skipFlags = feedImportSkipFlags(item.row, lookups);
+        if (skipFlags.category || skipFlags.brand) {
+          counts.skipped += 1;
+          warningCollector.noteSkip(item.row, true, skipFlags);
+          continue;
+        }
         try {
           const skipVariant = item.action === "append";
           const skipProduct = productTouched.has(item.hit.productId);
-          await updateMatchedProduct(
+          const updated = await updateMatchedProduct(
             item.hit,
             item.row,
             feed,
@@ -1181,6 +1226,7 @@ export async function syncXmlFeedRun(runId: string) {
             skipVariant,
             skipProduct,
           );
+          if (updated.closed) warningCollector.noteClosed(updated.reasons);
           productTouched.add(item.hit.productId);
           if (item.action === "append") {
             const taxPercent = item.hit.taxRatePercent || lookups.defaultTaxPercent;
@@ -1390,8 +1436,23 @@ export async function syncXmlFeedRun(runId: string) {
       if (deleted > 0) importedAny = true;
     }
 
-    const message = formatRunFailureMessage(counts, failures);
+    const warningReport = warningCollector.build({
+      categoryAliases: valueMaps.categories,
+      brandAliases: valueMaps.brands,
+      missingMappedTags,
+      deactivatedMissing: counts.deactivated,
+      closeAll: stockPolicy.closeAllForSale,
+      ignoreVanished: items.length === 0,
+    });
+    const message = appendFeedSyncWarningsToRunMessage(
+      formatRunFailureMessage(counts, failures),
+      warningReport,
+    );
     const finishedAt = new Date();
+    const latestMap = await prisma.xmlProductFeed.findUnique({
+      where: { id: feed.id },
+      select: { categoryMapJson: true },
+    });
     await prisma.xmlProductFeedRun.update({
       where: { id: runId },
       data: {
@@ -1412,11 +1473,15 @@ export async function syncXmlFeedRun(runId: string) {
         lastRunAt: finishedAt,
         nextRunAt: feed.isActive ? computeNextRunAt(feed.intervalMinutes, finishedAt) : null,
         lastStatus: "COMPLETED",
-        lastMessage: message.split("\n")[0]?.slice(0, 500) ?? message.slice(0, 500),
+        lastMessage: formatFeedLastMessageWithWarnings(message, warningReport),
         lastCreatedCount: counts.created,
         lastUpdatedCount: counts.updated,
         lastSkippedCount: counts.skipped,
         lastFailedCount: counts.failed,
+        categoryMapJson: mergeLastSyncWarningsIntoMapJson(
+          latestMap?.categoryMapJson ?? feed.categoryMapJson,
+          warningReport,
+        ),
       },
     });
     if (importedAny) {

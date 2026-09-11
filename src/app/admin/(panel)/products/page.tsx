@@ -3,6 +3,7 @@ import Link from "next/link";
 import { LayoutGrid, Plus } from "lucide-react";
 import { Can } from "@/components/admin/admin-permissions";
 import { DuplicateBarcodeAlert } from "@/components/admin/duplicate-barcode-alert";
+import { FeedSyncWarningCatalogBanner } from "@/components/admin/feed-sync-warning-catalog-banner";
 import { loadAdminProductPage, parseAdminProductListQuery } from "@/lib/admin-product-list";
 import { countDuplicateBarcodes } from "@/lib/product-barcode-db";
 import { isAdvancedInventoryEnabledInMap } from "@/lib/advanced-inventory";
@@ -60,6 +61,7 @@ export default async function ProductsCatalogPage({
       </div>
 
       <DuplicateBarcodeAlert count={duplicateBarcodeCount} />
+      <FeedSyncWarningCatalogBanner />
 
       <ProductsTable
         products={list.products}
