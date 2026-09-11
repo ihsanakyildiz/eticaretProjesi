@@ -267,9 +267,9 @@ export function PageSectionsRenderer({
           case "CARDS":
             return shell(
                 <HomeServices
-                  title={section.title}
-                  subtitle={section.subtitle}
-                  eyebrow={section.settings.eyebrow}
+                  title={section.title ?? ""}
+                  subtitle={section.subtitle ?? ""}
+                  eyebrow={section.settings.eyebrow ?? ""}
                   enableSlider={section.settings.enableSlider === true}
                   sliderAutoplay={section.settings.sliderAutoplay !== false}
                   sliderEffect={section.settings.sliderEffect ?? "slide"}

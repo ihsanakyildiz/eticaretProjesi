@@ -229,11 +229,16 @@ export function HomeServices({
 }) {
   const fromCms = Boolean(items && items.length > 0);
   const cards = fromCms ? items! : FALLBACK_SERVICES;
-  const heading = title?.trim() || "Hizmet özelliklerimizi keşfedin";
+  const heading =
+    title === undefined
+      ? "Hizmet özelliklerimizi keşfedin"
+      : title.trim() || null;
   const lead =
-    subtitle?.trim() ||
-    "Tasarım, yazılım ve dijital büyüme için uçtan uca çözümler.";
-  const badge = eyebrow?.trim() || "••• Hizmetlerimiz";
+    subtitle === undefined
+      ? "Tasarım, yazılım ve dijital büyüme için uçtan uca çözümler."
+      : subtitle.trim() || null;
+  const badge = eyebrow === undefined ? "••• Hizmetlerimiz" : eyebrow.trim() || null;
+  const hasHeading = Boolean(heading || lead || badge);
   const columns: CardColumnsPerRow =
     cardsPerRow === 4 || cardsPerRow === 5 ? cardsPerRow : 3;
 
@@ -374,17 +379,31 @@ export function HomeServices({
     <section className="relative overflow-hidden py-20">
       <div className="pointer-events-none absolute inset-0 site-soft-glow" />
       <div className={shellClass}>
-        <div className="mx-auto max-w-3xl text-center">
-          <span className="inline-flex items-center gap-2 rounded-full bg-site-primary-soft px-3 py-1 text-xs font-semibold tracking-wider text-site-primary uppercase">
-            {badge}
-          </span>
-          <h2 className="mt-4 font-display text-3xl font-bold tracking-tight text-site-fg sm:text-4xl">
-            {heading}
-          </h2>
-          <p className="mt-3 text-site-muted">{lead}</p>
-        </div>
+        {hasHeading ? (
+          <div className="mx-auto max-w-3xl text-center">
+            {badge ? (
+              <span className="inline-flex items-center gap-2 rounded-full bg-site-primary-soft px-3 py-1 text-xs font-semibold tracking-wider text-site-primary uppercase">
+                {badge}
+              </span>
+            ) : null}
+            {heading ? (
+              <h2
+                className={`font-display text-3xl font-bold tracking-tight text-site-fg sm:text-4xl ${
+                  badge ? "mt-4" : ""
+                }`}
+              >
+                {heading}
+              </h2>
+            ) : null}
+            {lead ? (
+              <p className={`text-site-muted ${badge || heading ? "mt-3" : ""}`}>
+                {lead}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
 
-        <div className="mt-12 space-y-8">
+        <div className={`${hasHeading ? "mt-12" : ""} space-y-8`}>
           {blocks.map((block, blockIndex) => {
             switch (block.kind) {
               case "banner":
