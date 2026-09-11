@@ -58,6 +58,7 @@ import {
   PRODUCT_CATEGORY_SECTION_SOURCE_META,
   CARD_SLIDER_EFFECTS,
   CARD_COLUMNS_OPTIONS,
+  PRODUCT_COLUMNS_OPTIONS,
   isProductSectionSource,
   isProductCategorySectionSource,
   parseSectionSettings,
@@ -176,6 +177,7 @@ function ProductsSectionFields({
   const scope = productSourceScope(source);
   const showRank =
     scope === "category" || scope === "brand" || scope === "filter";
+  const [sliderOn, setSliderOn] = useState(settings.enableSlider === true);
 
   return (
     <>
@@ -211,6 +213,25 @@ function ProductsSectionFields({
             defaultValue={settings.limit ?? defaultLimitForType("PRODUCTS")}
             className="w-full rounded-md border border-[#e9ebec] px-3 py-2 text-sm outline-none focus:border-[#405189]"
           />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-600">
+            Yan yana kart sayısı
+          </label>
+          <select
+            name="cardsPerRow"
+            defaultValue={String(settings.cardsPerRow ?? 4)}
+            className="w-full rounded-md border border-[#e9ebec] px-3 py-2 text-sm outline-none focus:border-[#405189]"
+          >
+            {PRODUCT_COLUMNS_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1 text-[11px] text-slate-500">
+            Izgara ve slider’da aynı anda görünen ürün sayısı. 5’li ve 8’li geniş ekranda açılır.
+          </p>
         </div>
       </div>
 
@@ -298,6 +319,98 @@ function ProductsSectionFields({
           searchPlaceholder="Ürün ara…"
           hint="Sıra, seçim sırasına göredir."
         />
+      ) : null}
+
+      {source !== "RECENTLY_VIEWED" ? (
+        <div className="rounded-lg border border-[#e9ebec] bg-[#f8f9fb] p-4 space-y-4">
+          <p className="text-xs font-semibold tracking-wide text-slate-500 uppercase">
+            Slider (Swiper)
+          </p>
+          <AdminSwitch
+            name="enableSlider"
+            label="Ürünleri kaydırmalı slider olarak göster"
+            description="Kapalıysa klasik ızgara düzeni kullanılır."
+            checked={sliderOn}
+            onChange={setSliderOn}
+          />
+          {sliderOn ? (
+            <>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <AdminSwitch
+                  name="sliderAutoplay"
+                  label="Otomatik kaydır"
+                  defaultChecked={settings.sliderAutoplay !== false}
+                />
+                <AdminSwitch
+                  name="sliderLoop"
+                  label="Döngü (loop)"
+                  description="Son üründen sonra başa döner."
+                  defaultChecked={settings.sliderLoop !== false}
+                />
+                <AdminSwitch
+                  name="sliderNavigation"
+                  label="Ok butonları"
+                  defaultChecked={settings.sliderNavigation !== false}
+                />
+                <AdminSwitch
+                  name="sliderPagination"
+                  label="Nokta göstergesi"
+                  defaultChecked={settings.sliderPagination !== false}
+                />
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-slate-600">
+                    Geçiş animasyonu
+                  </label>
+                  <select
+                    name="sliderEffect"
+                    defaultValue={settings.sliderEffect ?? "slide"}
+                    className="w-full rounded-md border border-[#e9ebec] px-3 py-2 text-sm outline-none focus:border-[#405189]"
+                  >
+                    {CARD_SLIDER_EFFECTS.map((effect) => (
+                      <option key={effect.value} value={effect.value}>
+                        {effect.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-slate-600">
+                    Otomatik kaydırma süresi (ms)
+                  </label>
+                  <input
+                    type="number"
+                    name="sliderDelay"
+                    min={1500}
+                    max={12000}
+                    step={100}
+                    defaultValue={settings.sliderDelay ?? 3500}
+                    className="w-full rounded-md border border-[#e9ebec] px-3 py-2 text-sm outline-none focus:border-[#405189]"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-slate-600">
+                    Geçiş hızı (ms)
+                  </label>
+                  <input
+                    type="number"
+                    name="sliderSpeed"
+                    min={200}
+                    max={2000}
+                    step={50}
+                    defaultValue={settings.sliderSpeed ?? 700}
+                    className="w-full rounded-md border border-[#e9ebec] px-3 py-2 text-sm outline-none focus:border-[#405189]"
+                  />
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    Fade / coverflow / kart destesi tek tek ürün gösterir; slide
+                    yan yana sayıyı kullanır.
+                  </p>
+                </div>
+              </div>
+            </>
+          ) : null}
+        </div>
       ) : null}
     </>
   );

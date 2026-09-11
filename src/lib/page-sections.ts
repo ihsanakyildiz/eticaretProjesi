@@ -162,7 +162,14 @@ export const CARD_COLUMNS_OPTIONS = [
   { value: 5, label: "5’li (yan yana 5)" },
 ] as const;
 
-export type CardColumnsPerRow = (typeof CARD_COLUMNS_OPTIONS)[number]["value"];
+export const PRODUCT_COLUMNS_OPTIONS = [
+  { value: 3, label: "3’lü (yan yana 3)" },
+  { value: 4, label: "4’lü (yan yana 4)" },
+  { value: 5, label: "5’li (yan yana 5)" },
+  { value: 8, label: "8’li (yan yana 8)" },
+] as const;
+
+export type CardColumnsPerRow = (typeof PRODUCT_COLUMNS_OPTIONS)[number]["value"];
 
 export const CARD_SLIDER_EFFECTS = [
   { value: "slide", label: "Kaydırma (slide)" },
@@ -401,11 +408,16 @@ export type PageSectionSettings = {
   showSecondaryCta?: boolean;
   secondaryCtaLabel?: string;
   secondaryCtaUrl?: string;
-  /** Kartlar bölümü — Swiper slider */
+  /** Kartlar / blog / ürün vitrini — Swiper slider */
   enableSlider?: boolean;
   sliderAutoplay?: boolean;
   sliderEffect?: CardSliderEffect;
-  /** Kartlar bölümü — yan yana kart sayısı */
+  sliderLoop?: boolean;
+  sliderNavigation?: boolean;
+  sliderPagination?: boolean;
+  sliderDelay?: number;
+  sliderSpeed?: number;
+  /** Kartlar / blog / ürün vitrini — yan yana kart sayısı */
   cardsPerRow?: CardColumnsPerRow;
   /** İletişim formu yapılandırması */
   contactForm?: ContactFormConfig;
@@ -453,12 +465,26 @@ function parseString(value: unknown, max: number): string | undefined {
   return trimmed || undefined;
 }
 
-function isCardSliderEffect(value: string): value is CardSliderEffect {
+export function isCardSliderEffect(value: string): value is CardSliderEffect {
   return CARD_SLIDER_EFFECTS.some((item) => item.value === value);
 }
 
-function isCardColumnsPerRow(value: number): value is CardColumnsPerRow {
-  return CARD_COLUMNS_OPTIONS.some((item) => item.value === value);
+export function isCardColumnsPerRow(value: number): value is CardColumnsPerRow {
+  return PRODUCT_COLUMNS_OPTIONS.some((item) => item.value === value);
+}
+
+export function parseSliderDelayMs(value: unknown): number | undefined {
+  const raw =
+    typeof value === "number" ? value : Number.parseInt(String(value ?? ""), 10);
+  if (!Number.isFinite(raw)) return undefined;
+  return Math.max(1500, Math.min(12000, Math.round(raw)));
+}
+
+export function parseSliderSpeedMs(value: unknown): number | undefined {
+  const raw =
+    typeof value === "number" ? value : Number.parseInt(String(value ?? ""), 10);
+  if (!Number.isFinite(raw)) return undefined;
+  return Math.max(200, Math.min(2000, Math.round(raw)));
 }
 
 export function parseSectionSettings(raw: string | null | undefined): PageSectionSettings {
@@ -546,6 +572,16 @@ export function parseSectionSettings(raw: string | null | undefined): PageSectio
     if (typeof obj.sliderEffect === "string" && isCardSliderEffect(obj.sliderEffect)) {
       settings.sliderEffect = obj.sliderEffect;
     }
+    const sliderLoop = parseBoolean(obj.sliderLoop);
+    if (sliderLoop !== undefined) settings.sliderLoop = sliderLoop;
+    const sliderNavigation = parseBoolean(obj.sliderNavigation);
+    if (sliderNavigation !== undefined) settings.sliderNavigation = sliderNavigation;
+    const sliderPagination = parseBoolean(obj.sliderPagination);
+    if (sliderPagination !== undefined) settings.sliderPagination = sliderPagination;
+    const sliderDelay = parseSliderDelayMs(obj.sliderDelay);
+    if (sliderDelay !== undefined) settings.sliderDelay = sliderDelay;
+    const sliderSpeed = parseSliderSpeedMs(obj.sliderSpeed);
+    if (sliderSpeed !== undefined) settings.sliderSpeed = sliderSpeed;
     if (typeof obj.cardsPerRow === "number" && isCardColumnsPerRow(obj.cardsPerRow)) {
       settings.cardsPerRow = obj.cardsPerRow;
     }
@@ -651,6 +687,19 @@ export function stringifySectionSettings(settings: PageSectionSettings): string 
   if (settings.sliderEffect && isCardSliderEffect(settings.sliderEffect)) {
     cleaned.sliderEffect = settings.sliderEffect;
   }
+  if (typeof settings.sliderLoop === "boolean") {
+    cleaned.sliderLoop = settings.sliderLoop;
+  }
+  if (typeof settings.sliderNavigation === "boolean") {
+    cleaned.sliderNavigation = settings.sliderNavigation;
+  }
+  if (typeof settings.sliderPagination === "boolean") {
+    cleaned.sliderPagination = settings.sliderPagination;
+  }
+  const sliderDelay = parseSliderDelayMs(settings.sliderDelay);
+  if (sliderDelay !== undefined) cleaned.sliderDelay = sliderDelay;
+  const sliderSpeed = parseSliderSpeedMs(settings.sliderSpeed);
+  if (sliderSpeed !== undefined) cleaned.sliderSpeed = sliderSpeed;
   if (
     typeof settings.cardsPerRow === "number" &&
     isCardColumnsPerRow(settings.cardsPerRow)

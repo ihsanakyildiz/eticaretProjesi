@@ -365,6 +365,15 @@ export function PageSectionsRenderer({
                   eyebrow={section.settings.eyebrow}
                   products={section.products}
                   source={section.productSource}
+                  enableSlider={section.settings.enableSlider === true}
+                  sliderAutoplay={section.settings.sliderAutoplay !== false}
+                  sliderEffect={section.settings.sliderEffect ?? "slide"}
+                  sliderLoop={section.settings.sliderLoop !== false}
+                  sliderNavigation={section.settings.sliderNavigation !== false}
+                  sliderPagination={section.settings.sliderPagination !== false}
+                  sliderDelay={section.settings.sliderDelay ?? 3500}
+                  sliderSpeed={section.settings.sliderSpeed ?? 700}
+                  cardsPerRow={section.settings.cardsPerRow ?? 4}
                 />
               </SectionShell>
             );

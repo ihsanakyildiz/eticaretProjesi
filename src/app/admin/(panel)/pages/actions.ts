@@ -22,7 +22,11 @@ import {
   isProductSectionRank,
   isProductSectionSource,
   isProductCategorySectionSource,
+  isCardColumnsPerRow,
+  isCardSliderEffect,
   parseSectionSettings,
+  parseSliderDelayMs,
+  parseSliderSpeedMs,
   productSourceScope,
   productCategorySourceScope,
   uniqueTrimmedIds,
@@ -636,7 +640,8 @@ export async function addPageSectionAction(
           productSource: type === "PRODUCTS" ? "NEW" : undefined,
           productCategorySource: type === "PRODUCT_CATEGORIES" ? "ROOTS" : undefined,
           showProductCount: type === "PRODUCT_CATEGORIES" ? true : undefined,
-          cardsPerRow: type === "PRODUCT_CATEGORIES" ? 4 : undefined,
+          cardsPerRow:
+            type === "PRODUCT_CATEGORIES" || type === "PRODUCTS" ? 4 : undefined,
           ...(type === "CONTACT_FORM"
             ? { contactForm: getDefaultContactFormConfig() }
             : {}),
@@ -1272,13 +1277,30 @@ export async function updatePageSectionAction(
     const sliderAutoplay =
       formData.get("sliderAutoplay") === "on" ||
       formData.get("sliderAutoplay") === "true";
+    const sliderLoop =
+      formData.get("sliderLoop") === "on" ||
+      formData.get("sliderLoop") === "true";
+    const sliderNavigation =
+      formData.get("sliderNavigation") === "on" ||
+      formData.get("sliderNavigation") === "true";
+    const sliderPagination =
+      formData.get("sliderPagination") === "on" ||
+      formData.get("sliderPagination") === "true";
     const sliderEffectRaw = String(formData.get("sliderEffect") ?? "slide").trim();
+    const sliderDelay = parseSliderDelayMs(formData.get("sliderDelay"));
+    const sliderSpeed = parseSliderSpeedMs(formData.get("sliderSpeed"));
     const cardsPerRowRaw = Number.parseInt(
       String(formData.get("cardsPerRow") ?? "3"),
       10,
     );
-    const cardsPerRow =
-      cardsPerRowRaw === 4 || cardsPerRowRaw === 5 ? cardsPerRowRaw : 3;
+    const cardsPerRowFallback: 3 | 4 =
+      type === "PRODUCTS" || type === "PRODUCT_CATEGORIES" ? 4 : 3;
+    const cardsPerRow = isCardColumnsPerRow(cardsPerRowRaw)
+      ? cardsPerRowRaw
+      : cardsPerRowFallback;
+    const sliderEffect = isCardSliderEffect(sliderEffectRaw)
+      ? sliderEffectRaw
+      : "slide";
 
     const contactSubmitLabel = String(
       formData.get("contactSubmitLabel") ?? "",
@@ -1389,13 +1411,20 @@ export async function updatePageSectionAction(
         ? {
             enableSlider,
             sliderAutoplay: enableSlider ? sliderAutoplay : undefined,
-            sliderEffect:
-              sliderEffectRaw === "fade" ||
-              sliderEffectRaw === "coverflow" ||
-              sliderEffectRaw === "cards" ||
-              sliderEffectRaw === "slide"
-                ? sliderEffectRaw
-                : "slide",
+            sliderEffect: enableSlider ? sliderEffect : undefined,
+            cardsPerRow,
+          }
+        : {}),
+      ...(type === "PRODUCTS"
+        ? {
+            enableSlider,
+            sliderAutoplay: enableSlider ? sliderAutoplay : undefined,
+            sliderEffect: enableSlider ? sliderEffect : undefined,
+            sliderLoop: enableSlider ? sliderLoop : undefined,
+            sliderNavigation: enableSlider ? sliderNavigation : undefined,
+            sliderPagination: enableSlider ? sliderPagination : undefined,
+            sliderDelay: enableSlider ? sliderDelay : undefined,
+            sliderSpeed: enableSlider ? sliderSpeed : undefined,
             cardsPerRow,
           }
         : {}),

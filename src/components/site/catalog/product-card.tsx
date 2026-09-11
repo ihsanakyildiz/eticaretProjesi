@@ -57,7 +57,7 @@ export function ProductCard({
       onClick={() => {
         trackProductEvent(product.id, "click");
       }}
-      className="group flex flex-col overflow-hidden rounded-lg border border-site-border bg-site-card transition hover:border-site-primary/40 hover:shadow-md"
+      className="group flex h-full flex-col overflow-hidden rounded-lg border border-site-border bg-site-card transition hover:border-site-primary/40 hover:shadow-md"
     >
       <div className="relative aspect-square overflow-hidden bg-site-surface">
         {product.image ? (

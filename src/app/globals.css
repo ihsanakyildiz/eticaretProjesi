@@ -148,6 +148,10 @@ body {
   opacity: 1;
 }
 
+.site-product-swiper .swiper-slide {
+  height: auto;
+}
+
 .site-hero-swiper .swiper-pagination {
   bottom: 1.25rem !important;
   z-index: 20;
