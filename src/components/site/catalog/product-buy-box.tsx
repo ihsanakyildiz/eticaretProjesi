@@ -7,6 +7,7 @@ import { useCart } from "@/components/site/cart/cart-provider";
 import { SiteImage, SiteImageFallback } from "@/components/site/site-image";
 import { SiteLink } from "@/components/site/site-link";
 import { SaleCountdown, useTickingNow } from "@/components/site/catalog/sale-countdown";
+import { uploadPersonalizationImageAction } from "@/app/(site)/personalization-actions";
 import { pickSellableVariants } from "@/lib/catalog-storefront";
 import { fallbackSwatchHex } from "@/lib/product-attributes";
 import { productSaleUnitShort } from "@/lib/product-editor";
@@ -14,6 +15,11 @@ import { campaignCartPriceMinor, campaignNameDiffersFromLabel, type CatalogCampa
 import { formatMinorTry, taxIncludedMinor } from "@/lib/product-money";
 import { resolveSalePrice } from "@/lib/product-sale";
 import { isVariantPurchasable, type OutOfStockBehavior } from "@/lib/product-stock";
+import {
+  validatePersonalizationInput,
+  type CartPersonalizationEntry,
+  type ProductPersonalizationFieldView,
+} from "@/lib/product-personalization";
 import {
   buildStorefrontVariantAxes,
   constrainVariantSelection,
@@ -68,6 +74,7 @@ export function ProductBuyBox({
   deliveryLabel,
   galleryEager = 1,
   campaign = null,
+  personalizationFields = [],
 }: {
   title: string;
   brandName?: string | null;
@@ -88,6 +95,7 @@ export function ProductBuyBox({
   deliveryLabel?: string | null;
   galleryEager?: number;
   campaign?: CatalogCampaignBadge | null;
+  personalizationFields?: ProductPersonalizationFieldView[];
 }) {
   const sellable = useMemo(() => pickSellableVariants(variants), [variants]);
   const defaultVariant =
@@ -99,6 +107,11 @@ export function ProductBuyBox({
   const [qty, setQty] = useState(Math.max(1, minOrderQty));
   const [activeImage, setActiveImage] = useState(gallery[0]?.url ?? "");
   const [added, setAdded] = useState(false);
+  const [personalizationError, setPersonalizationError] = useState<string | null>(null);
+  const [personalizationBusy, setPersonalizationBusy] = useState(false);
+  const [personalizationValues, setPersonalizationValues] = useState<
+    Record<string, { textValue?: string; imageUrl?: string }>
+  >({});
   const addedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const urlReadyRef = useRef(false);
 
@@ -197,6 +210,58 @@ export function ProductBuyBox({
     const min = Math.max(1, minOrderQty);
     const next = qty + direction * step;
     setQty(Math.max(min, next));
+  };
+
+  const buildPersonalizationEntries = (): CartPersonalizationEntry[] =>
+    personalizationFields.map((field) => ({
+      fieldId: field.id,
+      kind: field.kind,
+      label: field.label,
+      textValue: personalizationValues[field.id]?.textValue,
+      imageUrl: personalizationValues[field.id]?.imageUrl,
+    }));
+
+  const tryAddToCart = async (goToCart: boolean) => {
+    if (!variant) return;
+    setPersonalizationError(null);
+    const checked = validatePersonalizationInput(
+      personalizationFields,
+      buildPersonalizationEntries(),
+    );
+    if (!checked.ok) {
+      setPersonalizationError(checked.error);
+      return;
+    }
+    const unit = priceIncl;
+    addItem(
+      variant.id,
+      qty,
+      unit,
+      checked.personalization.values.length > 0 ? checked.personalization : undefined,
+    );
+    flashAdded();
+    if (goToCart) router.push("/sepet");
+  };
+
+  const onPersonalizationImage = async (fieldId: string, file: File | null) => {
+    if (!file) return;
+    setPersonalizationBusy(true);
+    setPersonalizationError(null);
+    try {
+      const body = new FormData();
+      body.set("file", file);
+      const result = await uploadPersonalizationImageAction(body);
+      if (!result.ok || !result.url) {
+        setPersonalizationError(result.error ?? "Görsel yüklenemedi.");
+        return;
+      }
+      setPersonalizationValues((prev) => ({
+        ...prev,
+        [fieldId]: { ...prev[fieldId], imageUrl: result.url },
+      }));
+    } finally {
+      setPersonalizationBusy(false);
+    }
   };
 
   return (
@@ -377,6 +442,68 @@ export function ProductBuyBox({
           {variant?.trackInventory ? ` · ${variant.stockQuantity} ${unitLabel}` : ""}
         </p>
 
+        {personalizationFields.length > 0 ? (
+          <div className="mt-5 space-y-3 rounded-lg border border-site-border bg-site-surface/40 p-4">
+            <div>
+              <h3 className="text-sm font-semibold text-site-fg">Kişiselleştirme</h3>
+              <p className="mt-1 text-xs text-site-muted">
+                Sepete eklemeden önce aşağıdaki alanları doldurun.
+              </p>
+            </div>
+            {personalizationFields.map((field) => (
+              <div key={field.id}>
+                <label className="mb-1.5 block text-sm font-medium text-site-fg">
+                  {field.label}
+                  {field.required ? " *" : ""}
+                </label>
+                {field.kind === "TEXT" ? (
+                  <input
+                    type="text"
+                    maxLength={field.maxLength && field.maxLength > 0 ? field.maxLength : 500}
+                    value={personalizationValues[field.id]?.textValue ?? ""}
+                    onChange={(event) =>
+                      setPersonalizationValues((prev) => ({
+                        ...prev,
+                        [field.id]: { ...prev[field.id], textValue: event.target.value },
+                      }))
+                    }
+                    className="w-full rounded-md border border-site-border bg-white px-3 py-2 text-sm text-site-fg outline-none focus:border-site-primary"
+                    placeholder={field.label}
+                  />
+                ) : (
+                  <div className="space-y-2">
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp,image/gif"
+                      disabled={personalizationBusy}
+                      onChange={(event) => {
+                        const file = event.target.files?.[0] ?? null;
+                        void onPersonalizationImage(field.id, file);
+                        event.target.value = "";
+                      }}
+                      className="block w-full text-sm text-site-muted file:mr-3 file:rounded-md file:border-0 file:bg-site-primary file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white"
+                    />
+                    {personalizationValues[field.id]?.imageUrl ? (
+                      <div className="relative h-20 w-20 overflow-hidden rounded-md border border-site-border">
+                        <SiteImage
+                          src={personalizationValues[field.id]!.imageUrl!}
+                          alt={field.label}
+                          fill
+                          className="object-cover"
+                          sizes="80px"
+                        />
+                      </div>
+                    ) : null}
+                  </div>
+                )}
+              </div>
+            ))}
+            {personalizationError ? (
+              <p className="text-sm font-medium text-rose-600">{personalizationError}</p>
+            ) : null}
+          </div>
+        ) : null}
+
         <div className="mt-5 flex flex-wrap items-center gap-3">
           <div className="inline-flex items-center rounded-md border border-site-border">
             <button type="button" onClick={() => bumpQty(-1)} className="px-3 py-2 text-lg">
@@ -398,11 +525,11 @@ export function ProductBuyBox({
             <>
               <button
                 type="button"
+                disabled={personalizationBusy}
                 onClick={() => {
-                  addItem(variant.id, qty, priceIncl);
-                  flashAdded();
+                  void tryAddToCart(false);
                 }}
-                className={`inline-flex rounded-md px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition ${
+                className={`inline-flex rounded-md px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition disabled:opacity-60 ${
                   added
                     ? "bg-emerald-600 hover:bg-emerald-600"
                     : "bg-site-primary hover:brightness-110"
@@ -412,11 +539,11 @@ export function ProductBuyBox({
               </button>
               <button
                 type="button"
+                disabled={personalizationBusy}
                 onClick={() => {
-                  addItem(variant.id, qty, priceIncl);
-                  router.push("/sepet");
+                  void tryAddToCart(true);
                 }}
-                className="inline-flex rounded-md border border-site-border px-5 py-2.5 text-sm font-semibold text-site-fg transition hover:bg-site-surface"
+                className="inline-flex rounded-md border border-site-border px-5 py-2.5 text-sm font-semibold text-site-fg transition hover:bg-site-surface disabled:opacity-60"
               >
                 Hemen al
               </button>

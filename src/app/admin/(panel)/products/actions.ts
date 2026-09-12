@@ -25,6 +25,11 @@ import {
   storedSaleWrite,
   toIsoOrNull,
 } from "@/lib/product-sale";
+import {
+  loadProductPersonalizationFields,
+  parsePersonalizationDrafts,
+  syncProductPersonalizationFields,
+} from "@/lib/product-personalization-db";
 import { syncProductSaleFromDefault } from "@/lib/product-sale-expire";
 import { isAdvancedInventoryEnabled } from "@/lib/advanced-inventory";
 import { writeCatalogStock } from "@/lib/inventory";
@@ -672,6 +677,9 @@ function parseProductFields(formData: FormData) {
     relatedIds: parseJsonArray<string>(String(formData.get("relatedIdsJson") ?? ""), []).filter(
       (id) => typeof id === "string" && id.trim().length > 0,
     ),
+    personalizationFields: parsePersonalizationDrafts(
+      String(formData.get("personalizationJson") ?? ""),
+    ),
     galleryFiles: formData.getAll("gallery_files"),
     attachmentFiles: formData.getAll("attachment_files"),
     variantImageFiles: collectVariantImageFiles(formData),
@@ -765,6 +773,7 @@ export async function createProductAction(
     await syncRelated(created.id, fields.relatedIds);
     await syncFeatures(created.id, fields.features);
     await syncVariants(created.id, fields.variants, fields.basePriceMinor, fields.variantImageFiles);
+    await syncProductPersonalizationFields(created.id, fields.personalizationFields);
 
     invalidateDuplicateBarcodeCount();
     revalidateProductAdmin(created.id, created.slug);
@@ -818,6 +827,7 @@ export async function updateProductAction(
     await syncRelated(id, fields.relatedIds);
     await syncFeatures(id, fields.features);
     await syncVariants(id, fields.variants, fields.basePriceMinor, fields.variantImageFiles);
+    await syncProductPersonalizationFields(id, fields.personalizationFields);
 
     invalidateDuplicateBarcodeCount();
     revalidateProductAdmin(id, data.slug);
@@ -1018,6 +1028,20 @@ export async function duplicateProductAction(input: { id: string }): Promise<{
             sortOrder: row.sortOrder,
           })),
       });
+    }
+
+    const sourcePersonalization = await loadProductPersonalizationFields(source.id);
+    if (sourcePersonalization.length) {
+      await syncProductPersonalizationFields(
+        created.id,
+        sourcePersonalization.map((field) => ({
+          clientKey: field.id,
+          kind: field.kind,
+          label: field.label,
+          required: field.required,
+          maxLength: field.maxLength,
+        })),
+      );
     }
 
     const lockCatalogStock = await isAdvancedInventoryEnabled();

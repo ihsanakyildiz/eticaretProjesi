@@ -1,4 +1,5 @@
 import { cache } from "react";
+import { loadProductPersonalizationFields } from "@/lib/product-personalization-db";
 import { buildCategoryTree, toNamedTree } from "@/lib/category-tree";
 import { DEFAULT_VARIANT_COMBINATION_KEY } from "@/lib/product-variants";
 import { prisma } from "@/lib/prisma";
@@ -218,5 +219,13 @@ export const loadProductEditorInitial = cache(async function loadProductEditorIn
       booleanValue: row.booleanValue,
     })),
     variants,
+    personalizationFields: (await loadProductPersonalizationFields(product.id)).map((field) => ({
+      clientKey: field.id,
+      id: field.id,
+      kind: field.kind,
+      label: field.label,
+      required: field.required,
+      maxLength: field.maxLength,
+    })),
   };
 });

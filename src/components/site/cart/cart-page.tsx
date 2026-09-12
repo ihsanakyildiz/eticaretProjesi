@@ -12,6 +12,7 @@ import { SiteLink } from "@/components/site/site-link";
 import { cartLineIssueLabel } from "@/lib/cart-sync";
 import type { CartDeliveryCode, HydratedCartLine } from "@/lib/checkout-types";
 import { formatMinorTl, formatMinorTry, taxExcludedMinor } from "@/lib/product-money";
+import { formatPersonalizationSummary } from "@/lib/product-personalization";
 
 const CART_ORANGE = "text-[#f27a1a]";
 
@@ -71,7 +72,7 @@ export function CartPage({ demoNotice = null }: { demoNotice?: DemoNotice | null
 
   const visibleLines = hydrated?.lines ?? [];
   const selectedLines = visibleLines.filter(
-    (line) => line.available && selectedIds.includes(line.variantId),
+    (line) => line.available && selectedIds.includes(line.lineKey),
   );
   const selectable = visibleLines.filter((line) => line.available);
   const allSelected = selectable.length > 0 && selectedLines.length === selectable.length;
@@ -129,20 +130,20 @@ export function CartPage({ demoNotice = null }: { demoNotice?: DemoNotice | null
         <ul>
           {visibleLines.map((line, index) => (
             <CartLineRow
-              key={line.variantId}
+              key={line.lineKey}
               line={line}
-              selected={line.available && selectedIds.includes(line.variantId)}
-              savingsOpen={openSavings === line.variantId}
+              selected={line.available && selectedIds.includes(line.lineKey)}
+              savingsOpen={openSavings === line.lineKey}
               imagePriority={index < perf.checkoutImageEager}
               prefetch={perf.prefetchLinks}
               onToggle={() => {
                 if (!line.available) return;
-                toggleSelected(line.variantId);
+                toggleSelected(line.lineKey);
               }}
-              onQuantity={(quantity) => setQuantity(line.variantId, quantity)}
-              onRemove={() => removeItem(line.variantId)}
+              onQuantity={(quantity) => setQuantity(line.lineKey, quantity)}
+              onRemove={() => removeItem(line.lineKey)}
               onToggleSavings={() =>
-                setOpenSavings((current) => (current === line.variantId ? null : line.variantId))
+                setOpenSavings((current) => (current === line.lineKey ? null : line.lineKey))
               }
             />
           ))}
@@ -363,6 +364,11 @@ function CartLineRow({
             </SiteLink>
             {line.variantTitle ? (
               <p className="mt-1 text-xs text-site-muted">{line.variantTitle}</p>
+            ) : null}
+            {line.personalization ? (
+              <p className="mt-1 text-xs text-site-muted">
+                {formatPersonalizationSummary(line.personalization)}
+              </p>
             ) : null}
             {issueLabel ? (
               <p className="mt-2 text-xs font-medium text-rose-600">{issueLabel}</p>

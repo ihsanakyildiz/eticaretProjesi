@@ -23,6 +23,7 @@ import {
   type CheckoutStep,
 } from "@/lib/checkout-steps";
 import { formatMinorTry, taxExcludedMinor } from "@/lib/product-money";
+import { formatPersonalizationSummary } from "@/lib/product-personalization";
 
 const initialOrderState: PlaceOrderState = {};
 
@@ -59,16 +60,16 @@ export function CheckoutFlow({
   const checkoutLines = useMemo(
     () =>
       lines.filter((line) => {
-        if (!selectedIds.includes(line.variantId)) return false;
+        if (!selectedIds.includes(line.lineKey)) return false;
         if (!hydrated) return true;
-        return hydrated.lines.some((row) => row.variantId === line.variantId && row.available);
+        return hydrated.lines.some((row) => row.lineKey === line.lineKey && row.available);
       }),
     [hydrated, lines, selectedIds],
   );
   const cart = useMemo<HydratedCart | null>(() => {
     if (!hydrated) return null;
     const selected = hydrated.lines.filter(
-      (line) => line.available && selectedIds.includes(line.variantId),
+      (line) => line.available && selectedIds.includes(line.lineKey),
     );
     return {
       ...hydrated,
@@ -429,7 +430,7 @@ export function CheckoutFlow({
         <h2 className="text-sm font-semibold text-site-fg">Özet</h2>
         <ul className="mt-3 space-y-2 text-sm text-site-muted">
           {(cart?.lines ?? []).map((line, index) => (
-            <li key={line.variantId} className="flex justify-between gap-3">
+            <li key={line.lineKey} className="flex justify-between gap-3">
               <span className="flex min-w-0 items-center gap-2">
                 {line.image ? (
                   <span className="relative h-8 w-8 shrink-0 overflow-hidden rounded bg-site-surface">
@@ -443,8 +444,15 @@ export function CheckoutFlow({
                     />
                   </span>
                 ) : null}
-                <span className="truncate">
-                  {line.title} × {line.quantity}
+                <span className="min-w-0 truncate">
+                  <span className="block truncate">
+                    {line.title} × {line.quantity}
+                  </span>
+                  {line.personalization ? (
+                    <span className="mt-0.5 block truncate text-xs text-site-muted">
+                      {formatPersonalizationSummary(line.personalization)}
+                    </span>
+                  ) : null}
                 </span>
               </span>
               <span className="shrink-0 text-site-fg">{formatMinorTry(line.totalMinor)}</span>

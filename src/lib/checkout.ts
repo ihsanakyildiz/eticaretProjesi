@@ -258,6 +258,7 @@ export async function hydrateCart(raw: CartLine[]): Promise<HydratedCart> {
         : null;
 
     hydrated.push({
+      lineKey: line.lineKey,
       variantId: line.variantId,
       productId: product?.id ?? "",
       title: product?.title ?? "Ürün artık satışta değil",
@@ -281,6 +282,7 @@ export async function hydrateCart(raw: CartLine[]): Promise<HydratedCart> {
       issue,
       priceChange,
       qtyAdjustedFrom,
+      personalization: line.personalization,
     });
   }
 

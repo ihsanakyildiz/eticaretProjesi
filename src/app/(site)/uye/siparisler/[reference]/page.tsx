@@ -80,6 +80,17 @@ export default async function MemberOrderDetailPage({ params }: PageProps) {
   });
   if (!order) notFound();
 
+  const personalizationRows = await prisma
+    .$queryRaw<Array<{ id: string; personalizationJson: string | null }>>`
+      SELECT id, personalizationJson
+      FROM order_items
+      WHERE orderId = ${order.id}
+    `
+    .catch(() => [] as Array<{ id: string; personalizationJson: string | null }>);
+  const personalizationByItemId = new Map(
+    personalizationRows.map((row) => [row.id, row.personalizationJson]),
+  );
+
   const status = parseOrderStatus(order.status);
   const shipping = order.addresses.find((row) => row.kind === "SHIPPING");
   const billing = order.addresses.find((row) => row.kind === "BILLING");
@@ -147,15 +158,30 @@ export default async function MemberOrderDetailPage({ params }: PageProps) {
       <section className="rounded-2xl border border-site-border bg-site-card p-5 sm:p-6">
         <h3 className="text-base font-semibold text-site-fg">Ürünler</h3>
         <ul className="mt-4 space-y-3 text-sm">
-          {order.items.map((item) => (
+          {order.items.map((item) => {
+            let personalizationNote = "";
+            try {
+              const raw = personalizationByItemId.get(item.id);
+              if (raw) {
+                const parsed = JSON.parse(raw) as { summary?: unknown };
+                personalizationNote = String(parsed.summary ?? "").trim();
+              }
+            } catch {
+              personalizationNote = "";
+            }
+            return (
             <li key={item.id} className="flex justify-between gap-4">
               <span className="text-site-fg">
                 {item.title}
                 {item.variantTitle ? ` (${item.variantTitle})` : ""} × {item.quantity}
+                {personalizationNote ? (
+                  <span className="mt-1 block text-xs text-site-muted">{personalizationNote}</span>
+                ) : null}
               </span>
               <span className="font-medium">{formatMinorTry(item.totalMinor)}</span>
             </li>
-          ))}
+            );
+          })}
         </ul>
         <div className="mt-4 space-y-2 border-t border-site-border pt-4 text-sm">
           <div className="flex justify-between">

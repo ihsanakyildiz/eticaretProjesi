@@ -21,10 +21,12 @@ import {
 } from "@/lib/checkout-payment-choice";
 import { isIyzicoConfigured, isPaytrConfigured } from "@/lib/checkout-payments";
 import { ensureOrderDiscountSchema } from "@/lib/ensure-order-discount-schema";
+import { ensureProductPersonalizationSchema } from "@/lib/ensure-product-personalization-schema";
 import { orderDiscountSummary, snapshotCompareAtMinor } from "@/lib/order-discount";
 import { nextOrderNo, snapshotAddress, uniqueOrderReference } from "@/lib/order-server";
 import { reserveOrderStock, StockShortageError } from "@/lib/order-stock";
 import { prisma } from "@/lib/prisma";
+import { formatPersonalizationSummary } from "@/lib/product-personalization";
 import { getSettingsMap } from "@/lib/settings";
 import { canBypassMaintenance, isMaintenanceMode } from "@/lib/site-access";
 import { getSiteOrigin } from "@/lib/site-origin";
@@ -147,6 +149,7 @@ export async function placeOrderAction(
 
   try {
     await ensureOrderDiscountSchema().catch(() => undefined);
+    await ensureProductPersonalizationSchema().catch(() => undefined);
     const created = await prisma.$transaction(async (tx) => {
       const items = sellable.map((line) => ({
         productId: line.productId,
@@ -161,6 +164,17 @@ export async function placeOrderAction(
         totalMinor: line.totalMinor,
         image: line.image,
       }));
+      const personalizationByVariant = new Map(
+        sellable
+          .filter((line) => line.personalization?.values.length)
+          .map((line) => [
+            `${line.variantId}:${line.lineKey}`,
+            JSON.stringify({
+              values: line.personalization!.values,
+              summary: formatPersonalizationSummary(line.personalization),
+            }),
+          ]),
+      );
       const productsTotal = cart.productsMinor;
       const taxTotal = cart.taxMinor;
       const { discountMinor } = orderDiscountSummary(items);
@@ -195,7 +209,37 @@ export async function placeOrderAction(
             create: { status: OrderStatus.AWAITING_PAYMENT },
           },
         },
+        include: { items: { select: { id: true, variantId: true } } },
       });
+
+      if (personalizationByVariant.size > 0) {
+        const createdItems = await tx.orderItem.findMany({
+          where: { orderId: order.id },
+          select: { id: true, variantId: true, quantity: true, totalMinor: true },
+        });
+        // Match by variant + totals order among duplicates
+        const used = new Set<string>();
+        for (const line of sellable) {
+          if (!line.personalization?.values.length) continue;
+          const json = personalizationByVariant.get(`${line.variantId}:${line.lineKey}`);
+          if (!json) continue;
+          const match = createdItems.find(
+            (row) =>
+              row.variantId === line.variantId &&
+              row.quantity === line.quantity &&
+              row.totalMinor === line.totalMinor &&
+              !used.has(row.id),
+          );
+          if (!match) continue;
+          used.add(match.id);
+          await tx.$executeRaw`
+            UPDATE order_items
+            SET personalizationJson = ${json}
+            WHERE id = ${match.id}
+          `;
+        }
+      }
+
       await reserveOrderStock(tx, order.id);
       return order;
     });

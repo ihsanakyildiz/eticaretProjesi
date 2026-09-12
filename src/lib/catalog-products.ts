@@ -11,6 +11,7 @@ import {
   type ProductSectionSource,
 } from "@/lib/page-sections";
 import { prisma } from "@/lib/prisma";
+import { loadProductPersonalizationFields } from "@/lib/product-personalization-db";
 import { parsePerformance, productDataCacheSeconds } from "@/lib/performance";
 import { getSettingsMap } from "@/lib/settings";
 import { resolveCatalogListingConstraint } from "@/lib/catalog-listing-constraint";
@@ -424,6 +425,7 @@ export async function getCachedCatalogProduct(slug: string) {
       });
       if (!product) return null;
 
+      const personalizationFields = await loadProductPersonalizationFields(product.id);
       const related = await fillRelatedCatalogCards(
         product,
         await toCatalogCards(product.relatedFrom.map((row) => row.related)),
@@ -432,11 +434,12 @@ export async function getCachedCatalogProduct(slug: string) {
       const [withCampaign] = await attachCatalogCampaigns([{ id: product.id }]);
       return {
         ...product,
+        personalizationFields,
         campaign: withCampaign?.campaign ?? null,
         related,
       };
     },
-    ["catalog-product-v12", slug, String(relatedLimit), String(galleryLimit)],
+    ["catalog-product-v13", slug, String(relatedLimit), String(galleryLimit)],
     { tags: [CATALOG_CACHE_TAG, "site"], revalidate },
   )();
 }

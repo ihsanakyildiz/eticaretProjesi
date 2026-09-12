@@ -42,6 +42,7 @@ export type OrderItemRow = {
   totalMinor: number;
   image: string | null;
   stock: number | null;
+  personalizationSummary?: string | null;
 };
 
 const inputClass =
@@ -215,6 +216,9 @@ export function OrderItemsEditor({
                         <p className="font-medium text-slate-800">{item.title}</p>
                         {item.variantTitle ? (
                           <p className="text-xs text-slate-500">{item.variantTitle}</p>
+                        ) : null}
+                        {item.personalizationSummary ? (
+                          <p className="mt-1 text-xs text-slate-500">{item.personalizationSummary}</p>
                         ) : null}
                         {item.sku ? <p className="text-xs text-slate-400">{item.sku}</p> : null}
                       </div>

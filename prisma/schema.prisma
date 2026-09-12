@@ -247,6 +247,8 @@ model OrderItem {
   taxRatePercent  Int             @default(20)
   totalMinor      Int
   image           String?         @db.VarChar(500)
+  /// Kişiye özel yazı/görsel özeti (JSON)
+  personalizationJson String?     @db.LongText
   createdAt       DateTime        @default(now())
   caseItems       OrderCaseItem[]
   productReviews  ProductReview[]
@@ -1666,6 +1668,7 @@ model Product {
   sectionLinks        PageSectionProduct[]
   campaignItems       CampaignProduct[]
   placements          ProductPlacement[]
+  personalizationFields ProductPersonalizationField[]
 
   @@index([categoryId])
   @@index([supplierId])
@@ -1680,6 +1683,27 @@ model Product {
   @@index([saleEndsAt])
   @@index([createdAt, id])
   @@map("products")
+}
+
+/// Kişiye özel ürün alanları (yazı / görsel) — müşteri sepete eklemeden önce doldurur
+enum ProductPersonalizationKind {
+  TEXT
+  IMAGE
+}
+
+model ProductPersonalizationField {
+  id         String                      @id @default(cuid())
+  productId  String
+  product    Product                     @relation(fields: [productId], references: [id], onDelete: Cascade)
+  kind       ProductPersonalizationKind
+  label      String                      @db.VarChar(191)
+  required   Boolean                     @default(true)
+  sortOrder  Int                         @default(0)
+  maxLength  Int?
+  createdAt  DateTime                    @default(now())
+
+  @@index([productId, sortOrder])
+  @@map("product_personalization_fields")
 }
 
 model ProductImage {

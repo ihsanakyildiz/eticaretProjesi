@@ -8,6 +8,7 @@ import {
   FileText,
   ImageIcon,
   Loader2,
+  Plus,
   Save,
   Sparkles,
   Trash2,
@@ -26,6 +27,13 @@ import {
   type FilterCategoryScope,
 } from "@/lib/product-filters";
 import type { CategoryNodeBase } from "@/lib/category-tree";
+import {
+  emptyPersonalizationDraft,
+  productPersonalizationKindLabel,
+  PRODUCT_PERSONALIZATION_KINDS,
+  type ProductPersonalizationFieldDraft,
+  type ProductPersonalizationKindCode,
+} from "@/lib/product-personalization";
 import { suggestProductCategory } from "@/lib/suggest-product-category";
 import {
   MAX_GENERATED_COMBINATIONS,
@@ -159,6 +167,7 @@ export type ProductEditorInitial = {
   relatedIds?: string[];
   features?: ProductFeatureDraft[];
   variants?: ProductVariantDraft[];
+  personalizationFields?: ProductPersonalizationFieldDraft[];
 };
 
 function slugPreview(value: string) {
@@ -269,6 +278,11 @@ export function ProductEditor({
   );
   const [relatedIds, setRelatedIds] = useState<string[]>(initial?.relatedIds ?? []);
   const [relatedPickId, setRelatedPickId] = useState("");
+  const [personalizationKind, setPersonalizationKind] =
+    useState<ProductPersonalizationKindCode>("TEXT");
+  const [personalizationFields, setPersonalizationFields] = useState<
+    ProductPersonalizationFieldDraft[]
+  >(initial?.personalizationFields ?? []);
   const [saleUnit, setSaleUnit] = useState(initial?.saleUnit ?? "PIECE");
   const [minOrderQty, setMinOrderQty] = useState(String(initial?.minOrderQty ?? 1));
   const [quantityStep, setQuantityStep] = useState(String(initial?.quantityStep ?? 1));
@@ -380,6 +394,7 @@ export function ProductEditor({
     formData.set("basePriceMajor", formatMinorToMajorInput(basePriceMinor));
     formData.set("compareAtMajor", compareAtMinor != null ? formatMinorToMajorInput(compareAtMinor) : "");
     formData.set("relatedIdsJson", JSON.stringify(relatedIds));
+    formData.set("personalizationJson", JSON.stringify(personalizationFields));
     formAction(formData);
   };
 
@@ -524,6 +539,7 @@ export function ProductEditor({
       <input type="hidden" name="imagesJson" value={imagesJson} />
       <input type="hidden" name="attachmentsJson" value={attachmentsJson} />
       <input type="hidden" name="relatedIdsJson" value={JSON.stringify(relatedIds)} />
+      <input type="hidden" name="personalizationJson" value={JSON.stringify(personalizationFields)} />
 
       {state.error ? (
         <div role="alert" className="rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
@@ -1573,6 +1589,168 @@ export function ProductEditor({
             </div>
           </section>
         </div>
+
+      <div className={tab === "personalization" ? "space-y-6" : "hidden"}>
+        <section className="rounded-lg border border-[#e9ebec] bg-white shadow-sm">
+          <div className="border-b border-[#e9ebec] px-5 py-4">
+            <h2 className="text-base font-semibold text-slate-800">Kişiye özel ürün</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Müşteri ürün sayfasında veya sepete eklemeden önce bu alanları doldurur. Aynı üründen
+              farklı kişiselleştirmeler ayrı sepet satırı olur.
+            </p>
+          </div>
+          <div className="space-y-5 p-5">
+            <div className="max-w-sm">
+              <label className="mb-1.5 block text-sm font-medium text-slate-700">Alan türü</label>
+              <select
+                value={personalizationKind}
+                onChange={(event) =>
+                  setPersonalizationKind(event.target.value as ProductPersonalizationKindCode)
+                }
+                className={inputClass}
+              >
+                {PRODUCT_PERSONALIZATION_KINDS.map((kind) => (
+                  <option key={kind} value={kind}>
+                    {productPersonalizationKindLabel(kind)}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm font-medium text-slate-700">
+                  {productPersonalizationKindLabel(personalizationKind)} alanları
+                </p>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setPersonalizationFields((prev) => [
+                      ...prev,
+                      emptyPersonalizationDraft(personalizationKind),
+                    ])
+                  }
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-[#e9ebec] text-slate-700 hover:bg-slate-50"
+                  aria-label="Alan ekle"
+                  title="Alan ekle"
+                >
+                  <Plus className="h-4 w-4" />
+                </button>
+              </div>
+
+              {personalizationFields.filter((field) => field.kind === personalizationKind).length ===
+              0 ? (
+                <p className="rounded-md border border-dashed border-[#e9ebec] px-4 py-6 text-sm text-slate-500">
+                  Henüz alan yok. Artı ile{" "}
+                  {personalizationKind === "TEXT" ? "yazı" : "görsel"} alanı ekleyin.
+                </p>
+              ) : (
+                <ul className="space-y-3">
+                  {personalizationFields
+                    .filter((field) => field.kind === personalizationKind)
+                    .map((field) => (
+                      <li
+                        key={field.clientKey}
+                        className="flex flex-col gap-2 rounded-md border border-[#e9ebec] p-3 sm:flex-row sm:items-center"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <label className="mb-1 block text-xs font-medium text-slate-500">
+                            {personalizationKind === "TEXT"
+                              ? "Yazı alanı adı (ör. Ad Soyad)"
+                              : "Görsel alanı adı (ör. Logo)"}
+                          </label>
+                          <input
+                            value={field.label}
+                            onChange={(event) =>
+                              setPersonalizationFields((prev) =>
+                                prev.map((row) =>
+                                  row.clientKey === field.clientKey
+                                    ? { ...row, label: event.target.value }
+                                    : row,
+                                ),
+                              )
+                            }
+                            placeholder={
+                              personalizationKind === "TEXT" ? "Ad Soyad" : "Kişiye özel görsel"
+                            }
+                            className={inputClass}
+                          />
+                        </div>
+                        {personalizationKind === "TEXT" ? (
+                          <div className="w-full sm:w-28">
+                            <label className="mb-1 block text-xs font-medium text-slate-500">
+                              Max karakter
+                            </label>
+                            <input
+                              type="number"
+                              min={1}
+                              max={500}
+                              value={field.maxLength ?? 80}
+                              onChange={(event) =>
+                                setPersonalizationFields((prev) =>
+                                  prev.map((row) =>
+                                    row.clientKey === field.clientKey
+                                      ? {
+                                          ...row,
+                                          maxLength: Math.min(
+                                            500,
+                                            Math.max(1, Number(event.target.value) || 80),
+                                          ),
+                                        }
+                                      : row,
+                                  ),
+                                )
+                              }
+                              className={inputClass}
+                            />
+                          </div>
+                        ) : null}
+                        <label className="flex items-center gap-2 text-sm text-slate-600 sm:pt-5">
+                          <input
+                            type="checkbox"
+                            checked={field.required}
+                            onChange={(event) =>
+                              setPersonalizationFields((prev) =>
+                                prev.map((row) =>
+                                  row.clientKey === field.clientKey
+                                    ? { ...row, required: event.target.checked }
+                                    : row,
+                                ),
+                              )
+                            }
+                          />
+                          Zorunlu
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setPersonalizationFields((prev) =>
+                              prev.filter((row) => row.clientKey !== field.clientKey),
+                            )
+                          }
+                          className="inline-flex h-9 w-9 items-center justify-center self-end rounded-md text-slate-400 hover:bg-rose-50 hover:text-rose-600 sm:self-center sm:pt-5"
+                          aria-label="Alanı kaldır"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </li>
+                    ))}
+                </ul>
+              )}
+            </div>
+
+            {personalizationFields.length > 0 ? (
+              <p className="text-xs text-slate-500">
+                Toplam {personalizationFields.length} alan tanımlı
+                {personalizationFields.some((field) => field.kind !== personalizationKind)
+                  ? ` · Diğer türler için select’ten geçiş yapın`
+                  : ""}
+                .
+              </p>
+            ) : null}
+          </div>
+        </section>
+      </div>
 
       <input type="hidden" name="sortOrder" defaultValue={initial?.sortOrder ?? ""} />
 

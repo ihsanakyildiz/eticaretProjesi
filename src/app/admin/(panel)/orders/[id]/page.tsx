@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { OrderAddressKind } from "@prisma/client";
 import { ShoppingBag } from "lucide-react";
 import { ensureOrderDiscountSchema } from "@/lib/ensure-order-discount-schema";
+import { ensureProductPersonalizationSchema } from "@/lib/ensure-product-personalization-schema";
 import {
   readStoredCompareAt,
   readStoredDiscountMinor,
@@ -22,6 +23,20 @@ import { parseOrderPaymentProvider } from "@/lib/checkout-payment-choice";
 import { toOrderCaseView } from "@/lib/order-case-workflow";
 import { OrderDetail } from "./order-detail";
 
+function personalizationSummaryFromItem(item: { personalizationJson?: string | null } | Record<string, unknown>) {
+  const raw = String(
+    (item as { personalizationJson?: unknown }).personalizationJson ?? "",
+  ).trim();
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as { summary?: unknown };
+    const summary = String(parsed.summary ?? "").trim();
+    return summary || null;
+  } catch {
+    return null;
+  }
+}
+
 type Props = { params: Promise<{ id: string }> };
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
@@ -36,6 +51,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 export default async function OrderDetailPage({ params }: Props) {
   const { id } = await params;
   await ensureOrderDiscountSchema().catch(() => undefined);
+  await ensureProductPersonalizationSchema().catch(() => undefined);
   const order = await prisma.order.findUnique({
     where: { id },
     include: {
@@ -72,6 +88,17 @@ export default async function OrderDetailPage({ params }: Props) {
   });
 
   if (!order) notFound();
+
+  const personalizationRows = await prisma
+    .$queryRaw<Array<{ id: string; personalizationJson: string | null }>>`
+      SELECT id, personalizationJson
+      FROM order_items
+      WHERE orderId = ${order.id}
+    `
+    .catch(() => [] as Array<{ id: string; personalizationJson: string | null }>);
+  const personalizationByItemId = new Map(
+    personalizationRows.map((row) => [row.id, row.personalizationJson]),
+  );
 
   const variantIds = order.items
     .map((item) => item.variantId)
@@ -256,6 +283,9 @@ export default async function OrderDetailPage({ params }: Props) {
             totalMinor: item.totalMinor,
             image: item.image,
             stock: item.variantId ? (stockByVariant.get(item.variantId) ?? null) : null,
+            personalizationSummary: personalizationSummaryFromItem({
+              personalizationJson: personalizationByItemId.get(item.id) ?? null,
+            }),
           })),
           catalog: catalog.map((product) => ({
             id: product.id,

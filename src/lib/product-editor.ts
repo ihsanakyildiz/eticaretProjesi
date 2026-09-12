@@ -12,6 +12,7 @@ export const PRODUCT_EDITOR_TABS = [
   "pricing",
   "seo",
   "options",
+  "personalization",
 ] as const;
 
 export type ProductEditorTabId = (typeof PRODUCT_EDITOR_TABS)[number];
@@ -34,6 +35,8 @@ export function productEditorTabLabel(id: ProductEditorTabId): string {
       return "SEO";
     case "options":
       return "Seçenekler";
+    case "personalization":
+      return "Kişiselleştirme";
     default: {
       const _exhaustive: never = id;
       return _exhaustive;

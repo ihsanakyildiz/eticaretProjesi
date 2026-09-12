@@ -227,6 +227,7 @@ export async function CatalogProductScreen({
                 : null
             }
             campaign={product.campaign}
+            personalizationFields={product.personalizationFields ?? []}
           />
 
           <ProductDetailTabs

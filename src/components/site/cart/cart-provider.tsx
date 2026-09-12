@@ -17,7 +17,8 @@ import {
   CART_STORAGE_KEY,
   cartItemCount,
   normalizeCartLines,
-  upsertCartLine,
+  removeCartLine,
+  setCartLineQuantity,
   type CartLine,
 } from "@/lib/cart";
 import { loadHydratedCart, readHydratedCartCache } from "@/lib/cart-hydrate-cache";
@@ -28,6 +29,7 @@ import {
   sameCartLines,
 } from "@/lib/cart-sync";
 import type { CartNotice, HydratedCart } from "@/lib/checkout-types";
+import type { CartPersonalization } from "@/lib/product-personalization";
 
 const CART_SELECTED_KEY = "eticaret.cart.selected.v1";
 
@@ -38,10 +40,15 @@ type CartContextValue = {
   notices: CartNotice[];
   selectedIds: string[];
   count: number;
-  addItem: (variantId: string, quantity: number, unitPriceMinor?: number) => void;
-  setQuantity: (variantId: string, quantity: number) => void;
-  removeItem: (variantId: string) => void;
-  toggleSelected: (variantId: string) => void;
+  addItem: (
+    variantId: string,
+    quantity: number,
+    unitPriceMinor?: number,
+    personalization?: CartPersonalization,
+  ) => void;
+  setQuantity: (lineKey: string, quantity: number) => void;
+  removeItem: (lineKey: string) => void;
+  toggleSelected: (lineKey: string) => void;
   setAllSelected: (selected: boolean) => void;
   clearSelected: () => void;
   clear: () => void;
@@ -95,10 +102,12 @@ export function CartProvider({ children }: { children: ReactNode }) {
   useBrowserLayoutEffect(() => {
     const storedLines = readStoredCart();
     const storedSelected = readSelectedIds().filter((id) =>
-      storedLines.some((line) => line.variantId === id),
+      storedLines.some((line) => line.lineKey === id),
     );
     setLines(storedLines);
-    setSelectedIds(storedSelected.length > 0 ? storedSelected : storedLines.map((line) => line.variantId));
+    setSelectedIds(
+      storedSelected.length > 0 ? storedSelected : storedLines.map((line) => line.lineKey),
+    );
     setHydrated(storedLines.length === 0 ? emptyHydrated : readHydratedCartCache(storedLines));
     setReady(true);
   }, []);
@@ -127,9 +136,11 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
       const visible = cart.lines.filter((line) => line.issue !== "MISSING");
       const nextStored: CartLine[] = visible.map((line) => ({
+        lineKey: line.lineKey,
         variantId: line.variantId,
         quantity: line.quantity,
         unitPriceMinor: line.unitPriceMinor > 0 ? line.unitPriceMinor : undefined,
+        personalization: line.personalization,
       }));
 
       setHydrated({
@@ -137,7 +148,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
         lines: visible,
       });
 
-      const availableIds = new Set(visible.filter((line) => line.available).map((line) => line.variantId));
+      const availableIds = new Set(visible.filter((line) => line.available).map((line) => line.lineKey));
       setSelectedIds((current) => current.filter((id) => availableIds.has(id)));
 
       if (!sameCartLines(linesRef.current, nextStored)) {
@@ -163,36 +174,47 @@ export function CartProvider({ children }: { children: ReactNode }) {
     window.sessionStorage.setItem(CART_SELECTED_KEY, JSON.stringify(selectedIds));
   }, [ready, selectedIds]);
 
-  const addItem = useCallback((variantId: string, quantity: number, unitPriceMinor?: number) => {
-    setLines((current) => addCartLine(current, variantId, quantity, unitPriceMinor));
-    setSelectedIds((current) => (current.includes(variantId) ? current : [...current, variantId]));
-  }, []);
+  const addItem = useCallback(
+    (
+      variantId: string,
+      quantity: number,
+      unitPriceMinor?: number,
+      personalization?: CartPersonalization,
+    ) => {
+      setLines((current) =>
+        addCartLine(current, variantId, quantity, unitPriceMinor, personalization),
+      );
+      setSelectedIds((current) => {
+        const key = addCartLine([], variantId, 1, unitPriceMinor, personalization)[0]?.lineKey;
+        if (!key || current.includes(key)) return current;
+        return [...current, key];
+      });
+    },
+    [],
+  );
 
-  const setQuantity = useCallback((variantId: string, quantity: number) => {
-    setLines((current) => {
-      if (quantity <= 0) return current.filter((line) => line.variantId !== variantId);
-      return upsertCartLine(current, variantId, quantity);
-    });
+  const setQuantity = useCallback((lineKey: string, quantity: number) => {
+    setLines((current) => setCartLineQuantity(current, lineKey, quantity));
     if (quantity <= 0) {
-      setSelectedIds((current) => current.filter((id) => id !== variantId));
+      setSelectedIds((current) => current.filter((id) => id !== lineKey));
     }
   }, []);
 
-  const removeItem = useCallback((variantId: string) => {
-    setLines((current) => current.filter((line) => line.variantId !== variantId));
-    setSelectedIds((current) => current.filter((id) => id !== variantId));
+  const removeItem = useCallback((lineKey: string) => {
+    setLines((current) => removeCartLine(current, lineKey));
+    setSelectedIds((current) => current.filter((id) => id !== lineKey));
   }, []);
 
-  const toggleSelected = useCallback((variantId: string) => {
+  const toggleSelected = useCallback((lineKey: string) => {
     setSelectedIds((current) =>
-      current.includes(variantId) ? current.filter((id) => id !== variantId) : [...current, variantId],
+      current.includes(lineKey) ? current.filter((id) => id !== lineKey) : [...current, lineKey],
     );
   }, []);
 
   const setAllSelected = useCallback(
     (selected: boolean) => {
       const available = (hydrated?.lines ?? []).filter((line) => line.available);
-      setSelectedIds(selected ? available.map((line) => line.variantId) : []);
+      setSelectedIds(selected ? available.map((line) => line.lineKey) : []);
     },
     [hydrated],
   );
@@ -202,7 +224,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
     setLines((current) => {
       if (current.length === 0) return current;
       if (ids.length === 0) return [];
-      const next = current.filter((line) => !ids.includes(line.variantId));
+      const next = current.filter((line) => !ids.includes(line.lineKey));
       return next.length === current.length ? current : next;
     });
     setSelectedIds((current) => (current.length === 0 ? current : []));

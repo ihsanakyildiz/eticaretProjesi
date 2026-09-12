@@ -23,19 +23,34 @@ export function cartLineIssueLabel(issue: CartLineIssueCode): string {
   }
 }
 
-export function cartLinesSignature(lines: Array<{ variantId: string; quantity: number }>): string {
-  return JSON.stringify(lines.map((line) => [line.variantId, line.quantity]));
+export function cartLinesSignature(
+  lines: Array<{ lineKey?: string; variantId: string; quantity: number }>,
+): string {
+  return JSON.stringify(
+    lines.map((line) => [line.lineKey || line.variantId, line.variantId, line.quantity]),
+  );
 }
 
 export function sameCartLines(
-  left: Array<{ variantId: string; quantity: number; unitPriceMinor?: number }>,
-  right: Array<{ variantId: string; quantity: number; unitPriceMinor?: number }>,
+  left: Array<{
+    lineKey?: string;
+    variantId: string;
+    quantity: number;
+    unitPriceMinor?: number;
+  }>,
+  right: Array<{
+    lineKey?: string;
+    variantId: string;
+    quantity: number;
+    unitPriceMinor?: number;
+  }>,
 ): boolean {
   if (left.length !== right.length) return false;
   return left.every((line, index) => {
     const other = right[index];
     return (
       other != null &&
+      (line.lineKey || line.variantId) === (other.lineKey || other.variantId) &&
       line.variantId === other.variantId &&
       line.quantity === other.quantity &&
       (line.unitPriceMinor ?? 0) === (other.unitPriceMinor ?? 0)
@@ -61,13 +76,13 @@ export function noticesFromHydratedCart(cart: HydratedCart): CartNotice[] {
   if (removed.length === 1) {
     const line = removed[0]!;
     notices.push({
-      id: `removed:${line.variantId}`,
+      id: `removed:${line.lineKey}`,
       kind: "removed",
       message: `"${line.title}" sepetten çıkarıldı çünkü artık satılmıyor.`,
     });
   } else if (removed.length > 1) {
     notices.push({
-      id: `removed:batch:${removed.map((line) => line.variantId).sort().join(",")}`,
+      id: `removed:batch:${removed.map((line) => line.lineKey).sort().join(",")}`,
       kind: "removed",
       message: `${removed.length} ürün sepetten çıkarıldı çünkü artık satılmıyor.`,
     });
@@ -79,7 +94,7 @@ export function noticesFromHydratedCart(cart: HydratedCart): CartNotice[] {
       (line) => line.priceChange && line.priceChange.toMinor > line.priceChange.fromMinor,
     );
     notices.push({
-      id: `price:${changed.map((line) => `${line.variantId}:${line.priceChange?.toMinor}`).join(",")}`,
+      id: `price:${changed.map((line) => `${line.lineKey}:${line.priceChange?.toMinor}`).join(",")}`,
       kind: anyUp ? "price_up" : "price_down",
       message:
         changed.length === 1
@@ -91,7 +106,7 @@ export function noticesFromHydratedCart(cart: HydratedCart): CartNotice[] {
   for (const line of cart.lines) {
     if (line.qtyAdjustedFrom == null || line.qtyAdjustedFrom === line.quantity) continue;
     notices.push({
-      id: `qty:${line.variantId}:${line.qtyAdjustedFrom}:${line.quantity}`,
+      id: `qty:${line.lineKey}:${line.qtyAdjustedFrom}:${line.quantity}`,
       kind: "qty_adjusted",
       message: `"${line.title}" adedi stok nedeniyle ${line.qtyAdjustedFrom} → ${line.quantity} olarak güncellendi.`,
     });

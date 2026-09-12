@@ -1,3 +1,5 @@
+import type { CartPersonalization } from "@/lib/product-personalization";
+
 export type CheckoutAddress = {
   id: string;
   alias: string;
@@ -56,6 +58,7 @@ export type CartPriceChange = {
 };
 
 export type HydratedCartLine = {
+  lineKey: string;
   variantId: string;
   productId: string;
   title: string;
@@ -79,6 +82,7 @@ export type HydratedCartLine = {
   issue: CartLineIssueCode | null;
   priceChange: CartPriceChange | null;
   qtyAdjustedFrom: number | null;
+  personalization?: CartPersonalization;
 };
 
 export type HydratedCart = {
