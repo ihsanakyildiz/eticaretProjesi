@@ -2,6 +2,11 @@
 
 import { revalidatePath, revalidateTag } from "next/cache";
 import { OrderAddressKind, OrderStatus, Role } from "@prisma/client";
+import { ensureOrderDiscountSchema } from "@/lib/ensure-order-discount-schema";
+import {
+  saleListInclMinor,
+  snapshotCompareAtMinor,
+} from "@/lib/order-discount";
 import { requirePermission } from "@/lib/staff-permissions";
 import {
   nextDocumentNumber,
@@ -108,7 +113,19 @@ export async function createOrderAction(
 
   const variants = await prisma.productVariant.findMany({
     where: { id: { in: items.map((item) => item.variantId) }, isActive: true },
-    include: { product: { select: { title: true, image: true, taxRatePercent: true, isActive: true } } },
+    include: {
+      product: {
+        select: {
+          title: true,
+          image: true,
+          taxRatePercent: true,
+          isActive: true,
+          compareAtMinor: true,
+          saleStartsAt: true,
+          saleEndsAt: true,
+        },
+      },
+    },
   });
   const uniqueVariantIds = Array.from(new Set(items.map((item) => item.variantId)));
   if (variants.length !== uniqueVariantIds.length) {
@@ -116,9 +133,11 @@ export async function createOrderAction(
   }
 
   try {
+    await ensureOrderDiscountSchema().catch(() => undefined);
     const created = await prisma.$transaction(async (tx) => {
       let productsMinor = 0;
       let taxMinor = 0;
+      let discountMinor = 0;
       const lineData = items.map((item) => {
         const variant = variants.find((row) => row.id === item.variantId);
         if (!variant) throw new Error("VARIANT");
@@ -127,8 +146,21 @@ export async function createOrderAction(
           taxRatePercent: variant.product.taxRatePercent,
           quantity: item.quantity,
         });
+        const compareAtMinor = snapshotCompareAtMinor(
+          saleListInclMinor({
+            priceExclMinor: variant.priceMinor,
+            compareAtExclMinor: variant.compareAtMinor ?? variant.product.compareAtMinor,
+            saleStartsAt: variant.saleStartsAt ?? variant.product.saleStartsAt,
+            saleEndsAt: variant.saleEndsAt ?? variant.product.saleEndsAt,
+            taxRatePercent: variant.product.taxRatePercent,
+          }),
+          priced.unitPriceMinor,
+        );
         productsMinor += priced.totalMinor;
         taxMinor += priced.taxMinor;
+        if (compareAtMinor != null) {
+          discountMinor += (compareAtMinor - priced.unitPriceMinor) * item.quantity;
+        }
         return {
           productId: variant.productId,
           variantId: variant.id,
@@ -137,6 +169,7 @@ export async function createOrderAction(
           sku: variant.sku,
           quantity: item.quantity,
           unitPriceMinor: priced.unitPriceMinor,
+          compareAtMinor,
           taxRatePercent: variant.product.taxRatePercent,
           totalMinor: priced.totalMinor,
           image: variant.image || variant.product.image,
@@ -153,6 +186,7 @@ export async function createOrderAction(
           productsMinor,
           shippingMinor,
           taxMinor,
+          discountMinor,
           totalMinor: productsMinor + shippingMinor,
           carrierName,
           privateNote,
@@ -525,7 +559,18 @@ export async function addOrderItemAction(input: {
     prisma.order.findUnique({ where: { id: orderId }, select: { id: true } }),
     prisma.productVariant.findFirst({
       where: { id: variantId, isActive: true, product: { isActive: true } },
-      include: { product: { select: { title: true, image: true, taxRatePercent: true } } },
+      include: {
+        product: {
+          select: {
+            title: true,
+            image: true,
+            taxRatePercent: true,
+            compareAtMinor: true,
+            saleStartsAt: true,
+            saleEndsAt: true,
+          },
+        },
+      },
     }),
   ]);
   if (!order) return { error: "Sipariş bulunamadı." };
@@ -536,8 +581,19 @@ export async function addOrderItemAction(input: {
     taxRatePercent: variant.product.taxRatePercent,
     quantity,
   });
+  const compareAtMinor = snapshotCompareAtMinor(
+    saleListInclMinor({
+      priceExclMinor: variant.priceMinor,
+      compareAtExclMinor: variant.compareAtMinor ?? variant.product.compareAtMinor,
+      saleStartsAt: variant.saleStartsAt ?? variant.product.saleStartsAt,
+      saleEndsAt: variant.saleEndsAt ?? variant.product.saleEndsAt,
+      taxRatePercent: variant.product.taxRatePercent,
+    }),
+    priced.unitPriceMinor,
+  );
 
   try {
+    await ensureOrderDiscountSchema().catch(() => undefined);
     await prisma.$transaction(async (tx) => {
       await applyReservedStockDelta(tx, {
         orderId,
@@ -555,6 +611,7 @@ export async function addOrderItemAction(input: {
           sku: variant.sku,
           quantity,
           unitPriceMinor: priced.unitPriceMinor,
+          compareAtMinor,
           taxRatePercent: variant.product.taxRatePercent,
           totalMinor: priced.totalMinor,
           image: variant.image || variant.product.image,
@@ -594,7 +651,14 @@ export async function updateOrderItemAction(input: {
 
   const item = await prisma.orderItem.findFirst({
     where: { id: itemId, orderId },
-    select: { id: true, taxRatePercent: true, quantity: true, variantId: true, title: true },
+    select: {
+      id: true,
+      taxRatePercent: true,
+      quantity: true,
+      variantId: true,
+      title: true,
+      compareAtMinor: true,
+    },
   });
   if (!item) return { error: "Satır bulunamadı." };
 
@@ -603,8 +667,10 @@ export async function updateOrderItemAction(input: {
     taxRatePercent: item.taxRatePercent,
     quantity,
   });
+  const compareAtMinor = snapshotCompareAtMinor(item.compareAtMinor, priced.unitPriceMinor);
 
   try {
+    await ensureOrderDiscountSchema().catch(() => undefined);
     await prisma.$transaction(async (tx) => {
       await applyReservedStockDelta(tx, {
         orderId,
@@ -617,6 +683,7 @@ export async function updateOrderItemAction(input: {
         data: {
           quantity,
           unitPriceMinor: priced.unitPriceMinor,
+          compareAtMinor,
           totalMinor: priced.totalMinor,
         },
       });

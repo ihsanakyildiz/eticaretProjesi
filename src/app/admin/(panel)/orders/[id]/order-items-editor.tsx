@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { Check, Pencil, Plus, Trash2, X } from "lucide-react";
 import { Can } from "@/components/admin/admin-permissions";
 import { SearchableSelect } from "@/components/admin/searchable-select";
+import { orderDiscountSummary, orderLineDiscount } from "@/lib/order-discount";
 import {
   formatMinorToMajorInput,
   formatMinorTry,
@@ -36,6 +37,7 @@ export type OrderItemRow = {
   sku: string | null;
   quantity: number;
   unitPriceMinor: number;
+  compareAtMinor?: number | null;
   taxRatePercent: number;
   totalMinor: number;
   image: string | null;
@@ -100,6 +102,7 @@ export function OrderItemsEditor({
     () => catalog.map((product) => ({ id: product.id, label: product.title })),
     [catalog],
   );
+  const discount = useMemo(() => orderDiscountSummary(items), [items]);
 
   const applyCatalogPrices = (product: CatalogProduct, variant: CatalogProduct["variants"][number]) => {
     setAddDraft((current) => ({
@@ -187,11 +190,12 @@ export function OrderItemsEditor({
       </div>
 
       <div className="mt-3 overflow-x-auto">
-        <table className="w-full min-w-[720px] text-left text-sm">
+        <table className="w-full min-w-[860px] text-left text-sm">
           <thead className="text-xs text-slate-400 uppercase">
             <tr>
               <th className="py-2 pr-3">Ürün</th>
               <th className="py-2 pr-3">Birim fiyat</th>
+              <th className="py-2 pr-3">İndirim</th>
               <th className="py-2 pr-3">Adet</th>
               <th className="py-2 pr-3">Stokta</th>
               <th className="py-2 pr-3 text-right">Toplam</th>
@@ -201,6 +205,7 @@ export function OrderItemsEditor({
           <tbody>
             {items.map((item) => {
               const editing = editDraft?.itemId === item.id;
+              const discount = orderLineDiscount(item);
               return (
                 <tr key={item.id} className="border-t border-[#e9ebec]">
                   <td className="py-2.5 pr-3">
@@ -227,9 +232,28 @@ export function OrderItemsEditor({
                       />
                     ) : (
                       <div>
+                        {discount.compareAtMinor ? (
+                          <p className="text-[11px] text-slate-400 line-through">
+                            {formatMinorTry(discount.compareAtMinor)}
+                          </p>
+                        ) : null}
                         <p>{formatMinorTry(item.unitPriceMinor)}</p>
                         <p className="text-[11px] text-slate-400">KDV dahil</p>
                       </div>
+                    )}
+                  </td>
+                  <td className="py-2.5 pr-3 align-top">
+                    {discount.savingsMinor > 0 ? (
+                      <div>
+                        <p className="font-medium text-emerald-700">
+                          −{formatMinorTry(discount.savingsMinor)}
+                        </p>
+                        <p className="text-[11px] font-semibold text-emerald-600">
+                          %{discount.percent}
+                        </p>
+                      </div>
+                    ) : (
+                      <p className="text-xs text-slate-400">—</p>
                     )}
                   </td>
                   <td className="py-2.5 pr-3 align-top">
@@ -427,6 +451,21 @@ export function OrderItemsEditor({
       ) : null}
 
       <dl className="mt-4 ml-auto max-w-xs space-y-1 text-sm">
+        {discount.discountMinor > 0 ? (
+          <>
+            <div className="flex justify-between">
+              <dt className="text-slate-500">Liste tutarı</dt>
+              <dd className="text-slate-400 line-through">{formatMinorTry(discount.listMinor)}</dd>
+            </div>
+            <div className="flex justify-between text-emerald-700">
+              <dt>
+                İndirim
+                <span className="ml-1 text-xs font-semibold">%{discount.percent}</span>
+              </dt>
+              <dd>−{formatMinorTry(discount.discountMinor)}</dd>
+            </div>
+          </>
+        ) : null}
         <div className="flex justify-between">
           <dt className="text-slate-500">Ürünler</dt>
           <dd>{formatMinorTry(productsMinor)}</dd>

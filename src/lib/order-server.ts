@@ -5,6 +5,7 @@ import {
   OrderStatus,
   type Prisma,
 } from "@prisma/client";
+import { orderDiscountSummary, snapshotCompareAtMinor } from "@/lib/order-discount";
 import { taxExcludedMinor, taxIncludedMinor } from "@/lib/product-money";
 import {
   generateOrderReference,
@@ -174,7 +175,13 @@ export async function recalculateOrderTotals(tx: Prisma.TransactionClient, order
     tx.order.findUnique({ where: { id: orderId }, select: { shippingMinor: true } }),
     tx.orderItem.findMany({
       where: { orderId },
-      select: { totalMinor: true, taxRatePercent: true },
+      select: {
+        totalMinor: true,
+        taxRatePercent: true,
+        unitPriceMinor: true,
+        quantity: true,
+        compareAtMinor: true,
+      },
     }),
   ]);
   if (!order) throw new Error("ORDER");
@@ -184,15 +191,19 @@ export async function recalculateOrderTotals(tx: Prisma.TransactionClient, order
     const excl = taxExcludedMinor(item.totalMinor, item.taxRatePercent);
     return sum + (item.totalMinor - excl);
   }, 0);
+  const { discountMinor } = orderDiscountSummary(items);
 
   await tx.order.update({
     where: { id: orderId },
     data: {
       productsMinor,
       taxMinor,
+      discountMinor,
       totalMinor: productsMinor + order.shippingMinor,
     },
   });
 }
+
+export { snapshotCompareAtMinor };
 
 export { parseOrderDocumentKind, parseOrderPaymentMethod, parseOrderStatus };

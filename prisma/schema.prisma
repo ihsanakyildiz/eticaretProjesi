@@ -200,6 +200,8 @@ model Order {
   productsMinor   Int                @default(0)
   shippingMinor   Int                @default(0)
   taxMinor        Int                @default(0)
+  /// Liste − ödenen (KDV dahil), sipariş anı
+  discountMinor   Int                @default(0)
   totalMinor      Int                @default(0)
   carrierName     String?            @db.VarChar(191)
   trackingNumber  String?            @db.VarChar(100)
@@ -240,6 +242,8 @@ model OrderItem {
   quantity        Int
   packedQuantity  Int             @default(0)
   unitPriceMinor  Int
+  /// Sipariş anındaki liste fiyatı (KDV dahil); ödenenden yüksekse indirim vardır
+  compareAtMinor  Int?
   taxRatePercent  Int             @default(20)
   totalMinor      Int
   image           String?         @db.VarChar(500)
@@ -2529,6 +2533,22 @@ model CampaignProduct {
   @@index([productId])
   @@index([restoredAt])
   @@map("campaign_products")
+}
+
+/// Canlı sepet satırları — kampanya “sepette bekliyor” istatistiği için
+model StorefrontCartLine {
+  id             String   @id @default(cuid())
+  sessionKey     String   @db.VarChar(64)
+  productId      String
+  variantId      String
+  quantity       Int
+  unitPriceMinor Int      @default(0)
+  updatedAt      DateTime @updatedAt
+
+  @@unique([sessionKey, variantId])
+  @@index([productId])
+  @@index([updatedAt])
+  @@map("storefront_cart_lines")
 }
 
 model SiteModule {

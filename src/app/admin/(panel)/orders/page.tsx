@@ -5,6 +5,7 @@ import { BarChart3, Plus, ShoppingBag, ShoppingCart, UserRound, Wallet, type Luc
 import { Can } from "@/components/admin/admin-permissions";
 import { prisma } from "@/lib/prisma";
 import { splitFullName } from "@/lib/customers";
+import { orderLineDiscount, readStoredCompareAt } from "@/lib/order-discount";
 import { parseOrderPaymentMethod, parseOrderStatus } from "@/lib/orders";
 import { OrdersSubnav } from "./orders-subnav";
 import { OrdersTable } from "./orders-table";
@@ -83,12 +84,22 @@ export default async function OrdersPage() {
           [billing.postalCode, billing.country].filter(Boolean).join(" "),
         ].filter((line): line is string => Boolean(line));
       })(),
-      items: order.items.map((item) => ({
-        title: item.variantTitle ? `${item.title} ${item.variantTitle}` : item.title,
-        sku: item.sku,
-        quantity: item.quantity,
-        totalMinor: item.totalMinor,
-      })),
+      items: order.items.map((item) => {
+        const discount = orderLineDiscount({
+          unitPriceMinor: item.unitPriceMinor,
+          quantity: item.quantity,
+          totalMinor: item.totalMinor,
+          compareAtMinor: readStoredCompareAt(item),
+        });
+        return {
+          title: item.variantTitle ? `${item.title} ${item.variantTitle}` : item.title,
+          sku: item.sku,
+          quantity: item.quantity,
+          totalMinor: item.totalMinor,
+          discountMinor: discount.savingsMinor,
+          discountPercent: discount.percent,
+        };
+      }),
     };
   });
 

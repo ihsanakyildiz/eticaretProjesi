@@ -3,6 +3,13 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { OrderAddressKind } from "@prisma/client";
 import { ShoppingBag } from "lucide-react";
+import { ensureOrderDiscountSchema } from "@/lib/ensure-order-discount-schema";
+import {
+  readStoredCompareAt,
+  readStoredDiscountMinor,
+  saleListInclMinor,
+  snapshotCompareAtMinor,
+} from "@/lib/order-discount";
 import { prisma } from "@/lib/prisma";
 import { splitFullName } from "@/lib/customers";
 import {
@@ -28,6 +35,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
 export default async function OrderDetailPage({ params }: Props) {
   const { id } = await params;
+  await ensureOrderDiscountSchema().catch(() => undefined);
   const order = await prisma.order.findUnique({
     where: { id },
     include: {
@@ -84,7 +92,22 @@ export default async function OrderDetailPage({ params }: Props) {
       ? Promise.resolve([])
       : prisma.productVariant.findMany({
           where: { id: { in: variantIds } },
-          select: { id: true, stockQuantity: true },
+          select: {
+            id: true,
+            stockQuantity: true,
+            priceMinor: true,
+            compareAtMinor: true,
+            saleStartsAt: true,
+            saleEndsAt: true,
+            product: {
+              select: {
+                compareAtMinor: true,
+                saleStartsAt: true,
+                saleEndsAt: true,
+                taxRatePercent: true,
+              },
+            },
+          },
         }),
     prisma.product.findMany({
       where: { isActive: true, variants: { some: { isActive: true } } },
@@ -112,6 +135,18 @@ export default async function OrderDetailPage({ params }: Props) {
   ]);
 
   const stockByVariant = new Map(liveVariants.map((variant) => [variant.id, variant.stockQuantity]));
+  const liveListByVariant = new Map(
+    liveVariants.map((variant) => [
+      variant.id,
+      saleListInclMinor({
+        priceExclMinor: variant.priceMinor,
+        compareAtExclMinor: variant.compareAtMinor ?? variant.product.compareAtMinor,
+        saleStartsAt: variant.saleStartsAt ?? variant.product.saleStartsAt,
+        saleEndsAt: variant.saleEndsAt ?? variant.product.saleEndsAt,
+        taxRatePercent: variant.product.taxRatePercent,
+      }),
+    ]),
+  );
   const computedWeightKg = order.items.reduce((sum, item) => {
     const unit = item.product?.weightKg != null ? Number(item.product.weightKg) : 0;
     return sum + unit * item.quantity;
@@ -151,6 +186,7 @@ export default async function OrderDetailPage({ params }: Props) {
           productsMinor: order.productsMinor,
           shippingMinor: order.shippingMinor,
           taxMinor: order.taxMinor,
+          discountMinor: readStoredDiscountMinor(order),
           totalMinor: order.totalMinor,
           carrierName: order.carrierName ?? "",
           trackingNumber: order.trackingNumber ?? "",
@@ -211,6 +247,11 @@ export default async function OrderDetailPage({ params }: Props) {
             sku: item.sku,
             quantity: item.quantity,
             unitPriceMinor: item.unitPriceMinor,
+            compareAtMinor: snapshotCompareAtMinor(
+              readStoredCompareAt(item) ??
+                (item.variantId ? liveListByVariant.get(item.variantId) : null),
+              item.unitPriceMinor,
+            ),
             taxRatePercent: item.taxRatePercent,
             totalMinor: item.totalMinor,
             image: item.image,

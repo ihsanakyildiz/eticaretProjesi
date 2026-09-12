@@ -11,7 +11,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { resolveCartAction } from "@/app/(site)/sepet/actions";
+import { resolveCartAction, syncEmptyCartAction } from "@/app/(site)/sepet/actions";
 import {
   addCartLine,
   CART_STORAGE_KEY,
@@ -108,6 +108,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
     if (lines.length === 0) {
       skipHydrateRef.current = false;
       setHydrated(emptyHydrated);
+      void syncEmptyCartAction().catch(() => undefined);
       return;
     }
     if (skipHydrateRef.current) {

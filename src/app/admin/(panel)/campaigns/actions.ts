@@ -13,6 +13,7 @@ import {
   searchCampaignProducts,
   updateAndReapplyCampaign,
 } from "@/lib/campaigns";
+import { loadCampaignStatsDetail } from "@/lib/campaign-stats";
 import { requirePermission } from "@/lib/staff-permissions";
 
 function revalidateCampaigns(id?: string) {
@@ -120,6 +121,16 @@ export async function updateCampaignAction(formData: FormData) {
     removed: result.removed,
     added: result.added,
   };
+}
+
+export async function loadCampaignStatsAction(campaignId: string) {
+  const gate = await requirePermission("campaigns", "view");
+  if (!gate.ok) return { error: gate.error };
+  const id = String(campaignId ?? "").trim();
+  if (!id) return { error: "Kampanya bulunamadı." };
+  const stats = await loadCampaignStatsDetail(id);
+  if (!stats) return { error: "Kampanya bulunamadı." };
+  return { stats };
 }
 
 export async function endCampaignAction(campaignId: string) {

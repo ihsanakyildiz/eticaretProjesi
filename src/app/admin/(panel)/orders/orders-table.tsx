@@ -35,7 +35,14 @@ export type OrderRow = {
   trackingNumber: string | null;
   shippingLines: string[];
   billingLines: string[];
-  items: { title: string; sku: string | null; quantity: number; totalMinor: number }[];
+  items: {
+    title: string;
+    sku: string | null;
+    quantity: number;
+    totalMinor: number;
+    discountMinor?: number;
+    discountPercent?: number;
+  }[];
 };
 
 const filterInputClass =
@@ -451,7 +458,17 @@ export function OrdersTable({ orders }: { orders: OrderRow[] }) {
                                     ) : null}
                                     <span className="text-xs text-slate-400">Adet: {item.quantity}</span>
                                   </span>
-                                  <span className="shrink-0 font-medium">{formatMinorTry(item.totalMinor)}</span>
+                                  <span className="shrink-0 text-right">
+                                    <span className="block font-medium">{formatMinorTry(item.totalMinor)}</span>
+                                    {item.discountMinor && item.discountMinor > 0 ? (
+                                      <span className="block text-[11px] font-medium text-emerald-600">
+                                        −{formatMinorTry(item.discountMinor)}
+                                        {item.discountPercent
+                                          ? ` (%${item.discountPercent})`
+                                          : ""}
+                                      </span>
+                                    ) : null}
+                                  </span>
                                 </li>
                               ))}
                             </ul>

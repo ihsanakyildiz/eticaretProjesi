@@ -4,8 +4,10 @@ import { notFound } from "next/navigation";
 import { ArrowLeft, Megaphone } from "lucide-react";
 import { Can } from "@/components/admin/admin-permissions";
 import { campaignPhaseLabel } from "@/lib/campaign-kinds";
+import { loadCampaignStatsSummaries } from "@/lib/campaign-stats";
 import { loadAdminCampaignDetail } from "@/lib/campaigns";
 import { CampaignEndButton } from "../campaign-end-button";
+import { CampaignStatsButton } from "../campaign-stats-modal";
 
 export const dynamic = "force-dynamic";
 
@@ -34,6 +36,8 @@ export default async function CampaignDetailPage({
   const campaign = await loadAdminCampaignDetail(id);
   if (!campaign) notFound();
   const canEnd = campaign.phase === "active" || campaign.phase === "scheduled";
+  const stats = await loadCampaignStatsSummaries([campaign.id]);
+  const summary = stats.get(campaign.id);
 
   return (
     <div className="space-y-6">
@@ -56,6 +60,12 @@ export default async function CampaignDetailPage({
             </p>
           </div>
           <div className="flex flex-wrap items-start gap-2">
+            <CampaignStatsButton
+              campaignId={campaign.id}
+              name={campaign.name}
+              summary={summary}
+              size="md"
+            />
             {campaign.status === "ACTIVE" ? (
               <Can resource="campaigns" action="update">
                 <Link

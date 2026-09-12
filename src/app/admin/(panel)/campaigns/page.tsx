@@ -3,7 +3,9 @@ import Link from "next/link";
 import { Megaphone, Plus } from "lucide-react";
 import { Can } from "@/components/admin/admin-permissions";
 import { campaignPhaseLabel } from "@/lib/campaign-kinds";
+import { loadCampaignStatsSummaries } from "@/lib/campaign-stats";
 import { loadAdminCampaignPage } from "@/lib/campaigns";
+import { CampaignStatsButton } from "./campaign-stats-modal";
 
 export const dynamic = "force-dynamic";
 
@@ -47,6 +49,7 @@ export default async function CampaignsPage({
   const rawPage = Array.isArray(params.page) ? params.page[0] : params.page;
   const page = Math.max(1, Number(rawPage) || 1);
   const list = await loadAdminCampaignPage(page);
+  const stats = await loadCampaignStatsSummaries(list.campaigns.map((campaign) => campaign.id));
 
   return (
     <div className="space-y-6">
@@ -80,78 +83,88 @@ export default async function CampaignsPage({
       </div>
 
       <div className="overflow-hidden rounded-lg border border-[#e9ebec] bg-white shadow-sm">
-        <table className="min-w-full text-left text-sm">
-          <thead className="bg-slate-50 text-xs font-semibold tracking-wide text-slate-500 uppercase">
-            <tr>
-              <th className="px-4 py-3">Kampanya</th>
-              <th className="px-4 py-3">Model</th>
-              <th className="px-4 py-3">Durum</th>
-              <th className="px-4 py-3">Ürün</th>
-              <th className="px-4 py-3">Bitiş</th>
-              <th className="px-4 py-3 text-right">İşlem</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-[#e9ebec]">
-            {list.campaigns.length === 0 ? (
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-left text-sm">
+            <thead className="bg-slate-50 text-xs font-semibold tracking-wide text-slate-500 uppercase">
               <tr>
-                <td colSpan={6} className="px-4 py-10 text-center text-slate-500">
-                  Henüz kampanya yok. Yeni kampanya oluşturun.
-                </td>
+                <th className="px-4 py-3">Kampanya</th>
+                <th className="px-4 py-3">Model</th>
+                <th className="px-4 py-3">Durum</th>
+                <th className="px-4 py-3">Ürün</th>
+                <th className="px-4 py-3">Satış</th>
+                <th className="px-4 py-3">Bitiş</th>
+                <th className="px-4 py-3 text-right">İşlem</th>
               </tr>
-            ) : (
-              list.campaigns.map((campaign) => (
-                <tr key={campaign.id} className="hover:bg-slate-50/80">
-                  <td className="px-4 py-3">
-                    <Link
-                      href={`/admin/campaigns/${campaign.id}`}
-                      className="font-semibold text-[#405189] hover:underline"
-                    >
-                      {campaign.name}
-                    </Link>
-                    <p className="text-xs text-slate-500">{campaign.offerLabel}</p>
-                  </td>
-                  <td className="px-4 py-3 text-slate-600">{campaign.kindLabel}</td>
-                  <td className="px-4 py-3">
-                    <span
-                      className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${phaseClass(campaign.phase)}`}
-                    >
-                      {campaignPhaseLabel(campaign.phase)}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-slate-600">
-                    <div>{campaign.productCount.toLocaleString("tr-TR")}</div>
-                    {campaign.listedProductCount === 0 && campaign.productCount > 0 ? (
-                      <p className="text-xs text-amber-700">Vitrinde 0 ürün</p>
-                    ) : campaign.listedProductCount !== campaign.productCount ? (
-                      <p className="text-xs text-slate-400">
-                        Vitrinde {campaign.listedProductCount.toLocaleString("tr-TR")}
-                      </p>
-                    ) : null}
-                  </td>
-                  <td className="px-4 py-3 text-slate-600">{formatWhen(campaign.endsAt)}</td>
-                  <td className="px-4 py-3 text-right">
-                    <div className="flex justify-end gap-3">
-                      {campaign.status === "ACTIVE" ? (
-                        <Link
-                          href={`/admin/campaigns/${campaign.id}/edit`}
-                          className="text-sm font-medium text-[#405189] hover:underline"
-                        >
-                          Düzenle
-                        </Link>
-                      ) : null}
-                      <Link
-                        href={`/admin/campaigns/${campaign.id}`}
-                        className="text-sm font-medium text-[#405189] hover:underline"
-                      >
-                        Aç
-                      </Link>
-                    </div>
+            </thead>
+            <tbody className="divide-y divide-[#e9ebec]">
+              {list.campaigns.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-4 py-10 text-center text-slate-500">
+                    Henüz kampanya yok. Yeni kampanya oluşturun.
                   </td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+              ) : (
+                list.campaigns.map((campaign) => (
+                  <tr key={campaign.id} className="hover:bg-slate-50/80">
+                    <td className="px-4 py-3">
+                      <Link
+                        href={`/admin/campaigns/${campaign.id}`}
+                        className="font-semibold text-[#405189] hover:underline"
+                      >
+                        {campaign.name}
+                      </Link>
+                      <p className="text-xs text-slate-500">{campaign.offerLabel}</p>
+                    </td>
+                    <td className="px-4 py-3 text-slate-600">{campaign.kindLabel}</td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${phaseClass(campaign.phase)}`}
+                      >
+                        {campaignPhaseLabel(campaign.phase)}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-slate-600">
+                      <div>{campaign.productCount.toLocaleString("tr-TR")}</div>
+                      {campaign.listedProductCount === 0 && campaign.productCount > 0 ? (
+                        <p className="text-xs text-amber-700">Vitrinde 0 ürün</p>
+                      ) : campaign.listedProductCount !== campaign.productCount ? (
+                        <p className="text-xs text-slate-400">
+                          Vitrinde {campaign.listedProductCount.toLocaleString("tr-TR")}
+                        </p>
+                      ) : null}
+                    </td>
+                    <td className="px-4 py-3">
+                      <CampaignStatsButton
+                        campaignId={campaign.id}
+                        name={campaign.name}
+                        summary={stats.get(campaign.id)}
+                      />
+                    </td>
+                    <td className="px-4 py-3 text-slate-600">{formatWhen(campaign.endsAt)}</td>
+                    <td className="px-4 py-3 text-right">
+                      <div className="flex justify-end gap-3">
+                        {campaign.status === "ACTIVE" ? (
+                          <Link
+                            href={`/admin/campaigns/${campaign.id}/edit`}
+                            className="text-sm font-medium text-[#405189] hover:underline"
+                          >
+                            Düzenle
+                          </Link>
+                        ) : null}
+                        <Link
+                          href={`/admin/campaigns/${campaign.id}`}
+                          className="text-sm font-medium text-[#405189] hover:underline"
+                        >
+                          Aç
+                        </Link>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );

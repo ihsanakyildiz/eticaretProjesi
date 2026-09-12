@@ -20,6 +20,8 @@ import {
   parseCheckoutPaymentChoice,
 } from "@/lib/checkout-payment-choice";
 import { isIyzicoConfigured, isPaytrConfigured } from "@/lib/checkout-payments";
+import { ensureOrderDiscountSchema } from "@/lib/ensure-order-discount-schema";
+import { orderDiscountSummary, snapshotCompareAtMinor } from "@/lib/order-discount";
 import { nextOrderNo, snapshotAddress, uniqueOrderReference } from "@/lib/order-server";
 import { reserveOrderStock, StockShortageError } from "@/lib/order-stock";
 import { prisma } from "@/lib/prisma";
@@ -140,6 +142,7 @@ export async function placeOrderAction(
   if (!user) return { error: "Hesap bulunamadı." };
 
   try {
+    await ensureOrderDiscountSchema().catch(() => undefined);
     const created = await prisma.$transaction(async (tx) => {
       const items = sellable.map((line) => ({
         productId: line.productId,
@@ -149,12 +152,14 @@ export async function placeOrderAction(
         sku: line.sku,
         quantity: line.quantity,
         unitPriceMinor: line.unitPriceMinor,
+        compareAtMinor: snapshotCompareAtMinor(line.compareAtMinor, line.unitPriceMinor),
         taxRatePercent: line.taxRatePercent,
         totalMinor: line.totalMinor,
         image: line.image,
       }));
       const productsTotal = cart.productsMinor;
       const taxTotal = cart.taxMinor;
+      const { discountMinor } = orderDiscountSummary(items);
 
       const order = await tx.order.create({
         data: {
@@ -172,6 +177,7 @@ export async function placeOrderAction(
           productsMinor: productsTotal,
           shippingMinor,
           taxMinor: taxTotal,
+          discountMinor,
           totalMinor: productsTotal + shippingMinor,
           carrierName: carrier.name,
           items: { create: items },

@@ -16,6 +16,7 @@ import {
   orderPaymentProviderLabel,
   type OrderPaymentProvider,
 } from "@/lib/checkout-payment-choice";
+import { orderDiscountSummary } from "@/lib/order-discount";
 import { formatMinorTry } from "@/lib/product-money";
 import type { OrderCaseView } from "@/lib/order-cases";
 import {
@@ -47,6 +48,7 @@ export type OrderDetailModel = {
   productsMinor: number;
   shippingMinor: number;
   taxMinor: number;
+  discountMinor?: number;
   totalMinor: number;
   carrierName: string;
   trackingNumber: string;
@@ -95,6 +97,7 @@ export function OrderDetail({ order }: { order: OrderDetailModel }) {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const discount = orderDiscountSummary(order.items);
 
   const run = (task: () => Promise<{ error?: string; message?: string }>) => {
     startTransition(async () => {
@@ -192,6 +195,12 @@ export function OrderDetail({ order }: { order: OrderDetailModel }) {
               <Row label="Kimlik" value={String(order.orderNo)} />
               <Row label="Referans" value={order.reference} />
               <Row label="Toplam" value={formatMinorTry(order.totalMinor)} />
+              {discount.discountMinor > 0 ? (
+                <Row
+                  label="İndirim"
+                  value={`−${formatMinorTry(discount.discountMinor)} (%${discount.percent})`}
+                />
+              ) : null}
               <Row label="Oluşturulma" value={formatOrderDateTime(order.createdAt)} />
               <Row
                 label="Ödeme"

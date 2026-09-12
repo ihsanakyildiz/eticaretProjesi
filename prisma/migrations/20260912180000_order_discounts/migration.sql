@@ -1,0 +1,2 @@
+ALTER TABLE `orders` ADD COLUMN `discountMinor` INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE `order_items` ADD COLUMN `compareAtMinor` INTEGER NULL;
