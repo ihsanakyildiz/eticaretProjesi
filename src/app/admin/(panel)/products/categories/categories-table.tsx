@@ -9,12 +9,17 @@ import {
   ChevronRight,
   FolderPlus,
   Loader2,
+  Package,
   Pencil,
   Power,
   Trash2,
   X,
 } from "lucide-react";
 import { Can } from "@/components/admin/admin-permissions";
+import {
+  adminProductCatalogHref,
+  emptyAdminProductListQuery,
+} from "@/lib/admin-product-list";
 import {
   buildCategoryTree,
   flattenCategoryTree,
@@ -36,7 +41,15 @@ export type ProductCategoryRow = {
   isActive: boolean;
   sortOrder: number;
   _count: { children: number };
+  productCount: { total: number; active: number; inactive: number };
 };
+
+function categoryProductsHref(categoryId: string) {
+  return adminProductCatalogHref({
+    ...emptyAdminProductListQuery(),
+    categoryId,
+  });
+}
 
 type TreeRow = CategoryTreeNode<ProductCategoryRow>;
 
@@ -115,6 +128,24 @@ function CategoryTreeRows({
                     </p>
                   ) : null}
                 </div>
+
+                <Link
+                  href={categoryProductsHref(category.id)}
+                  title={`${category.productCount.total} ürün · Aktif ${category.productCount.active} · Pasif ${category.productCount.inactive}`}
+                  className="group/count inline-flex shrink-0 items-center gap-1.5 rounded-md border border-[#405189]/20 bg-[#405189]/5 px-2 py-1 text-[11px] font-semibold text-[#405189] transition hover:border-[#405189]/40 hover:bg-[#405189]/10"
+                >
+                  <Package className="h-3.5 w-3.5" />
+                  <span>{category.productCount.total}</span>
+                  <span className="hidden whitespace-nowrap font-medium text-slate-500 group-hover/count:inline">
+                    <span className="text-emerald-600">
+                      {category.productCount.active} aktif
+                    </span>
+                    <span className="mx-1 text-slate-300">·</span>
+                    <span className="text-rose-600">
+                      {category.productCount.inactive} pasif
+                    </span>
+                  </span>
+                </Link>
               </div>
 
               <div>
@@ -213,7 +244,12 @@ export function ProductCategoriesTable({
   const router = useRouter();
   const tree = useMemo(() => buildCategoryTree(categories), [categories]);
   const flatCount = useMemo(() => flattenCategoryTree(tree).length, [tree]);
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [collapsed, setCollapsed] = useState<Set<string>>(
+    () =>
+      new Set(
+        categories.filter((category) => category._count.children > 0).map((category) => category.id),
+      ),
+  );
   const [deleteTarget, setDeleteTarget] = useState<ProductCategoryRow | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();

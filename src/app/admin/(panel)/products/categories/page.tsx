@@ -11,20 +11,53 @@ export const metadata: Metadata = {
 };
 
 export default async function ProductCategoriesPage() {
-  const categories = await prisma.productCategory.findMany({
-    orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
-    select: {
-      id: true,
-      parentId: true,
-      name: true,
-      slug: true,
-      description: true,
-      image: true,
-      isActive: true,
-      sortOrder: true,
-      _count: { select: { children: true } },
+  const [categories, productCounts] = await Promise.all([
+    prisma.productCategory.findMany({
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+      select: {
+        id: true,
+        parentId: true,
+        name: true,
+        slug: true,
+        description: true,
+        image: true,
+        isActive: true,
+        sortOrder: true,
+        _count: { select: { children: true } },
+      },
+    }),
+    prisma.product.groupBy({
+      by: ["categoryId", "isActive"],
+      where: { categoryId: { not: null } },
+      _count: { _all: true },
+    }),
+  ]);
+
+  const countsByCategory = new Map<
+    string,
+    { total: number; active: number; inactive: number }
+  >();
+  for (const row of productCounts) {
+    if (!row.categoryId) continue;
+    const current = countsByCategory.get(row.categoryId) ?? {
+      total: 0,
+      active: 0,
+      inactive: 0,
+    };
+    current.total += row._count._all;
+    if (row.isActive) current.active += row._count._all;
+    else current.inactive += row._count._all;
+    countsByCategory.set(row.categoryId, current);
+  }
+
+  const rows = categories.map((category) => ({
+    ...category,
+    productCount: countsByCategory.get(category.id) ?? {
+      total: 0,
+      active: 0,
+      inactive: 0,
     },
-  });
+  }));
 
   return (
     <div className="space-y-6">
@@ -55,7 +88,7 @@ export default async function ProductCategoriesPage() {
         </div>
       </div>
 
-      <ProductCategoriesTable categories={categories} />
+      <ProductCategoriesTable categories={rows} />
     </div>
   );
 }
