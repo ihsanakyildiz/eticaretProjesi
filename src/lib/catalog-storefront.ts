@@ -56,9 +56,17 @@ export type CatalogCategoryCard = {
   productCount: number;
 };
 
-export type CatalogSort = "yeni" | "fiyat-artan" | "fiyat-azalan" | "cok-satan";
+export type CatalogSort =
+  | "onerilen"
+  | "yeni"
+  | "fiyat-artan"
+  | "fiyat-azalan"
+  | "cok-satan";
+
+export const CATALOG_DEFAULT_SORT: CatalogSort = "onerilen";
 
 export const CATALOG_SORTS: { value: CatalogSort; label: string }[] = [
+  { value: "onerilen", label: "Önerilen" },
   { value: "yeni", label: "En yeni" },
   { value: "cok-satan", label: "Çok satan" },
   { value: "fiyat-artan", label: "Fiyat (artan)" },
@@ -234,12 +242,13 @@ export function catalogCardHoverImage(product: CatalogProductCard): string | nul
 
 export function parseCatalogSort(raw: string | undefined): CatalogSort {
   switch (raw) {
+    case "onerilen":
     case "yeni":
     case "fiyat-artan":
     case "fiyat-azalan":
     case "cok-satan":
       return raw;
     default:
-      return "yeni";
+      return CATALOG_DEFAULT_SORT;
   }
 }

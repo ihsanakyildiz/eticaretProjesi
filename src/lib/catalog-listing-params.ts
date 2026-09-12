@@ -1,4 +1,5 @@
 import {
+  CATALOG_DEFAULT_SORT,
   parseCatalogSort,
   type CatalogListingFilters,
   type CatalogSort,
@@ -81,7 +82,7 @@ export function catalogFiltersHref(
 
 export function catalogListingHref(basePath: string, next: CatalogListingHrefInput) {
   const params = new URLSearchParams();
-  if (next.sort && next.sort !== "yeni") params.set("sira", next.sort);
+  if (next.sort && next.sort !== CATALOG_DEFAULT_SORT) params.set("sira", next.sort);
   if (next.brandSlugs && next.brandSlugs.length > 0) {
     params.set("marka", next.brandSlugs.join(","));
   }

@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { CatalogBreadcrumb } from "@/components/site/catalog/catalog-breadcrumb";
 import { CatalogFacetSidebar } from "@/components/site/catalog/catalog-facet-sidebar";
 import { CatalogToolbar } from "@/components/site/catalog/catalog-toolbar";
-import { ProductCard } from "@/components/site/catalog/product-card";
+import { CatalogPersonalizedResults } from "@/components/site/catalog/catalog-personalized-results";
 import { JsonLd } from "@/components/site/json-ld";
 import { SiteSidebarLayout } from "@/components/site/site-sidebar-layout";
 import { SitePagination } from "@/components/site/site-pagination";
@@ -144,28 +144,27 @@ export async function CatalogBrandScreen({
           {listing.products.length === 0 ? (
             <p className="py-10 text-sm text-site-muted">Bu markada yayınlanmış ürün yok.</p>
           ) : (
-            <>
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
-                {listing.products.map((product, index) => (
-                  <ProductCard key={product.id} product={product} imagePriority={index < 4} />
-                ))}
-              </div>
-              <SitePagination
-                currentPage={page}
-                totalPages={totalPages}
-                hrefForPage={(next) =>
-                  catalogListingHref(path, {
-                    page: next,
-                    sort: filters.sort,
-                    filterValueIds: filters.filterValueIds,
-                    campaignIds: filters.campaignIds,
-                    minMajor: filters.minMajor,
-                    maxMajor: filters.maxMajor,
-                    query: filters.query,
-                  })
-                }
-              />
-            </>
+            <CatalogPersonalizedResults
+              products={listing.products}
+              merchandisedIds={listing.merchandisedIds}
+              pagination={
+                <SitePagination
+                  currentPage={page}
+                  totalPages={totalPages}
+                  hrefForPage={(next) =>
+                    catalogListingHref(path, {
+                      page: next,
+                      sort: filters.sort,
+                      filterValueIds: filters.filterValueIds,
+                      campaignIds: filters.campaignIds,
+                      minMajor: filters.minMajor,
+                      maxMajor: filters.maxMajor,
+                      query: filters.query,
+                    })
+                  }
+                />
+              }
+            />
           )}
           {description ? (
             <div

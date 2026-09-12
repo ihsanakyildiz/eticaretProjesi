@@ -13,7 +13,7 @@ import { catalogActiveFilterChips } from "@/lib/catalog-active-filters";
 import type { CatalogCampaignFacet } from "@/lib/campaign-kinds";
 import type { CatalogFacetBrand, CatalogFacetGroup } from "@/lib/catalog-facets";
 import { catalogFiltersHref } from "@/lib/catalog-listing-params";
-import type { CatalogListingFilters } from "@/lib/catalog-storefront";
+import { CATALOG_DEFAULT_SORT, type CatalogListingFilters } from "@/lib/catalog-storefront";
 
 export function CatalogFacetSidebar({
   basePath,
@@ -175,7 +175,7 @@ export function CatalogFacetSidebar({
 
         <FilterAccordion title="Fiyat" pinned>
           <form action={basePath} method="get" className="space-y-1.5">
-            {filters.sort !== "yeni" ? (
+            {filters.sort !== CATALOG_DEFAULT_SORT ? (
               <input type="hidden" name="sira" value={filters.sort} />
             ) : null}
             {filters.brandSlugs.length > 0 ? (

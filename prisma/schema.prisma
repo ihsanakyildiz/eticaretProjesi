@@ -1261,6 +1261,7 @@ model ProductCategory {
   createdAt      DateTime          @default(now())
   updatedAt      DateTime          @updatedAt
   products       Product[]
+  placements     ProductPlacement[]
   filterLinks    ProductFilterCategory[]
   pageSections   PageSection[]
   listedInSections PageSectionProductCategory[]
@@ -1270,6 +1271,52 @@ model ProductCategory {
   @@index([parentId])
   @@index([isActive, sortOrder])
   @@map("product_categories")
+}
+
+/// Mağaza arama önerileri — admin skoru ile sıralanır
+model SearchTerm {
+  id          String   @id @default(cuid())
+  /// Karşılaştırma için normalize (tr-TR küçük harf)
+  term        String   @unique @db.VarChar(160)
+  /// Vitrine yazılan hali
+  displayTerm String   @db.VarChar(160)
+  /// Admin puanı; yüksek olan önerilerde üstte çıkar
+  score       Int      @default(0)
+  /// Müşteri arama sayısı (otomatik artar)
+  searchCount Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([isActive, score, searchCount])
+  @@map("search_terms")
+}
+
+enum ProductPlacementKind {
+  CATEGORY
+  SEARCH
+}
+
+/// Kategori veya arama vitrininde ürünü üste taşıyan admin puanı
+model ProductPlacement {
+  id         String                @id @default(cuid())
+  productId  String
+  product    Product               @relation(fields: [productId], references: [id], onDelete: Cascade)
+  kind       ProductPlacementKind
+  /// unique kapsam: "category:<id>" | "search:<term>"
+  scopeKey   String                @db.VarChar(200)
+  categoryId String?
+  category   ProductCategory?      @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  searchTerm String                @default("") @db.VarChar(160)
+  boost      Int                   @default(0)
+  isActive   Boolean               @default(true)
+  createdAt  DateTime              @default(now())
+  updatedAt  DateTime              @updatedAt
+
+  @@unique([productId, scopeKey])
+  @@index([kind, categoryId, isActive])
+  @@index([kind, searchTerm, isActive])
+  @@map("product_placements")
 }
 
 /// Tedarikçi firma — ürünler bu kayda bağlanır
@@ -1594,6 +1641,10 @@ model Product {
   quantityStep        Int                        @default(1)
   isActive            Boolean                    @default(true)
   sortOrder           Int                        @default(0)
+  /// Admin genel vitrin puanı (tüm listelerde çarpan)
+  boostScore          Int                        @default(0)
+  /// Önceden hesaplanan sıralama: boost + log(tıklama/görüntüleme)
+  rankScore           Int                        @default(0)
   viewCount           Int                        @default(0)
   clickCount          Int                        @default(0)
   seoTitle            String?                    @db.VarChar(191)
@@ -1610,6 +1661,7 @@ model Product {
   reviews             ProductReview[]
   sectionLinks        PageSectionProduct[]
   campaignItems       CampaignProduct[]
+  placements          ProductPlacement[]
 
   @@index([categoryId])
   @@index([supplierId])
@@ -1617,6 +1669,8 @@ model Product {
   @@index([externalId])
   @@index([supplierId, externalId])
   @@index([isActive, sortOrder])
+  @@index([isActive, rankScore])
+  @@index([rankScore])
   @@index([viewCount])
   @@index([clickCount])
   @@index([saleEndsAt])

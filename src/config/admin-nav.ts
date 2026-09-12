@@ -30,6 +30,7 @@ import {
   Boxes,
   PenLine,
   Rss,
+  Search,
   Settings,
   ShoppingBag,
   ScanBarcode,
@@ -37,6 +38,7 @@ import {
   Sparkles,
   SwatchBook,
   Tags,
+  TrendingUp,
   HeartPulse,
   Palette,
   Percent,
@@ -237,6 +239,16 @@ export const adminNavSections: AdminNavSection[] = [
             label: "Performans",
             href: "/admin/settings/performance",
             icon: Gauge,
+          },
+          {
+            label: "Arama motoru",
+            href: "/admin/settings/search",
+            icon: Search,
+          },
+          {
+            label: "Ürün sıralaması",
+            href: "/admin/settings/ranking",
+            icon: TrendingUp,
           },
           {
             label: "Tema Tasarımı",

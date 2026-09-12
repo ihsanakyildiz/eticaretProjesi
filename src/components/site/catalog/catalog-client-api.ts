@@ -18,16 +18,31 @@ export function trackProductEvent(productId: string, kind: ProductEventKind) {
   }
 }
 
+async function readProductList(res: Response): Promise<CatalogProductCard[]> {
+  if (!res.ok) return [];
+  const data: unknown = await res.json();
+  if (!data || typeof data !== "object" || !("products" in data)) return [];
+  const products = (data as { products: unknown }).products;
+  return Array.isArray(products) ? (products as CatalogProductCard[]) : [];
+}
+
 export async function fetchRecentlyViewedProducts(ids: string[]): Promise<CatalogProductCard[]> {
   const res = await fetch("/api/catalog/recently-viewed", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ ids }),
   });
-  if (!res.ok) return [];
+  return readProductList(res);
+}
 
-  const data: unknown = await res.json();
-  if (!data || typeof data !== "object" || !("products" in data)) return [];
-  const products = (data as { products: unknown }).products;
-  return Array.isArray(products) ? (products as CatalogProductCard[]) : [];
+export async function fetchAffinityProducts(
+  ids: string[],
+  excludeIds: string[] = [],
+): Promise<CatalogProductCard[]> {
+  const res = await fetch("/api/catalog/affinity", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ids, excludeIds }),
+  });
+  return readProductList(res);
 }

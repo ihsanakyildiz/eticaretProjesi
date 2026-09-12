@@ -14,6 +14,8 @@ import { prisma } from "@/lib/prisma";
 import { parsePerformance, productDataCacheSeconds } from "@/lib/performance";
 import { getSettingsMap } from "@/lib/settings";
 import { resolveCatalogListingConstraint } from "@/lib/catalog-listing-constraint";
+import { ensureRankingSchema } from "@/lib/ensure-ranking-schema";
+import { searchPlacementKeys } from "@/lib/product-ranking";
 import { storefrontListingWhere, storefrontPublicProductWhere } from "@/lib/storefront-product-where";
 import type {
   CatalogCategoryCard,
@@ -24,6 +26,7 @@ import type {
 
 export type { CatalogCategoryCard, CatalogListingFilters, CatalogProductCard, CatalogSaleUnit, CatalogSort } from "@/lib/catalog-storefront";
 export {
+  CATALOG_DEFAULT_SORT,
   CATALOG_SORTS,
   catalogBrandHref,
   catalogCardAvailability,
@@ -421,7 +424,11 @@ export async function getCachedCatalogProduct(slug: string) {
       });
       if (!product) return null;
 
-      const related = await toCatalogCards(product.relatedFrom.map((row) => row.related));
+      const related = await fillRelatedCatalogCards(
+        product,
+        await toCatalogCards(product.relatedFrom.map((row) => row.related)),
+        relatedLimit,
+      );
       const [withCampaign] = await attachCatalogCampaigns([{ id: product.id }]);
       return {
         ...product,
@@ -429,7 +436,7 @@ export async function getCachedCatalogProduct(slug: string) {
         related,
       };
     },
-    ["catalog-product-v11", slug, String(relatedLimit), String(galleryLimit)],
+    ["catalog-product-v12", slug, String(relatedLimit), String(galleryLimit)],
     { tags: [CATALOG_CACHE_TAG, "site"], revalidate },
   )();
 }
@@ -693,6 +700,8 @@ export async function getProductCategoriesBySource(query: {
 
 function listingOrderBy(sort: CatalogSort): Prisma.ProductOrderByWithRelationInput[] {
   switch (sort) {
+    case "onerilen":
+      return [{ rankScore: "desc" }, { clickCount: "desc" }, { createdAt: "desc" }];
     case "yeni":
       return [{ createdAt: "desc" }, { sortOrder: "asc" }];
     case "fiyat-artan":
@@ -708,13 +717,177 @@ function listingOrderBy(sort: CatalogSort): Prisma.ProductOrderByWithRelationInp
   }
 }
 
+async function fillRelatedCatalogCards(
+  product: { id: string; categoryId: string | null; brandId: string | null },
+  related: CatalogProductCard[],
+  limit: number,
+): Promise<CatalogProductCard[]> {
+  if (related.length >= limit) return related;
+  await ensureRankingSchema().catch(() => undefined);
+  const exclude = [product.id, ...related.map((item) => item.id)];
+  const affinity: Prisma.ProductWhereInput[] = [];
+  if (product.categoryId) affinity.push({ categoryId: product.categoryId });
+  if (product.brandId) affinity.push({ brandId: product.brandId });
+  const rows = await prisma.product.findMany({
+    where: listingWhere({
+      id: { notIn: exclude },
+      ...(affinity.length > 0 ? { OR: affinity } : {}),
+    }),
+    orderBy: listingOrderBy("onerilen"),
+    take: limit - related.length,
+    select: productCardSelect,
+  });
+  return [...related, ...(await toCatalogCards(rows))];
+}
+
+async function loadPlacementBoosts(filters: CatalogListingFilters) {
+  await ensureRankingSchema().catch(() => undefined);
+  const categoryIds = filters.categoryIds ?? [];
+  const terms = searchPlacementKeys(filters.query ?? "");
+  const clauses: Prisma.ProductPlacementWhereInput[] = [];
+  if (categoryIds.length > 0) {
+    clauses.push({
+      kind: "CATEGORY",
+      isActive: true,
+      boost: { gt: 0 },
+      categoryId: { in: categoryIds },
+    });
+  }
+  if (terms.length > 0) {
+    clauses.push({
+      kind: "SEARCH",
+      isActive: true,
+      boost: { gt: 0 },
+      searchTerm: { in: terms },
+    });
+  }
+  if (clauses.length === 0) return new Map<string, number>();
+  try {
+    const rows = await prisma.productPlacement.findMany({
+      where: { OR: clauses },
+      select: { productId: true, boost: true },
+      take: 200,
+    });
+    const map = new Map<string, number>();
+    for (const row of rows) {
+      map.set(row.productId, Math.max(map.get(row.productId) ?? 0, row.boost));
+    }
+    return map;
+  } catch {
+    return new Map<string, number>();
+  }
+}
+
+async function recommendedCatalogListing(
+  extra: Prisma.ProductWhereInput,
+  filters: CatalogListingFilters,
+  page: number,
+): Promise<{ products: CatalogProductCard[]; total: number; merchandisedIds: string[] }> {
+  const where = listingWhere(extra);
+  const skip = (Math.max(1, page) - 1) * CATALOG_GRID_PAGE_SIZE;
+  const boosts = await loadPlacementBoosts(filters);
+  const boostedIds = [...boosts.entries()]
+    .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+    .map(([id]) => id);
+
+  const [total, boostedRows] = await Promise.all([
+    prisma.product.count({ where }),
+    boostedIds.length > 0
+      ? prisma.product.findMany({
+          where: listingWhere({ ...extra, id: { in: boostedIds } }),
+          select: productCardSelect,
+        })
+      : Promise.resolve([]),
+  ]);
+
+  const boostedById = new Map(boostedRows.map((row) => [row.id, row]));
+  const merchandised = boostedIds
+    .map((id) => boostedById.get(id))
+    .filter((row): row is ProductCardRow => Boolean(row));
+  const merchandisedIds = merchandised.map((row) => row.id);
+  const merchandisedSet = new Set(merchandisedIds);
+
+  if (skip < merchandised.length) {
+    const head = merchandised.slice(skip, skip + CATALOG_GRID_PAGE_SIZE);
+    const need = CATALOG_GRID_PAGE_SIZE - head.length;
+    const organic =
+      need > 0
+        ? await prisma.product.findMany({
+            where: listingWhere({
+              ...extra,
+              id: merchandisedSet.size > 0 ? { notIn: [...merchandisedSet] } : undefined,
+            }),
+            orderBy: listingOrderBy("onerilen"),
+            take: need,
+            select: productCardSelect,
+          })
+        : [];
+    return {
+      total,
+      merchandisedIds,
+      products: await toCatalogCards([...head, ...organic]),
+    };
+  }
+
+  const products = await prisma.product.findMany({
+    where: listingWhere({
+      ...extra,
+      id: merchandisedSet.size > 0 ? { notIn: [...merchandisedSet] } : undefined,
+    }),
+    orderBy: listingOrderBy("onerilen"),
+    skip: skip - merchandised.length,
+    take: CATALOG_GRID_PAGE_SIZE,
+    select: productCardSelect,
+  });
+  return {
+    total,
+    merchandisedIds,
+    products: await toCatalogCards(products),
+  };
+}
+
+export async function getAffinityCatalogProducts(
+  seedIds: string[],
+  excludeIds: string[] = [],
+  limit = 8,
+): Promise<CatalogProductCard[]> {
+  await ensureRankingSchema().catch(() => undefined);
+  const uniqueSeeds = [...new Set(seedIds)].slice(0, 12);
+  if (uniqueSeeds.length === 0) return [];
+  const seeds = await prisma.product.findMany({
+    where: { id: { in: uniqueSeeds } },
+    select: { categoryId: true, brandId: true },
+  });
+  const categoryIds = uniqueIds(seeds.map((row) => row.categoryId));
+  const brandIds = uniqueIds(seeds.map((row) => row.brandId));
+  const exclude = [...new Set([...uniqueSeeds, ...excludeIds])].slice(0, 80);
+  const affinity: Prisma.ProductWhereInput[] = [];
+  if (categoryIds.length > 0) affinity.push({ categoryId: { in: categoryIds } });
+  if (brandIds.length > 0) affinity.push({ brandId: { in: brandIds } });
+  if (affinity.length === 0) return [];
+  const rows = await prisma.product.findMany({
+    where: listingWhere({
+      id: { notIn: exclude },
+      OR: affinity,
+    }),
+    orderBy: listingOrderBy("onerilen"),
+    take: Math.max(1, Math.min(12, limit)),
+    select: productCardSelect,
+  });
+  return toCatalogCards(rows);
+}
+
 export async function getFilteredCatalogListing(
   filters: CatalogListingFilters,
   page: number,
-): Promise<{ products: CatalogProductCard[]; total: number }> {
+): Promise<{ products: CatalogProductCard[]; total: number; merchandisedIds: string[] }> {
   const extra = await resolveCatalogListingConstraint(filters);
   const where = listingWhere(extra);
   const skip = (Math.max(1, page) - 1) * CATALOG_GRID_PAGE_SIZE;
+
+  if (filters.sort === "onerilen") {
+    return recommendedCatalogListing(extra, filters, page);
+  }
 
   if (filters.sort === "cok-satan") {
     const rankedTake = skip + CATALOG_GRID_PAGE_SIZE;
@@ -732,7 +905,7 @@ export async function getFilteredCatalogListing(
     const byId = new Map(soldRows.map((row) => [row.id, row]));
     const ranked = await toCatalogCards(pageIds.map((id) => byId.get(id)));
     if (ranked.length >= CATALOG_GRID_PAGE_SIZE) {
-      return { total, products: ranked.slice(0, CATALOG_GRID_PAGE_SIZE) };
+      return { total, merchandisedIds: [], products: ranked.slice(0, CATALOG_GRID_PAGE_SIZE) };
     }
     if (total > ids.length) {
       const fallback = await prisma.product.findMany({
@@ -745,9 +918,13 @@ export async function getFilteredCatalogListing(
         take: CATALOG_GRID_PAGE_SIZE - ranked.length,
         select: productCardSelect,
       });
-      return { total, products: [...ranked, ...(await toCatalogCards(fallback))] };
+      return {
+        total,
+        merchandisedIds: [],
+        products: [...ranked, ...(await toCatalogCards(fallback))],
+      };
     }
-    return { total, products: ranked };
+    return { total, merchandisedIds: [], products: ranked };
   }
 
   const [total, products] = await Promise.all([
@@ -760,7 +937,7 @@ export async function getFilteredCatalogListing(
       select: productCardSelect,
     }),
   ]);
-  return { products: await toCatalogCards(products), total };
+  return { products: await toCatalogCards(products), total, merchandisedIds: [] };
 }
 
 export async function getCachedFilteredCatalogListing(
@@ -770,7 +947,7 @@ export async function getCachedFilteredCatalogListing(
   const revalidate = await catalogCacheRevalidateSeconds();
   return unstable_cache(
     () => getFilteredCatalogListing(filters, page),
-    ["catalog-listing-page-v7", listingCacheKey(filters, page)],
+    ["catalog-listing-page-v8", listingCacheKey(filters, page)],
     { tags: [CATALOG_CACHE_TAG, "site"], revalidate },
   )();
 }

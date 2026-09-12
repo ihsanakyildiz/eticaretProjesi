@@ -85,7 +85,9 @@ export function catalogListingConstraint(
       OR: [
         { title: { contains: listingQuery } },
         { slug: { contains: listingQuery } },
+        { sku: { contains: listingQuery } },
         { brand: { is: { name: { contains: listingQuery } } } },
+        { category: { is: { name: { contains: listingQuery } } } },
       ],
     });
   }

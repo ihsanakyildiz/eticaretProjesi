@@ -64,6 +64,8 @@ export const ADMIN_PERMISSION_RESOURCES: PermissionResource[] = [
   { id: "settings_membership", label: "Müşteri hesapları", href: "/admin/settings/membership", group: "Sistem" },
   { id: "settings_payments", label: "Ödeme", href: "/admin/settings/payments", group: "Sistem" },
   { id: "settings_performance", label: "Performans", href: "/admin/settings/performance", group: "Sistem" },
+  { id: "settings_search", label: "Arama motoru", href: "/admin/settings/search", group: "Sistem" },
+  { id: "settings_ranking", label: "Ürün sıralaması", href: "/admin/settings/ranking", group: "Sistem" },
   { id: "settings_theme", label: "Tema tasarımı", href: "/admin/settings/theme", group: "Sistem" },
   { id: "settings_system", label: "Sistem sağlığı", href: "/admin/settings/system", group: "Sistem" },
   { id: "settings_languages", label: "Diller", href: "/admin/settings/languages", group: "Sistem" },

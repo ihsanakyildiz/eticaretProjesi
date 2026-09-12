@@ -31,7 +31,8 @@ export async function getStaffPermissionMap(userId: string): Promise<StaffPermis
     where: { userId },
   });
   for (const row of rows) {
-    map[row.resource] = {
+    const resource = row.resource === "search" ? "settings_search" : row.resource;
+    map[resource] = {
       view: row.canView,
       create: row.canCreate,
       update: row.canUpdate,
