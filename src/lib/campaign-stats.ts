@@ -2,17 +2,13 @@ import "server-only";
 
 import { Prisma } from "@prisma/client";
 import { campaignOfferLabel, isCampaignKind } from "@/lib/campaign-kinds";
-import type {
-  CampaignStatsDetail,
-  CampaignStatsPoint,
-  CampaignStatsProduct,
-  CampaignStatsSummary,
-} from "@/lib/campaign-stats-types";
+import type { CampaignStatsDetail, CampaignStatsSummary } from "@/lib/campaign-stats-types";
 import { ensureOrderDiscountSchema } from "@/lib/ensure-order-discount-schema";
 import { ensureStorefrontCartSchema } from "@/lib/ensure-storefront-cart-schema";
 import { prisma } from "@/lib/prisma";
 
 export type {
+  CampaignStatsCartProduct,
   CampaignStatsDetail,
   CampaignStatsPoint,
   CampaignStatsProduct,
@@ -123,7 +119,7 @@ export async function loadCampaignStatsDetail(
   });
   if (!campaign) return null;
 
-  const [sales, pending, cart, dailyRows, topRows] = await Promise.all([
+  const [sales, pending, cart, dailyRows, topRows, cartProductRows] = await Promise.all([
     prisma.$queryRaw<
       Array<{
         revenueMinor: bigint | number | null;
@@ -142,6 +138,10 @@ export async function loadCampaignStatsDetail(
           CASE
             WHEN oi.compareAtMinor IS NOT NULL AND oi.compareAtMinor > oi.unitPriceMinor
               THEN (oi.compareAtMinor - oi.unitPriceMinor) * oi.quantity
+            WHEN c.kind IN ('PERCENT_OFF', 'CART_PERCENT') AND c.valueInt > 0 AND c.valueInt < 100
+              THEN ROUND(oi.totalMinor * c.valueInt / (100.0 - c.valueInt))
+            WHEN c.kind = 'FIXED_OFF' AND c.valueInt > 0
+              THEN LEAST(c.valueInt, oi.unitPriceMinor) * oi.quantity
             ELSE 0
           END
         ), 0) AS discountMinor
@@ -241,6 +241,42 @@ export async function loadCampaignStatsDetail(
       ORDER BY revenueMinor DESC
       LIMIT 8
     `.catch(() => []),
+    prisma.$queryRaw<
+      Array<{
+        id: string;
+        variantId: string | null;
+        title: string;
+        variantTitle: string | null;
+        isDefault: number | boolean | null;
+        image: string | null;
+        quantity: bigint | number | null;
+        sessions: bigint | number | null;
+        valueMinor: bigint | number | null;
+        lastUpdatedAt: Date | string | null;
+      }>
+    >`
+      SELECT
+        p.id,
+        cl.variantId,
+        p.title,
+        v.title AS variantTitle,
+        v.isDefault,
+        COALESCE(NULLIF(v.image, ''), p.image) AS image,
+        COALESCE(SUM(cl.quantity), 0) AS quantity,
+        COUNT(DISTINCT cl.sessionKey) AS sessions,
+        COALESCE(SUM(cl.quantity * cl.unitPriceMinor), 0) AS valueMinor,
+        MAX(cl.updatedAt) AS lastUpdatedAt
+      FROM campaign_products cp
+      INNER JOIN storefront_cart_lines cl ON cl.productId = cp.productId
+      INNER JOIN products p ON p.id = cl.productId
+      LEFT JOIN product_variants v ON v.id = cl.variantId
+      WHERE cp.campaignId = ${id}
+        AND cp.restoredAt IS NULL
+        AND cl.updatedAt >= DATE_SUB(NOW(), INTERVAL 48 HOUR)
+      GROUP BY p.id, cl.variantId, p.title, v.title, v.isDefault, v.image, p.image
+      ORDER BY quantity DESC, valueMinor DESC
+      LIMIT 50
+    `.catch(() => []),
   ]);
 
   const sale = sales[0];
@@ -255,6 +291,8 @@ export async function loadCampaignStatsDetail(
     offerLabel: isCampaignKind(campaign.kind)
       ? campaignOfferLabel(campaign.kind, campaign.valueInt)
       : campaign.name,
+    startsAt: campaign.startsAt?.toISOString() ?? campaign.createdAt.toISOString(),
+    endsAt: campaign.endsAt?.toISOString() ?? null,
     productCount: campaign._count.products,
     revenueMinor,
     unitsSold: asInt(sale?.unitsSold),
@@ -288,5 +326,26 @@ export async function loadCampaignStatsDetail(
       quantity: asInt(row.quantity),
       revenueMinor: asInt(row.revenueMinor),
     })),
+    cartProducts: cartProductRows.map((row) => {
+      const defaultVariant = row.isDefault === true || row.isDefault === 1;
+      const variantTitle = row.variantTitle?.trim() || null;
+      const lastUpdatedAt =
+        row.lastUpdatedAt instanceof Date
+          ? row.lastUpdatedAt.toISOString()
+          : row.lastUpdatedAt
+            ? new Date(row.lastUpdatedAt).toISOString()
+            : null;
+      return {
+        id: row.id,
+        variantId: row.variantId,
+        title: row.title,
+        variantTitle: defaultVariant ? null : variantTitle,
+        image: row.image,
+        quantity: asInt(row.quantity),
+        sessions: asInt(row.sessions),
+        valueMinor: asInt(row.valueMinor),
+        lastUpdatedAt,
+      };
+    }),
   };
 }

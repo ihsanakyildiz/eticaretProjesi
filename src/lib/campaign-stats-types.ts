@@ -21,10 +21,24 @@ export type CampaignStatsProduct = {
   revenueMinor: number;
 };
 
+export type CampaignStatsCartProduct = {
+  id: string;
+  variantId: string | null;
+  title: string;
+  variantTitle: string | null;
+  image: string | null;
+  quantity: number;
+  sessions: number;
+  valueMinor: number;
+  lastUpdatedAt: string | null;
+};
+
 export type CampaignStatsDetail = {
   campaignId: string;
   name: string;
   offerLabel: string;
+  startsAt: string | null;
+  endsAt: string | null;
   productCount: number;
   revenueMinor: number;
   unitsSold: number;
@@ -40,4 +54,5 @@ export type CampaignStatsDetail = {
   cartValueMinor: number;
   daily: CampaignStatsPoint[];
   topProducts: CampaignStatsProduct[];
+  cartProducts: CampaignStatsCartProduct[];
 };
