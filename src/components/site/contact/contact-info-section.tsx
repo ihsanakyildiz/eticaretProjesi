@@ -1,6 +1,7 @@
 import { Clock3, Mail, MapPin, MessageCircle, Phone } from "lucide-react";
 import type { ContactInfoBlockConfig } from "@/config/contact-info-block";
 import { getDefaultContactInfoBlockConfig } from "@/config/contact-info-block";
+import { SafeEmailLink } from "@/components/site/safe-email-link";
 import { SectionHeading } from "@/components/site/section-heading";
 import { normalizeSectionText } from "@/lib/section-display-text";
 
@@ -119,7 +120,10 @@ export function ContactInfoSection({
             <ul className={`space-y-4 ${introText ? "mt-6" : ""}`}>
               {items.map((item) => {
                 const Icon = item.icon;
-                const content = item.href ? (
+                const content =
+                  item.key === "email" ? (
+                    <SafeEmailLink email={item.value} className="text-site-fg hover:text-site-primary" />
+                  ) : item.href ? (
                   <a
                     href={item.href}
                     className="text-site-fg hover:text-site-primary"

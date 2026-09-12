@@ -1,12 +1,6 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
 @import "../styles/page-grid.css";
-@import "../../node_modules/swiper/swiper.css";
-@import "../../node_modules/swiper/modules/navigation.css";
-@import "../../node_modules/swiper/modules/pagination.css";
-@import "../../node_modules/swiper/modules/effect-fade.css";
-@import "../../node_modules/swiper/modules/effect-coverflow.css";
-@import "../../node_modules/swiper/modules/effect-cards.css";
 
 :root {
   --background: #f3f6f9;

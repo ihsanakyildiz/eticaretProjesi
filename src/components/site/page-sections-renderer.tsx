@@ -1,13 +1,12 @@
 import type { CardLayout } from "@prisma/client";
 import dynamic from "next/dynamic";
-import { HeroLcpPreload } from "@/components/site/home/hero-lcp-preload";
 import { HomeHeroSlider } from "@/components/site/home/home-hero-slider";
 import { SiteLink } from "@/components/site/site-link";
 import {
   groupGridChildren,
   PageGridRow,
 } from "@/components/site/page-grid-row";
-import { DEFAULT_HERO_SLIDE, getHeroLcpImageUrl, mapHeroSlideToProps } from "@/lib/heroes";
+import { DEFAULT_HERO_SLIDE, mapHeroSlideToProps } from "@/lib/heroes";
 import { highlightRichCodeBlocks } from "@/lib/highlight-rich-html";
 import type { ResolvedPageSection } from "@/lib/pages";
 import type { PricingBillingOptions } from "@/lib/pricing";
@@ -225,16 +224,13 @@ export function PageSectionsRenderer({
                   ];
 
             return shell(
-              <>
-                <HeroLcpPreload src={getHeroLcpImageUrl(slides)} />
-                <HomeHeroSlider
-                  slides={slides}
-                  autoplay={section.hero?.autoplay ?? true}
-                  intervalMs={section.hero?.intervalMs ?? 6000}
-                  showDots={section.hero?.showDots ?? true}
-                  showArrows={section.hero?.showArrows ?? true}
-                />
-              </>,
+              <HomeHeroSlider
+                slides={slides}
+                autoplay={section.hero?.autoplay ?? true}
+                intervalMs={section.hero?.intervalMs ?? 6000}
+                showDots={section.hero?.showDots ?? true}
+                showArrows={section.hero?.showArrows ?? true}
+              />,
             );
           }
           case "GRID_ROW": {

@@ -1,4 +1,5 @@
 import { Wrench } from "lucide-react";
+import { SafeEmailLink } from "@/components/site/safe-email-link";
 
 export function MaintenanceScreen({
   siteName,
@@ -25,7 +26,7 @@ export function MaintenanceScreen({
         <p className="mt-6 text-sm text-site-fg">
           {phone ? <a href={`tel:${phone}`} className="hover:underline">{phone}</a> : null}
           {phone && email ? " · " : null}
-          {email ? <a href={`mailto:${email}`} className="hover:underline">{email}</a> : null}
+          {email ? <SafeEmailLink email={email} className="hover:underline" /> : null}
         </p>
       ) : null}
     </div>

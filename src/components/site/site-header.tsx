@@ -14,6 +14,7 @@ import {
   X,
 } from "lucide-react";
 import { CartIcon } from "@/components/site/cart/cart-icon";
+import { SafeEmailLink } from "@/components/site/safe-email-link";
 import { SiteAccountMenu, SiteAccountMobileLinks } from "@/components/site/site-account-menu";
 import { SiteCategoryNav, SiteMobileCategoryList } from "./site-category-nav";
 import { SiteHeaderSearch } from "./site-header-search";
@@ -73,10 +74,10 @@ export function SiteHeader({
               </SiteLink>
             ))}
             {email ? (
-              <a href={`mailto:${email}`} className="inline-flex items-center gap-1.5 hover:text-site-primary">
+              <span className="inline-flex items-center gap-1.5">
                 <Mail className="h-3.5 w-3.5" />
-                {email}
-              </a>
+                <SafeEmailLink email={email} className="hover:text-site-primary" />
+              </span>
             ) : null}
           </div>
         </div>

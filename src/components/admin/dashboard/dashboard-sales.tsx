@@ -7,8 +7,7 @@ import { formatOrderDate, orderStatusBadgeClass, orderStatusLabel } from "@/lib/
 import { formatMinorTry } from "@/lib/product-money";
 import type { DashboardRecentOrder, DashboardTopProduct } from "@/lib/dashboard";
 
-const TABS = ["orders", "sellers", "viewed", "searches"] as const;
-type TabId = (typeof TABS)[number];
+type TabId = "orders" | "sellers" | "viewed" | "searches";
 
 export function DashboardSales({
   orders,

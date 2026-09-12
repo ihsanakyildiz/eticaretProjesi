@@ -21,6 +21,7 @@ const geistSans = Geist({
   subsets: ["latin"],
   display: "swap",
   preload: false,
+  adjustFontFallback: true,
 });
 
 const geistMono = Geist_Mono({
@@ -28,6 +29,7 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
   display: "swap",
   preload: false,
+  adjustFontFallback: true,
 });
 
 const inter = Inter({
@@ -35,6 +37,7 @@ const inter = Inter({
   subsets: ["latin", "latin-ext"],
   display: "swap",
   preload: true,
+  adjustFontFallback: true,
 });
 
 const plusJakarta = Plus_Jakarta_Sans({
@@ -42,6 +45,7 @@ const plusJakarta = Plus_Jakarta_Sans({
   subsets: ["latin", "latin-ext"],
   display: "swap",
   preload: false,
+  adjustFontFallback: true,
 });
 
 function iconEntries(pngPath: string, sizes: string) {

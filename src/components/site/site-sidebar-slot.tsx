@@ -5,6 +5,7 @@ import { Clock3, Mail, MapPin, MessageCircle, Phone } from "lucide-react";
 import { BlogCategorySidebar } from "@/components/site/blog/blog-category-sidebar";
 import { ProjectCategorySidebar } from "@/components/site/project/project-category-sidebar";
 import { WorkCategorySidebar } from "@/components/site/work/work-category-sidebar";
+import { SafeEmailLink } from "@/components/site/safe-email-link";
 import { SiteLink } from "@/components/site/site-link";
 import { getDefaultContactInfoBlockConfig } from "@/config/contact-info-block";
 import { getCachedBlogCategoryIndex } from "@/lib/blog";
@@ -124,7 +125,10 @@ async function ContactWidget({
         <ul className={`space-y-3 ${intro ? "mt-4" : ""}`}>
           {items.map((item) => {
             const Icon = item.icon;
-            const value = item.href ? (
+            const value =
+              item.key === "email" ? (
+                <SafeEmailLink email={item.value} className="text-site-fg hover:text-site-primary" />
+              ) : item.href ? (
               <a
                 href={item.href}
                 className="text-site-fg hover:text-site-primary"

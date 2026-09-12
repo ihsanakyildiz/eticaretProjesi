@@ -1,4 +1,5 @@
 import { extractStaticHeadTags, hasCustomCode } from "@/lib/custom-code";
+import { isWastedFirstPaintHint } from "@/lib/resource-hints";
 
 type SiteCustomHeadTagsProps = {
   code?: string;
@@ -21,6 +22,14 @@ export function SiteCustomHeadTags({ code }: SiteCustomHeadTagsProps) {
           return <meta key={`custom-meta-${index}`} {...tag.attrs} />;
         }
         if (tag.type === "link") {
+          const rel = tag.attrs.rel?.toLowerCase() ?? "";
+          const href = tag.attrs.href ?? "";
+          if (
+            (rel === "preconnect" || rel === "dns-prefetch") &&
+            isWastedFirstPaintHint(href)
+          ) {
+            return null;
+          }
           return <link key={`custom-link-${index}`} {...tag.attrs} />;
         }
         return (

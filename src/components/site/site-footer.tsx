@@ -1,5 +1,6 @@
 import { SiteLink } from "@/components/site/site-link";
 import { FooterNewsletterForm } from "@/components/site/footer-newsletter-form";
+import { SafeEmailLink } from "@/components/site/safe-email-link";
 import { Mail, MapPin, Phone } from "lucide-react";
 import type { SiteNavItem } from "./site-types";
 
@@ -136,9 +137,7 @@ export function SiteFooter({
             {email ? (
               <li className="flex items-start gap-2">
                 <Mail className="mt-0.5 h-4 w-4 text-site-primary" />
-                <a href={`mailto:${email}`} className="hover:text-site-primary">
-                  {email}
-                </a>
+                <SafeEmailLink email={email} className="hover:text-site-primary" />
               </li>
             ) : null}
             {address ? (

@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { Mail, MapPin, Phone } from "lucide-react";
+import { SafeEmailLink } from "@/components/site/safe-email-link";
 import { SiteImage } from "@/components/site/site-image";
 import { SiteLink } from "@/components/site/site-link";
 import { LucideIconByName } from "@/lib/lucide-icons";
@@ -194,12 +195,10 @@ export function WorkDetailView({
                         <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-site-primary-soft text-site-primary">
                           <Mail className="h-4 w-4" />
                         </span>
-                        <a
-                          href={`mailto:${email}`}
+                        <SafeEmailLink
+                          email={email}
                           className="pt-1.5 break-all hover:text-site-primary"
-                        >
-                          {email}
-                        </a>
+                        />
                       </li>
                     ) : null}
                     {address ? (

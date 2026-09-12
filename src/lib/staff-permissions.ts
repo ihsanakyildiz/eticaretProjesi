@@ -4,7 +4,6 @@ import { redirect } from "next/navigation";
 import { getAdminSession } from "@/lib/admin-session";
 import {
   ADMIN_NO_ACCESS_HREF,
-  ADMIN_PERMISSION_RESOURCES,
   can,
   emptyPermissionMap,
   firstViewableHref,

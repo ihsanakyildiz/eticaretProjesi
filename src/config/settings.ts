@@ -723,9 +723,8 @@ export const performanceSettingGroups: SettingGroupDef[] = [
         label: "Preconnect Domainleri",
         type: "textarea",
         placeholder: "https://fonts.googleapis.com\nhttps://fonts.gstatic.com\nhttps://www.googletagmanager.com",
-        hint: "Her satıra bir origin (https://...). Erken TCP/TLS bağlantısı açar",
-        defaultValue:
-          "https://fonts.googleapis.com\nhttps://fonts.gstatic.com\nhttps://www.googletagmanager.com",
+        hint: "Her satıra bir origin (https://...). Google Fonts / GTM / Unsplash yazmayın; kullanılmayan preconnect PageSpeed’i düşürür.",
+        defaultValue: "",
       },
       {
         key: "perf_dns_prefetch",

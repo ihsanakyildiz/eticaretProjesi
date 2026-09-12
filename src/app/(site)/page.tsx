@@ -1,20 +1,17 @@
 import type { Metadata } from "next";
 import dynamic from "next/dynamic";
-import { HeroLcpPreload } from "@/components/site/home/hero-lcp-preload";
 import { HomeHeroSlider } from "@/components/site/home/home-hero-slider";
 import { JsonLd } from "@/components/site/json-ld";
 import { PageSectionsRenderer } from "@/components/site/page-sections-renderer";
 import {
   DEFAULT_HERO_SLIDE,
   getHeroBySlug,
-  getHeroLcpImageUrl,
   mapHeroSlideToProps,
 } from "@/lib/heroes";
 import { getFaqGroupBySlug } from "@/lib/faqs";
 import { buildHomeJsonLd } from "@/lib/json-ld";
 import { getCachedHomepageAdvanced } from "@/lib/pages";
 import { getActivePricingPlans, getPricingBillingOptions } from "@/lib/pricing";
-import { auth } from "@/auth";
 import { getMembershipFlags } from "@/lib/membership";
 import { ensureCardCampaignBannerColumn } from "@/lib/ensure-card-schema";
 import { prisma } from "@/lib/prisma";
@@ -80,15 +77,14 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function HomePage() {
-  const [settings, membership, billingOptions, session] = await Promise.all([
+  const [settings, membership, billingOptions] = await Promise.all([
     getSettingsMap().catch(() => ({}) as Record<string, string>),
     getMembershipFlags(),
     getPricingBillingOptions(),
-    auth(),
   ]);
   const siteName = settings.site_name || "İhsan Akyıldız";
   const purchaseEnabled = membership.enabled && membership.stripeEnabled;
-  const isAuthenticated = Boolean(session?.user?.id);
+  const isAuthenticated = false;
 
   const advancedHome = await getCachedHomepageAdvanced().catch(() => null);
   if (advancedHome) {
@@ -260,7 +256,6 @@ export default async function HomePage() {
           })),
         })}
       />
-      <HeroLcpPreload src={getHeroLcpImageUrl(resolvedHeroSlides)} />
       <HomeHeroSlider
         slides={resolvedHeroSlides}
         autoplay={hero?.autoplay ?? true}

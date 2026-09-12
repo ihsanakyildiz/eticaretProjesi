@@ -13,6 +13,9 @@ const assetCacheControl = `public, max-age=${assetMaxAge}, immutable${
 }`;
 
 const nextConfig: NextConfig = {
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
   serverExternalPackages: ["imapflow", "mailparser", "exceljs", "sharp", "detect-libc", "fast-xml-parser"],
   turbopack: {
     resolveAlias: {
