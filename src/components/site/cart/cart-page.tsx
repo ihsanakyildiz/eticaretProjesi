@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { ChevronDown, Trash2, Truck } from "lucide-react";
 import { CartNotices } from "@/components/site/cart/cart-notices";
 import { useCart } from "@/components/site/cart/cart-provider";
+import { DemoModeBanner } from "@/components/site/demo-mode-banner";
+import type { DemoNotice } from "@/lib/site-access";
 import { usePerformance } from "@/components/site/performance-provider";
 import { SiteImage, SiteImageFallback } from "@/components/site/site-image";
 import { SiteLink } from "@/components/site/site-link";
@@ -50,7 +52,7 @@ function selectedTaxMinor(lines: HydratedCartLine[]) {
 const checkboxClass =
   "h-4 w-4 shrink-0 rounded border-site-border text-[#f27a1a] accent-[#f27a1a]";
 
-export function CartPage() {
+export function CartPage({ demoNotice = null }: { demoNotice?: DemoNotice | null }) {
   const perf = usePerformance();
   const {
     ready,
@@ -88,6 +90,7 @@ export function CartPage() {
   if (lines.length === 0) {
     return (
       <div>
+        {demoNotice ? <DemoModeBanner notice={demoNotice} variant="panel" /> : null}
         <CartNotices notices={notices} onDismiss={dismissNotice} />
         <div className="rounded-xl border border-site-border bg-site-card px-6 py-16 text-center">
           <p className="font-display text-xl font-semibold text-site-fg">Sepetiniz boş</p>
@@ -106,6 +109,7 @@ export function CartPage() {
 
   return (
     <div>
+      {demoNotice ? <DemoModeBanner notice={demoNotice} variant="panel" /> : null}
       <CartNotices notices={notices} onDismiss={dismissNotice} />
       <div className="grid gap-8 lg:grid-cols-[1fr_20rem]">
       <div className="overflow-hidden rounded-xl border border-site-border bg-site-card">

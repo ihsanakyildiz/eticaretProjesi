@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { placeOrderAction, type PlaceOrderState } from "@/app/(site)/odeme/actions";
 import { CartNotices } from "@/components/site/cart/cart-notices";
 import { useCart } from "@/components/site/cart/cart-provider";
+import { DemoModeBanner } from "@/components/site/demo-mode-banner";
+import type { DemoNotice } from "@/lib/site-access";
 import { CheckoutAddressForm } from "@/components/site/checkout/checkout-address-form";
 import { usePerformance } from "@/components/site/performance-provider";
 import { SiteImage } from "@/components/site/site-image";
@@ -41,6 +43,7 @@ export function CheckoutFlow({
   canceled,
   step: requestedStep,
   query,
+  demoNotice = null,
 }: {
   initialAddresses: CheckoutAddress[];
   initialCarriers: Array<{ id: string; name: string; logo: string | null }>;
@@ -48,6 +51,7 @@ export function CheckoutFlow({
   canceled?: boolean;
   step: CheckoutStep;
   query: CheckoutQuery;
+  demoNotice?: DemoNotice | null;
 }) {
   const router = useRouter();
   const perf = usePerformance();
@@ -158,6 +162,8 @@ export function CheckoutFlow({
 
   if (checkoutLines.length === 0 && !orderState.redirectUrl) {
     return (
+      <div>
+        {demoNotice ? <DemoModeBanner notice={demoNotice} variant="panel" /> : null}
       <div className="rounded-lg border border-site-border bg-site-card px-6 py-16 text-center">
         <p className="font-display text-xl font-semibold text-site-fg">
           {lines.length === 0 ? "Sepetiniz boş" : "Ödeme için satılabilir ürün seçilmedi"}
@@ -170,10 +176,13 @@ export function CheckoutFlow({
           Sepete dön
         </SiteLink>
       </div>
+      </div>
     );
   }
 
   return (
+    <div>
+      {demoNotice ? <DemoModeBanner notice={demoNotice} variant="panel" /> : null}
     <div className="grid gap-8 lg:grid-cols-[1fr_20rem]">
       <div>
         <ol className="mb-6 flex gap-2 text-sm">
@@ -457,6 +466,7 @@ export function CheckoutFlow({
           <p className="mt-3 text-xs text-site-muted">Teslimat: {formatAddress(shipping)}</p>
         ) : null}
       </aside>
+    </div>
     </div>
   );
 }

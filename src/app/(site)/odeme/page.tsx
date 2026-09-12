@@ -10,6 +10,7 @@ import {
 } from "@/lib/checkout-steps";
 import { getCheckoutCardOptions } from "@/lib/checkout-payments";
 import { getSettingsMap } from "@/lib/settings";
+import { getDemoNotice } from "@/lib/site-access";
 
 export const dynamic = "force-dynamic";
 
@@ -52,6 +53,7 @@ export default async function OdemePage({ searchParams }: PageProps) {
             canceled={firstSearchValue(search.iptal) === "1"}
             step={parseCheckoutStep(firstSearchValue(search.adim))}
             query={search}
+            demoNotice={getDemoNotice(settings)}
           />
         </div>
       </div>

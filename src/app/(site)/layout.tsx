@@ -17,7 +17,10 @@ import { getMembershipFlags } from "@/lib/membership";
 import { getSettingsMap } from "@/lib/settings";
 import { parseThemeMode } from "@/lib/site-theme";
 import { CartProvider } from "@/components/site/cart/cart-provider";
+import { DemoModeBanner } from "@/components/site/demo-mode-banner";
+import { MaintenanceScreen } from "@/components/site/maintenance-screen";
 import { SiteUrlProvider } from "@/components/site/site-url-provider";
+import { canBypassMaintenance, getDemoNotice, isMaintenanceMode } from "@/lib/site-access";
 import { parseUrlStructure } from "@/lib/url-structure";
 import { Role } from "@prisma/client";
 
@@ -75,6 +78,21 @@ export default async function SiteLayout({
   const siteName = settings.site_name || "İhsan Akyıldız";
   const themeDefaultMode = parseThemeMode(settings.theme_default_mode);
   const urlStructure = parseUrlStructure(settings);
+  const maintenance = isMaintenanceMode(settings);
+  const bypassMaintenance = canBypassMaintenance(session?.user?.role);
+  const demoNotice = getDemoNotice(settings);
+
+  if (maintenance && !bypassMaintenance) {
+    return (
+      <SiteThemeProvider defaultMode={themeDefaultMode}>
+        <MaintenanceScreen
+          siteName={siteName}
+          email={settings.contact_email}
+          phone={settings.contact_phone}
+        />
+      </SiteThemeProvider>
+    );
+  }
   const memberLoggedIn = Boolean(
     session?.user?.id &&
       (session.user.role === Role.MEMBER || session.user.role === Role.ADMIN),
@@ -89,6 +107,14 @@ export default async function SiteLayout({
       <SiteUrlProvider value={urlStructure}>
       <CartProvider>
       <div className="site-shell min-h-screen">
+        {maintenance && bypassMaintenance ? (
+          <div className="bg-amber-500 px-4 py-2 text-center text-sm font-semibold text-amber-950">
+            Bakım modu açık. Ziyaretçiler siteyi göremez.{" "}
+            <a href="/admin/settings#general" className="underline">
+              Ayarlara dön
+            </a>
+          </div>
+        ) : null}
         <a
           href="#icerik"
           className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-site-primary focus:px-3 focus:py-2 focus:text-sm focus:text-white"
@@ -96,6 +122,7 @@ export default async function SiteLayout({
           İçeriğe geç
         </a>
         <SiteChrome
+          banner={demoNotice ? <DemoModeBanner notice={demoNotice} variant="bar" /> : null}
           header={
             <SiteHeader
               siteName={siteName}

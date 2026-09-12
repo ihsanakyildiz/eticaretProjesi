@@ -9,10 +9,12 @@ function isFocusedCheckout(pathname: string) {
 
 export function SiteChrome({
   header,
+  banner,
   footer,
   children,
 }: {
   header: ReactNode;
+  banner?: ReactNode;
   footer: ReactNode;
   children: ReactNode;
 }) {
@@ -22,6 +24,7 @@ export function SiteChrome({
   return (
     <>
       {focused ? null : header}
+      {banner}
       <main id="icerik">{children}</main>
       {focused ? null : footer}
     </>

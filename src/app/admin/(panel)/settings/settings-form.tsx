@@ -188,9 +188,13 @@ function FileUploadField({
 function FieldInput({
   field,
   value,
+  checked,
+  onCheckedChange,
 }: {
   field: SettingFieldDef;
   value: string;
+  checked?: boolean;
+  onCheckedChange?: (checked: boolean) => void;
 }) {
   const baseClass =
     "w-full rounded-md border border-[#e9ebec] bg-white px-3 py-2.5 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-[#0ab39c] focus:ring-2 focus:ring-[#0ab39c]/20";
@@ -220,12 +224,15 @@ function FieldInput({
   }
 
   if (field.type === "boolean") {
+    const controlled = onCheckedChange !== undefined;
     return (
       <AdminSwitch
         name={field.key}
         label={field.label}
         description={field.hint}
-        defaultChecked={value === "true"}
+        defaultChecked={controlled ? undefined : value === "true"}
+        checked={controlled ? Boolean(checked) : undefined}
+        onChange={onCheckedChange}
       />
     );
   }
@@ -324,6 +331,23 @@ export function SettingsForm({
   const [state, formAction, isPending] = useActionState(saveSettingsAction, initialState);
   const [tab, setTab] = useState<GeneralSettingTabId>("general");
   const useTabs = scope === "general";
+  const [bools, setBools] = useState<Record<string, boolean>>(() => {
+    const next: Record<string, boolean> = {};
+    for (const group of groups) {
+      for (const field of group.fields) {
+        if (field.type === "boolean") {
+          next[field.key] = (values[field.key] ?? field.defaultValue ?? "") === "true";
+        }
+      }
+    }
+    return next;
+  });
+
+  function isFieldVisible(field: SettingFieldDef) {
+    if (!field.visibleWhen) return true;
+    const on = bools[field.visibleWhen.key] ?? false;
+    return field.visibleWhen.enabled ? on : !on;
+  }
 
   useEffect(() => {
     if (!useTabs || typeof window === "undefined") return;
@@ -421,14 +445,14 @@ export function SettingsForm({
                 group.fields.map((field) => (
                   <div
                     key={field.key}
-                    className={
+                    className={`${
                       field.type === "textarea" ||
                       field.type === "image" ||
                       field.type === "file" ||
                       field.codeEditor
                         ? "md:col-span-2"
-                        : undefined
-                    }
+                        : ""
+                    } ${isFieldVisible(field) ? "" : "hidden"}`.trim()}
                   >
                     {field.type !== "boolean" ? (
                       <label
@@ -438,7 +462,16 @@ export function SettingsForm({
                         {field.label}
                       </label>
                     ) : null}
-                    <FieldInput field={field} value={values[field.key] ?? field.defaultValue ?? ""} />
+                    <FieldInput
+                      field={field}
+                      value={values[field.key] ?? field.defaultValue ?? ""}
+                      checked={bools[field.key]}
+                      onCheckedChange={
+                        field.type === "boolean"
+                          ? (next) => setBools((current) => ({ ...current, [field.key]: next }))
+                          : undefined
+                      }
+                    />
                     {field.hint && field.type !== "boolean" ? (
                       <p
                         className={`mt-1.5 text-xs leading-relaxed text-slate-400 ${

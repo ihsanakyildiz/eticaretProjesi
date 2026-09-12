@@ -41,6 +41,8 @@ export type SettingFieldDef = {
   quality?: number;
   min?: number;
   max?: number;
+  /** Başka bir boolean alan açıkken göster */
+  visibleWhen?: { key: string; enabled: boolean };
 };
 
 export type SettingGroupDef = {
@@ -113,8 +115,35 @@ export const settingGroups: SettingGroupDef[] = [
         key: "maintenance_mode",
         label: "Bakım Modu",
         type: "boolean",
-        hint: "Aktifken ziyaretçilere bakım sayfası gösterilir",
+        hint: "Aktifken ziyaretçiler bakım sayfasını görür. Yönetici ve personel siteyi gezebilir.",
         defaultValue: "false",
+      },
+      {
+        key: "demo_mode",
+        label: "Demo Modu",
+        type: "boolean",
+        hint: "Mağaza açık kalır. Sepette, ödemede ve alışverişte demo uyarısı gösterilir.",
+        defaultValue: "false",
+      },
+      {
+        key: "demo_mode_title",
+        label: "Demo başlığı",
+        type: "text",
+        placeholder: "Bu mağaza demo amaçlıdır",
+        defaultValue: "Bu mağaza demo amaçlıdır",
+        hint: "Sepet, ödeme ve vitrinde büyük yazılır.",
+        visibleWhen: { key: "demo_mode", enabled: true },
+      },
+      {
+        key: "demo_mode_message",
+        label: "Demo açıklaması",
+        type: "textarea",
+        rows: 3,
+        placeholder: "Gördüğünüz ürünler inceleme içindir. Lütfen gerçek sipariş vermeyin.",
+        defaultValue:
+          "Gördüğünüz ürünler ve fiyatlar inceleme / test içindir. Arama motorundan veya dışarıdan geldiyseniz lütfen sipariş vermeyin.",
+        hint: "Müşterilere sepet ve alışveriş sırasında belirgin gösterilir.",
+        visibleWhen: { key: "demo_mode", enabled: true },
       },
     ],
   },

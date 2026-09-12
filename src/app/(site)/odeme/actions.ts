@@ -26,6 +26,7 @@ import { nextOrderNo, snapshotAddress, uniqueOrderReference } from "@/lib/order-
 import { reserveOrderStock, StockShortageError } from "@/lib/order-stock";
 import { prisma } from "@/lib/prisma";
 import { getSettingsMap } from "@/lib/settings";
+import { canBypassMaintenance, isMaintenanceMode } from "@/lib/site-access";
 import { getSiteOrigin } from "@/lib/site-origin";
 import { getStripe, isStripeConfigured } from "@/lib/stripe";
 
@@ -111,6 +112,9 @@ export async function placeOrderAction(
   const choice = parseCheckoutPaymentChoice(String(formData.get("paymentMethod") ?? "BANK_WIRE"));
   const { method: paymentMethod, provider } = checkoutChoiceToOrderPayment(choice);
   const settings = await getSettingsMap().catch(() => ({}) as Record<string, string>);
+  if (isMaintenanceMode(settings) && !canBypassMaintenance(session.user.role)) {
+    return { error: "Site bakımda olduğu için sipariş alınamıyor." };
+  }
 
   if (provider === "stripe" && !isStripeConfigured()) {
     return { error: "Stripe kart ödemesi şu an kullanılamıyor." };

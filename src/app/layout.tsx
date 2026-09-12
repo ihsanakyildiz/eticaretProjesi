@@ -10,6 +10,7 @@ import { RouteLoadingIndicator } from "@/components/route-loading-indicator";
 import { isAdminRequest } from "@/lib/admin-request";
 import { parsePerformance } from "@/lib/performance";
 import { getSettingsMap, isSettingEnabled } from "@/lib/settings";
+import { isMaintenanceMode } from "@/lib/site-access";
 import { getThemeDefaultModeScript, parseThemeMode } from "@/lib/site-theme";
 import { getSiteOrigin } from "@/lib/site-origin";
 import { getWebpCompanion } from "@/lib/uploads";
@@ -117,7 +118,9 @@ export async function generateMetadata(): Promise<Metadata> {
           ? [cdn ? `${cdn}${settings.seo_og_image}` : settings.seo_og_image]
           : undefined,
       },
-      robots: settings.seo_robots || "index, follow",
+      robots: isMaintenanceMode(settings)
+        ? "noindex, nofollow"
+        : settings.seo_robots || "index, follow",
       verification: settings.google_site_verification
         ? { google: settings.google_site_verification }
         : undefined,
