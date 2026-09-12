@@ -877,10 +877,16 @@ export async function getAffinityCatalogProducts(
   return toCatalogCards(rows);
 }
 
+export type CatalogListingResult = {
+  products: CatalogProductCard[];
+  total: number;
+  merchandisedIds: string[];
+};
+
 export async function getFilteredCatalogListing(
   filters: CatalogListingFilters,
   page: number,
-): Promise<{ products: CatalogProductCard[]; total: number; merchandisedIds: string[] }> {
+): Promise<CatalogListingResult> {
   const extra = await resolveCatalogListingConstraint(filters);
   const where = listingWhere(extra);
   const skip = (Math.max(1, page) - 1) * CATALOG_GRID_PAGE_SIZE;
@@ -943,7 +949,7 @@ export async function getFilteredCatalogListing(
 export async function getCachedFilteredCatalogListing(
   filters: CatalogListingFilters,
   page: number,
-): Promise<{ products: CatalogProductCard[]; total: number }> {
+): Promise<CatalogListingResult> {
   const revalidate = await catalogCacheRevalidateSeconds();
   return unstable_cache(
     () => getFilteredCatalogListing(filters, page),
