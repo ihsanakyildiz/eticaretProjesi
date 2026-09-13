@@ -1778,6 +1778,8 @@ model ProductVariant {
   saleStartsAt   DateTime?
   saleEndsAt     DateTime?
   stockQuantity  Int                       @default(0)
+  /// XML/API tedarikçi stoğu (bilgi); gelişmiş stokta satılabilir depoya karışmaz
+  supplierStock  Int                       @default(0)
   trackInventory Boolean                   @default(true)
   allowBackorder Boolean                   @default(false)
   isActive       Boolean                   @default(true)

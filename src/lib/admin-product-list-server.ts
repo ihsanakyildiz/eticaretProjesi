@@ -21,9 +21,11 @@ import {
   type ProductListVariantRow,
 } from "@/lib/admin-product-list";
 import { ensureFeedSyncLockedColumn } from "@/lib/feed-sync-locks";
+import { ensureVariantSupplierStockSchema } from "@/lib/feed-supplier-stock";
 import { prisma } from "@/lib/prisma";
 import { toIsoOrNull } from "@/lib/product-sale";
 import { DEFAULT_VARIANT_COMBINATION_KEY } from "@/lib/product-variants";
+import { isAdvancedInventoryEnabled } from "@/lib/advanced-inventory";
 
 const LOW_STOCK_MAX = 10;
 
@@ -500,6 +502,7 @@ function toProductListVariantRow(
     saleStartsAt: Date | null;
     saleEndsAt: Date | null;
     stockQuantity: number;
+    supplierStock?: number;
     image: string | null;
     isActive: boolean;
     isDefault: boolean;
@@ -518,6 +521,7 @@ function toProductListVariantRow(
     saleStartsAt: toIsoOrNull(row.saleStartsAt),
     saleEndsAt: toIsoOrNull(row.saleEndsAt),
     stockQuantity: row.stockQuantity,
+    supplierStock: row.supplierStock ?? 0,
     image: row.image,
     isActive: row.isActive,
     isDefault: row.isDefault,
@@ -573,5 +577,27 @@ export async function loadProductListVariants(
   const combinations = rows.filter(
     (row) => row.combinationKey !== DEFAULT_VARIANT_COMBINATION_KEY,
   );
-  return (combinations.length > 0 ? combinations : rows).map(toProductListVariantRow);
+  const visible = combinations.length > 0 ? combinations : rows;
+
+  const supplierById = new Map<string, number>();
+  if (await isAdvancedInventoryEnabled()) {
+    await ensureVariantSupplierStockSchema().catch(() => undefined);
+    const supplierRows = await prisma
+      .$queryRaw<Array<{ id: string; supplierStock: number }>>`
+        SELECT id, supplierStock
+        FROM product_variants
+        WHERE productId = ${productId}
+      `
+      .catch(() => [] as Array<{ id: string; supplierStock: number }>);
+    for (const row of supplierRows) {
+      supplierById.set(row.id, Number(row.supplierStock) || 0);
+    }
+  }
+
+  return visible.map((row) =>
+    toProductListVariantRow({
+      ...row,
+      supplierStock: supplierById.get(row.id) ?? 0,
+    }),
+  );
 }

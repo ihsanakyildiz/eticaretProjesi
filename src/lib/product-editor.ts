@@ -180,6 +180,8 @@ export type ProductVariantDraft = {
   priceMinor: number;
   compareAtMinor?: number | null;
   stockQuantity: number;
+  /** XML/API tedarikçi stoğu — admin düzenlemez */
+  supplierStock?: number;
   trackInventory?: boolean;
   allowBackorder?: boolean;
   isDefault: boolean;

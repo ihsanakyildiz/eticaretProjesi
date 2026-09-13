@@ -34,6 +34,7 @@ export type ProductListVariantRow = {
   saleStartsAt: string | null;
   saleEndsAt: string | null;
   stockQuantity: number;
+  supplierStock?: number;
   image: string | null;
   isActive: boolean;
   isDefault: boolean;

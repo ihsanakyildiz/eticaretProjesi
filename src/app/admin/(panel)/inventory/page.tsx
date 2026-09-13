@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Boxes } from "lucide-react";
+import { Prisma } from "@prisma/client";
+import { isAdvancedInventoryEnabled } from "@/lib/advanced-inventory";
+import { ensureVariantSupplierStockSchema } from "@/lib/feed-supplier-stock";
 import { locationHint } from "@/lib/inventory-locations";
 import { prisma } from "@/lib/prisma";
 import { StockLocationSelect } from "./stock-location-select";
@@ -19,6 +22,10 @@ export default async function InventoryStockPage({ searchParams }: StockPageProp
   const warehouseId = (params.warehouse ?? "").trim();
   const stockFilter = params.stock ?? "all";
   const page = Math.max(1, Number.parseInt(params.page ?? "1", 10) || 1);
+  const advancedInventory = await isAdvancedInventoryEnabled();
+  if (advancedInventory) {
+    await ensureVariantSupplierStockSchema().catch(() => undefined);
+  }
 
   const warehouses = await prisma.stockWarehouse.findMany({
     where: { isActive: true },
@@ -86,12 +93,30 @@ export default async function InventoryStockPage({ searchParams }: StockPageProp
         })
       : Promise.resolve(0),
   ]);
+
+  const supplierById = new Map<string, number>();
+  if (advancedInventory && variants.length > 0) {
+    const ids = variants.map((row) => row.id);
+    const supplierRows = await prisma
+      .$queryRaw<Array<{ id: string; supplierStock: number }>>`
+        SELECT id, supplierStock
+        FROM product_variants
+        WHERE id IN (${Prisma.join(ids)})
+      `
+      .catch(() => [] as Array<{ id: string; supplierStock: number }>);
+    for (const row of supplierRows) {
+      supplierById.set(row.id, Number(row.supplierStock) || 0);
+    }
+  }
+
   const locationOptions = locations.map((row) => ({
     id: row.id,
     code: row.code,
     hint: locationHint(row),
   }));
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const extraCols = (advancedInventory ? 2 : 0) + (warehouseId ? 1 : 0);
+  const emptyColSpan = 4 + warehouses.length + extraCols;
 
   const qs = (next: Record<string, string>) => {
     const sp = new URLSearchParams();
@@ -118,8 +143,9 @@ export default async function InventoryStockPage({ searchParams }: StockPageProp
           Stok durumu
         </h1>
         <p className="mt-2 max-w-3xl text-sm text-slate-500">
-          Satış stoğu tüm depoların toplamıdır. Raf kodu ürünün depo içindeki yeridir; sipariş
-          paketlemede çalışan bu adrese gider. Raf atamak için bir depo seçin.
+          {advancedInventory
+            ? "Depo stoğu satılabilir stoğtur; sipariş ve satış buradan düşer. Tedarikçi stoğu XML/API bilgisidir, satışa dahil edilmez. Bilgi toplamı yalnızca görünüm içindir."
+            : "Satış stoğu tüm depoların toplamıdır. Raf kodu ürünün depo içindeki yeridir; sipariş paketlemede çalışan bu adrese gider. Raf atamak için bir depo seçin."}
         </p>
         {warehouseId && missingLocationCount > 0 ? (
           <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
@@ -177,13 +203,19 @@ export default async function InventoryStockPage({ searchParams }: StockPageProp
                 </th>
               ))}
               {warehouseId ? <th className="px-4 py-3">Raf</th> : null}
-              <th className="px-4 py-3 text-right">Toplam</th>
+              <th className="px-4 py-3 text-right">{advancedInventory ? "Depo" : "Toplam"}</th>
+              {advancedInventory ? (
+                <>
+                  <th className="px-4 py-3 text-right">Tedarikçi</th>
+                  <th className="px-4 py-3 text-right">Bilgi toplam</th>
+                </>
+              ) : null}
             </tr>
           </thead>
           <tbody className="divide-y divide-[#e9ebec]">
             {variants.length === 0 ? (
               <tr>
-                <td colSpan={4 + warehouses.length + (warehouseId ? 1 : 0)} className="px-4 py-8 text-center text-slate-500">
+                <td colSpan={emptyColSpan} className="px-4 py-8 text-center text-slate-500">
                   Kayıt bulunamadı.
                 </td>
               </tr>
@@ -191,6 +223,8 @@ export default async function InventoryStockPage({ searchParams }: StockPageProp
               variants.map((row) => {
                 const byWh = new Map(row.warehouseStocks.map((item) => [item.warehouseId, item]));
                 const selectedStock = warehouseId ? (byWh.get(warehouseId) ?? null) : null;
+                const supplierStock = supplierById.get(row.id) ?? 0;
+                const infoTotal = row.stockQuantity + supplierStock;
                 return (
                   <tr key={row.id} className="hover:bg-slate-50/70">
                     <td className="px-4 py-3">
@@ -239,6 +273,16 @@ export default async function InventoryStockPage({ searchParams }: StockPageProp
                     >
                       {row.stockQuantity}
                     </td>
+                    {advancedInventory ? (
+                      <>
+                        <td className="px-4 py-3 text-right tabular-nums text-slate-600">
+                          {supplierStock}
+                        </td>
+                        <td className="px-4 py-3 text-right tabular-nums text-slate-500">
+                          {infoTotal}
+                        </td>
+                      </>
+                    ) : null}
                   </tr>
                 );
               })

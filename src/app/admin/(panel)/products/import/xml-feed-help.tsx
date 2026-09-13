@@ -159,6 +159,12 @@ function XmlFeedHelpModal({ onClose }: { onClose: () => void }) {
                   <strong className="font-medium text-slate-800">Ürün filtreleri</strong> grubuna
                   bağlanır. Beden ve renk varyant (SKU) özelliği olarak kalır.
                 </li>
+                <li>
+                  <strong className="font-medium text-slate-800">Gelişmiş stok açıksa:</strong> XML’den
+                  gelen stok depo/satılabilir stoğa yazılmaz; tedarikçi stoğu olarak ayrı tutulur.
+                  Satış depo stoğundan düşer. Feed stok limiti ve 0 kapatma yine uygulanır; ancak
+                  depoda adet varken ürün satışa kapatılmaz.
+                </li>
               </ul>
             </HelpSection>
 

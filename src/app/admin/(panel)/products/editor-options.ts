@@ -1,5 +1,6 @@
 import { cache } from "react";
 import { loadProductPersonalizationFields } from "@/lib/product-personalization-db";
+import { ensureVariantSupplierStockSchema } from "@/lib/feed-supplier-stock";
 import { buildCategoryTree, toNamedTree } from "@/lib/category-tree";
 import { DEFAULT_VARIANT_COMBINATION_KEY } from "@/lib/product-variants";
 import { prisma } from "@/lib/prisma";
@@ -137,6 +138,16 @@ export const loadProductEditorInitial = cache(async function loadProductEditorIn
   });
   if (!product) return null;
 
+  await ensureVariantSupplierStockSchema().catch(() => undefined);
+  const supplierRows = await prisma
+    .$queryRaw<Array<{ id: string; supplierStock: number }>>`
+      SELECT id, supplierStock
+      FROM product_variants
+      WHERE productId = ${product.id}
+    `
+    .catch(() => [] as Array<{ id: string; supplierStock: number }>);
+  const supplierById = new Map(supplierRows.map((row) => [row.id, Number(row.supplierStock) || 0]));
+
   const variants = product.variants.length
     ? product.variants.map((variant) => ({
         id: variant.id,
@@ -147,6 +158,7 @@ export const loadProductEditorInitial = cache(async function loadProductEditorIn
         priceMinor: variant.priceMinor,
         compareAtMinor: variant.compareAtMinor,
         stockQuantity: variant.stockQuantity,
+        supplierStock: supplierById.get(variant.id) ?? 0,
         trackInventory: variant.trackInventory,
         allowBackorder: variant.allowBackorder,
         isDefault: variant.isDefault,

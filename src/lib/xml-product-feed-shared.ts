@@ -180,6 +180,15 @@ export function xmlFeedSaleCloseReasons(
   }
 }
 
+/** Gelişmiş stokta depo stoğu varsa feed stok limiti / 0 kapatma uygulanmaz. */
+export function suppressFeedStockClosesWhenWarehouseHasStock(
+  reasons: FeedSaleCloseReason[],
+  warehouseStock: number,
+): FeedSaleCloseReason[] {
+  if (warehouseStock <= 0) return reasons;
+  return reasons.filter((reason) => reason !== "stock_limit" && reason !== "zero_stock");
+}
+
 export const XML_FEED_TARGET_FIELDS = [
   { key: "title", header: "Ürün adı", group: "kimlik", hint: "Yeni üründe zorunlu" },
   { key: "barcode", header: "Barkod", group: "kimlik", hint: "Eşleme için önerilir" },
@@ -191,7 +200,7 @@ export const XML_FEED_TARGET_FIELDS = [
   { key: "compareAt", header: "Liste / eski fiyat", group: "fiyat", hint: "Eski kalıp. İndirimli satış bağlıysa gerekmez" },
   { key: "cost", header: "Alış fiyatı", group: "fiyat", hint: "Maliyet. Boşsa mevcut değer korunur; sitede görünmez" },
   { key: "taxRate", header: "KDV (%)", group: "fiyat", hint: "Boşsa mevcut KDV korunur" },
-  { key: "stock", header: "Stok", group: "stok", hint: "Sayı veya in stock / out of stock" },
+  { key: "stock", header: "Stok", group: "stok", hint: "Gelişmiş stokta tedarikçi bilgisi; kapalıyken depo/satış stoğu" },
   {
     key: "availableForOrder",
     header: "Satış durumu",

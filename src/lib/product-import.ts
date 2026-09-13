@@ -18,7 +18,8 @@ import { normalizeProductBarcode } from "@/lib/product-barcode";
 import { uniqueBarcodeOrNull } from "@/lib/product-barcode-db";
 import { prisma } from "@/lib/prisma";
 import { isPrismaUniqueError, withPrismaRetry } from "@/lib/prisma-retry";
-import { seedWarehouseStockForNewVariants, writeCatalogStock } from "@/lib/inventory";
+import { seedWarehouseStockForNewVariants } from "@/lib/inventory";
+import { applyFeedVariantStock } from "@/lib/feed-supplier-stock";
 import {
   buildVariantCombinationKey,
   DEFAULT_VARIANT_COMBINATION_KEY,
@@ -1561,8 +1562,19 @@ export async function appendImportedVariant(options: {
   priceMinor: number;
   compareAtMinor: number | null;
   stockQuantity: number;
+  /** Gelişmiş stok: feed stoğu tedarikçi kolonuna yazılır, depoya yazılmaz */
+  stockAsSupplier?: boolean;
 }): Promise<"created" | "updated"> {
-  const { productId, row, lookups, used, priceMinor, compareAtMinor, stockQuantity } = options;
+  const {
+    productId,
+    row,
+    lookups,
+    used,
+    priceMinor,
+    compareAtMinor,
+    stockQuantity,
+    stockAsSupplier = false,
+  } = options;
   await ensureImportAttributesFromRows([row], lookups);
   const optionValues = optionValuesFromRow(row, lookups);
   await ensureOptionAttributeValues(optionValues, used);
@@ -1614,13 +1626,14 @@ export async function appendImportedVariant(options: {
       ? await uniqueBarcodeOrNull(barcode, target?.id)
       : null;
 
+  const catalogStock = stockAsSupplier ? 0 : stockQuantity;
   const variantData = {
     sku: nextSku,
     barcode: nextBarcode,
     title,
     priceMinor,
     compareAtMinor,
-    stockQuantity,
+    stockQuantity: catalogStock,
     image: imageUrl,
     combinationKey,
     isDefault: target?.isDefault ?? existing.length === 0,
@@ -1642,7 +1655,10 @@ export async function appendImportedVariant(options: {
       });
     }
     if (barcode) used.barcodes.add(barcode);
-    await writeCatalogStock(prisma, target.id, stockQuantity, { note: "İçe aktarma stok" });
+    await applyFeedVariantStock(target.id, stockQuantity, {
+      note: "İçe aktarma stok",
+      advancedInventory: stockAsSupplier,
+    });
     return "updated";
   }
 
@@ -1688,7 +1704,10 @@ export async function appendImportedVariant(options: {
       });
     }
     if (barcode) used.barcodes.add(barcode);
-    await writeCatalogStock(prisma, conflict.id, stockQuantity, { note: "İçe aktarma stok" });
+    await applyFeedVariantStock(conflict.id, stockQuantity, {
+      note: "İçe aktarma stok",
+      advancedInventory: stockAsSupplier,
+    });
     return "updated";
   }
   if (resolved.length > 0) {
@@ -1701,7 +1720,10 @@ export async function appendImportedVariant(options: {
     });
   }
   if (barcode) used.barcodes.add(barcode);
-  await writeCatalogStock(prisma, variantId, stockQuantity, { note: "İçe aktarma stok" });
+  await applyFeedVariantStock(variantId, stockQuantity, {
+    note: "İçe aktarma stok",
+    advancedInventory: stockAsSupplier,
+  });
   return "created";
 }
 
@@ -1833,19 +1855,49 @@ function productCreateData(item: PreparedImportedProduct) {
 export async function insertImportedProducts(
   items: PreparedImportedProduct[],
   tx: ImportWriteClient = prisma,
+  options?: { stockAsSupplier?: boolean },
 ) {
   if (items.length === 0) return;
+  const stockAsSupplier = Boolean(options?.stockAsSupplier);
   // Prisma client may lag behind schema (Windows EPERM on generate). createMany
   // rejects unknown `externalId`; the MySQL column is written with raw SQL after.
   await tx.product.createMany({ data: items.map((item) => productCreateData(item)) });
-  const variants = items.flatMap((item) => item.variants);
+  const variants = items.flatMap((item) =>
+    item.variants.map((variant) => ({
+      ...variant,
+      stockQuantity: stockAsSupplier ? 0 : variant.stockQuantity,
+    })),
+  );
+  const supplierStocks = stockAsSupplier
+    ? items.flatMap((item) =>
+        item.variants.map((variant) => ({
+          id: variant.id,
+          supplierStock: Math.max(0, Math.round(variant.stockQuantity || 0)),
+        })),
+      )
+    : [];
   if (variants.length > 0) {
     await tx.productVariant.createMany({ data: variants });
-    await seedWarehouseStockForNewVariants(
-      tx as typeof prisma,
-      variants.map((row) => ({ id: row.id, stockQuantity: row.stockQuantity })),
-      "İçe aktarma",
-    );
+    if (stockAsSupplier) {
+      for (const row of supplierStocks) {
+        await tx.$executeRaw`
+          UPDATE product_variants
+          SET supplierStock = ${row.supplierStock}
+          WHERE id = ${row.id}
+        `;
+      }
+      await seedWarehouseStockForNewVariants(
+        tx as typeof prisma,
+        variants.map((row) => ({ id: row.id, stockQuantity: 0 })),
+        "İçe aktarma",
+      );
+    } else {
+      await seedWarehouseStockForNewVariants(
+        tx as typeof prisma,
+        variants.map((row) => ({ id: row.id, stockQuantity: row.stockQuantity })),
+        "İçe aktarma",
+      );
+    }
   }
   const selections = items.flatMap((item) => item.selections);
   if (selections.length > 0) {
@@ -1871,6 +1923,7 @@ const INSERT_CHUNK = 4;
 export async function insertImportedProductsSafely(
   items: PreparedImportedProduct[],
   onItemError?: (item: PreparedImportedProduct, error: unknown) => void,
+  options?: { stockAsSupplier?: boolean },
 ) {
   const inserted: PreparedImportedProduct[] = [];
   for (let index = 0; index < items.length; index += INSERT_CHUNK) {
@@ -1879,7 +1932,7 @@ export async function insertImportedProductsSafely(
       await withPrismaRetry(() =>
         prisma.$transaction(
           async (tx) => {
-            await insertImportedProducts(chunk, tx);
+            await insertImportedProducts(chunk, tx, options);
           },
           { timeout: 45000, maxWait: 15000 },
         ),
@@ -1891,7 +1944,7 @@ export async function insertImportedProductsSafely(
           await withPrismaRetry(() =>
             prisma.$transaction(
               async (tx) => {
-                await insertImportedProducts([item], tx);
+                await insertImportedProducts([item], tx, options);
               },
               { timeout: 30000, maxWait: 10000 },
             ),

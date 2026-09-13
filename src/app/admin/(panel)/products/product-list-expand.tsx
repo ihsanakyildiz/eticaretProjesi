@@ -150,7 +150,11 @@ function VariantQuickRow({
         ariaLabel={`${variant.title} stok`}
         inputMode="numeric"
         disabled={!canUpdate || lockStock}
-        formatGhost={(value) => value}
+        formatGhost={(value) =>
+          lockStock
+            ? `${value} · ted. ${Math.max(0, variant.supplierStock ?? 0)}`
+            : value
+        }
         normalize={(raw) => {
           const parsed = Number.parseInt(raw.trim(), 10);
           if (!Number.isFinite(parsed) || parsed < 0) {
@@ -253,7 +257,8 @@ export function ProductListVariantsPanel({
       </div>
       {lockStock ? (
         <p className="border-b border-[#e9ebec] px-4 py-1.5 text-[11px] text-slate-500">
-          Stok adedi görünür; değişiklik gelişmiş stok sisteminden yapılır.
+          Depo stoğu görünür (satılabilir). Tedarikçi stoğu XML/API bilgisidir; gelişmiş stok
+          sisteminden değiştirilir.
         </p>
       ) : null}
       {loading ? (

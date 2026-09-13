@@ -29,7 +29,8 @@ import {
 } from "@/lib/product-import-images";
 import { prisma } from "@/lib/prisma";
 import { uniqueBarcodeOrNull } from "@/lib/product-barcode-db";
-import { writeCatalogStock } from "@/lib/inventory";
+import { applyFeedVariantStock, ensureVariantSupplierStockSchema } from "@/lib/feed-supplier-stock";
+import { isAdvancedInventoryEnabled } from "@/lib/advanced-inventory";
 import { parseFeedMajor, resolveImportedListPrices, taxExcludedMinor } from "@/lib/product-money";
 import { extractEditorUploadPathsFromHtml } from "@/lib/rich-text-uploads";
 import { slugify } from "@/lib/slug";
@@ -51,6 +52,7 @@ import {
   updateFieldsFromFlags,
   xmlFeedShouldCloseForSale,
   xmlFeedSaleCloseReasons,
+  suppressFeedStockClosesWhenWarehouseHasStock,
   parseFeedSaleStatus,
   XML_FEED_MAX_IMAGES,
   type XmlFeedMatchBy as SharedMatchBy,
@@ -586,6 +588,7 @@ async function updateMatchedProduct(
   lockPrices = false,
   lockStock = false,
   lockSaleClose = false,
+  advancedInventory = false,
 ) {
   const taxPercent = hit.taxRatePercent || lookups.defaultTaxPercent;
   const markup = Number(feed.priceMarkupPercent);
@@ -610,7 +613,17 @@ async function updateMatchedProduct(
 
   const productData: Record<string, unknown> = {};
   const xmlImageUrls = xmlImageUrlsFromRow(row);
-  const closeReasons: FeedSaleCloseReason[] = xmlFeedSaleCloseReasons(stock, stockPolicy);
+  let closeReasons: FeedSaleCloseReason[] = xmlFeedSaleCloseReasons(stock, stockPolicy);
+  if (advancedInventory) {
+    const warehouse = await prisma.productVariant.aggregate({
+      where: { productId: hit.productId },
+      _sum: { stockQuantity: true },
+    });
+    closeReasons = suppressFeedStockClosesWhenWarehouseHasStock(
+      closeReasons,
+      warehouse._sum.stockQuantity ?? 0,
+    );
+  }
   if (allowsUpdate(updateFields, "price") && (priced == null || priced.minor <= 0)) {
     closeReasons.push("zero_price");
   }
@@ -765,7 +778,9 @@ async function updateMatchedProduct(
     variantData.compareAtMinor = storedPrice.listMinor;
   }
   if (!lockStock && allowsUpdate(updateFields, "stock") && stock != null) {
-    variantData.stockQuantity = stock;
+    if (!advancedInventory) {
+      variantData.stockQuantity = stock;
+    }
   }
   if (allowsUpdate(updateFields, "barcode") && row.barcode?.trim()) {
     const barcode = await uniqueBarcodeOrNull(row.barcode, hit.variantId);
@@ -778,9 +793,12 @@ async function updateMatchedProduct(
     await withPrismaRetry(() =>
       prisma.productVariant.update({ where: { id: hit.variantId }, data: variantData }),
     );
-    if (!lockStock && allowsUpdate(updateFields, "stock") && stock != null) {
-      await writeCatalogStock(prisma, hit.variantId, stock, { note: "API stok senkronu" });
-    }
+  }
+  if (!lockStock && allowsUpdate(updateFields, "stock") && stock != null) {
+    await applyFeedVariantStock(hit.variantId, stock, {
+      note: "API stok senkronu",
+      advancedInventory,
+    });
   }
   return { closed: didClose, reasons: didClose ? closeReasons : [] };
 }
@@ -1100,6 +1118,8 @@ export async function syncApiFeedRun(runId: string) {
     );
     const campaignPriceLocks = await loadUnrestoredCampaignProductIds();
     const feedLocks = await loadFeedSyncLocks();
+    await ensureVariantSupplierStockSchema().catch(() => undefined);
+    const advancedInventory = await isAdvancedInventoryEnabled();
     const stockPolicy: XmlFeedStockPolicy = {
       stockLimit: valueMaps.stockLimit,
       outOfStockBehavior: valueMaps.outOfStockBehavior,
@@ -1256,6 +1276,7 @@ export async function syncApiFeedRun(runId: string) {
             syncLocks.lockPrices,
             syncLocks.lockStock,
             syncLocks.lockSaleClose,
+            advancedInventory,
           );
           if (updated.closed) warningCollector.noteClosed(updated.reasons);
           productTouched.add(item.hit.productId);
@@ -1308,6 +1329,7 @@ export async function syncApiFeedRun(runId: string) {
               priceMinor: stored.chargeMinor,
               compareAtMinor: stored.listMinor,
               stockQuantity: stock ?? 0,
+              stockAsSupplier: advancedInventory,
             });
           }
           seenProductIds.add(item.hit.productId);
@@ -1382,6 +1404,7 @@ export async function syncApiFeedRun(runId: string) {
               counts.failed += 1;
               pushFailure(failures, source ?? { rowNumber: 0, title: item.product.title }, shortenPrismaError(rowError));
             },
+            { stockAsSupplier: advancedInventory },
           );
           for (const item of inserted) seenProductIds.add(item.productId);
           counts.created += inserted.length;

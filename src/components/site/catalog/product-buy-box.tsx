@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { useRouter } from "next/navigation";
 import type { ProductAttributeDisplayType, ProductSaleUnit } from "@prisma/client";
+import { Camera, ImagePlus } from "lucide-react";
 import { useCart } from "@/components/site/cart/cart-provider";
 import { SiteImage, SiteImageFallback } from "@/components/site/site-image";
 import { SiteLink } from "@/components/site/site-link";
@@ -476,38 +477,18 @@ export function ProductBuyBox({
                     placeholder={field.label}
                   />
                 ) : (
-                  <div className="space-y-2">
-                    <input
-                      type="file"
-                      accept="image/png,image/jpeg,image/webp,image/tiff,.tif,.tiff"
-                      disabled={personalizationBusy}
-                      onChange={(event) => {
-                        const file = event.target.files?.[0] ?? null;
-                        void onPersonalizationImage(field.id, file);
-                        event.target.value = "";
-                      }}
-                      className="block w-full text-sm text-site-muted file:mr-3 file:rounded-md file:border-0 file:bg-site-primary file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white"
-                    />
-                    <p className="text-[11px] text-site-muted">
-                      Baskı için yüksek çözünürlüklü orijinal dosya yükleyin (en fazla 25 MB).
-                      Görsel küçültülmez. Siparişe dönüşmeyen yüklemeler 1 hafta sonra silinir.
-                    </p>
-                    {personalizationValues[field.id]?.imageUrl ||
-                    personalizationValues[field.id]?.imageThumbUrl ? (
-                      <div className="relative h-20 w-20 overflow-hidden rounded-md border border-site-border">
-                        <SiteImage
-                          src={
-                            personalizationValues[field.id]!.imageThumbUrl ||
-                            personalizationValues[field.id]!.imageUrl!
-                          }
-                          alt={field.label}
-                          fill
-                          className="object-cover"
-                          sizes="80px"
-                        />
-                      </div>
-                    ) : null}
-                  </div>
+                  <PersonalizationImagePicker
+                    label={field.label}
+                    busy={personalizationBusy}
+                    previewUrl={
+                      personalizationValues[field.id]?.imageThumbUrl ||
+                      personalizationValues[field.id]?.imageUrl ||
+                      null
+                    }
+                    onPick={(file) => {
+                      void onPersonalizationImage(field.id, file);
+                    }}
+                  />
                 )}
               </div>
             ))}
@@ -731,4 +712,91 @@ function VariantAxisField({
       return _exhaustive;
     }
   }
+}
+
+const PERSONALIZATION_GALLERY_ACCEPT =
+  "image/png,image/jpeg,image/jpg,image/webp,image/tiff,.tif,.tiff,.heic,.heif";
+
+function PersonalizationImagePicker({
+  label,
+  busy,
+  previewUrl,
+  onPick,
+}: {
+  label: string;
+  busy: boolean;
+  previewUrl: string | null;
+  onPick: (file: File | null) => void;
+}) {
+  const galleryRef = useRef<HTMLInputElement>(null);
+  const cameraRef = useRef<HTMLInputElement>(null);
+
+  const handleChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] ?? null;
+    onPick(file);
+    event.target.value = "";
+  };
+
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => galleryRef.current?.click()}
+          className="inline-flex items-center gap-2 rounded-md border border-site-border bg-white px-3 py-2 text-sm font-medium text-site-fg transition hover:bg-site-surface disabled:opacity-60"
+        >
+          <ImagePlus className="h-4 w-4" />
+          Galeriden seç
+        </button>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => cameraRef.current?.click()}
+          className="inline-flex items-center gap-2 rounded-md border border-site-border bg-white px-3 py-2 text-sm font-medium text-site-fg transition hover:bg-site-surface disabled:opacity-60"
+        >
+          <Camera className="h-4 w-4" />
+          Kamera ile çek
+        </button>
+      </div>
+
+      <input
+        ref={galleryRef}
+        type="file"
+        accept={PERSONALIZATION_GALLERY_ACCEPT}
+        disabled={busy}
+        className="sr-only"
+        aria-label={`${label} — galeriden seç`}
+        onChange={handleChange}
+      />
+      {/* capture: mobilde arka kamerayı açar; masaüstünde dosya seçiciye düşer */}
+      <input
+        ref={cameraRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        disabled={busy}
+        className="sr-only"
+        aria-label={`${label} — kamera ile çek`}
+        onChange={handleChange}
+      />
+
+      <p className="text-[11px] text-site-muted">
+        Telefondan fotoğraf çekebilir veya galeriden yükleyebilirsiniz. Baskı için yüksek
+        çözünürlüklü orijinal dosya kullanılır (en fazla 25 MB). Siparişe dönüşmeyen yüklemeler 1
+        hafta sonra silinir.
+      </p>
+      {previewUrl ? (
+        <div className="relative h-20 w-20 overflow-hidden rounded-md border border-site-border">
+          <SiteImage
+            src={previewUrl}
+            alt={label}
+            fill
+            className="object-cover"
+            sizes="80px"
+          />
+        </div>
+      ) : null}
+    </div>
+  );
 }

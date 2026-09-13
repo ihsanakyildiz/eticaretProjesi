@@ -1131,7 +1131,8 @@ function FeedEditor({
               onChange={(event) => onChange("stockLimit", Math.max(0, Number.parseInt(event.target.value, 10) || 0))}
             />
             <span className="mt-1.5 block text-xs text-slate-500">
-              Bu değerin altındaki stok satışa kapanır. 0 = limit yok. Stoksuz ürünler için 1 yazın.
+              Feed stoğu bu değerin altındaysa ürün satışa kapanır. Gelişmiş stokta depoda adet varken
+              feed stoğu 0 / limit altı olsa bile kapatılmaz. 0 = limit yok.
             </span>
           </label>
           <div>

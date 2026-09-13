@@ -15,7 +15,7 @@ import {
 } from "@/lib/product-money";
 import type { ProductVariantDraft } from "@/lib/product-editor";
 import type { GeneratorAttribute } from "./generate-combinations-modal";
-import { CatalogStockHint, catalogStockInputClass } from "./catalog-stock-field";
+import { CatalogStockHint, SupplierStockInfo, catalogStockInputClass } from "./catalog-stock-field";
 
 export type ProductGalleryPick = {
   preview: string;
@@ -332,7 +332,9 @@ export function VariantEditModal({
               </div>
             ) : null}
             <div>
-              <label className="mb-1.5 block text-sm font-medium text-slate-700">Stok adedi</label>
+              <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                {lockStock ? "Depo stoğu" : "Stok adedi"}
+              </label>
               <input
                 type="number"
                 min={0}
@@ -348,6 +350,12 @@ export function VariantEditModal({
                 className={catalogStockInputClass(inputClass, lockStock)}
               />
               <CatalogStockHint locked={lockStock} />
+              {lockStock ? (
+                <SupplierStockInfo
+                  warehouseStock={form.stockQuantity}
+                  supplierStock={variant.supplierStock ?? 0}
+                />
+              ) : null}
             </div>
           </div>
 

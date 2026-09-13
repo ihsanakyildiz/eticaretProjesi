@@ -317,7 +317,9 @@ function ApiFeedHelpModal({ onClose }: { onClose: () => void }) {
                   satış fiyatı
                 </li>
                 <li>
-                  <code className="rounded bg-slate-100 px-1">variants.stock</code> → Stok
+                  <code className="rounded bg-slate-100 px-1">variants.stock</code> → Stok (gelişmiş
+                  stokta tedarikçi stoğu; satış aç/kapa feed stok limiti ile; depoda adet varken
+                  kapatılmaz)
                 </li>
                 <li>
                   <code className="rounded bg-slate-100 px-1">variants.varyant</code> → Özellik 1

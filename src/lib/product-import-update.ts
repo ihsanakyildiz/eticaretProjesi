@@ -8,6 +8,7 @@ import {
 } from "@/lib/product-import";
 import { fromChargeAndListPrice, parseMajorToMinor, resolveImportedListPrices } from "@/lib/product-money";
 import { normalizeProductBarcode } from "@/lib/product-barcode";
+import { isAdvancedInventoryEnabled } from "@/lib/advanced-inventory";
 import { writeCatalogStock } from "@/lib/inventory";
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@prisma/client";
@@ -639,6 +640,10 @@ export async function applyProductUpdate(
     case "stock": {
       if (!payload.variantId) throw new Error("Varyant bulunamadı.");
       if (payload.stockQuantity == null) return;
+      if (await isAdvancedInventoryEnabled()) {
+        // Gelişmiş stokta Excel stok sütunu depo stoğuna yazılmaz; irsaliye/sayım kullanılır.
+        return;
+      }
       await prisma.productVariant.update({
         where: { id: payload.variantId },
         data: { stockQuantity: payload.stockQuantity },
@@ -703,6 +708,7 @@ export async function applyProductUpdate(
             )?.isDefault,
           )
         : false;
+      const allowExcelStock = !(await isAdvancedInventoryEnabled());
 
       await prisma.$transaction(async (tx) => {
         await tx.product.update({
@@ -731,11 +737,13 @@ export async function applyProductUpdate(
               ...(payload.priceMinor != null
                 ? { priceMinor: payload.priceMinor, compareAtMinor: payload.compareAtMinor }
                 : {}),
-              ...(payload.stockQuantity != null ? { stockQuantity: payload.stockQuantity } : {}),
+              ...(allowExcelStock && payload.stockQuantity != null
+                ? { stockQuantity: payload.stockQuantity }
+                : {}),
               ...(imageUrls[0] ? { image: imageUrls[0] } : {}),
             },
           });
-          if (payload.stockQuantity != null) {
+          if (allowExcelStock && payload.stockQuantity != null) {
             await writeCatalogStock(tx, payload.variantId, payload.stockQuantity, {
               note: "Toplu stok güncelleme",
             });

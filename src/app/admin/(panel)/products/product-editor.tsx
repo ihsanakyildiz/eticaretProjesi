@@ -84,7 +84,7 @@ import {
 } from "./generate-combinations-modal";
 import { ProductGalleryEditor, type ProductGalleryItem } from "./product-gallery-editor";
 import { VariantCombinationsPanel } from "./variant-combinations-panel";
-import { CatalogStockHint, catalogStockInputClass } from "./catalog-stock-field";
+import { CatalogStockHint, SupplierStockInfo, catalogStockInputClass } from "./catalog-stock-field";
 
 const initialState: ProductFormState = {};
 
@@ -168,6 +168,8 @@ export type ProductEditorInitial = {
   features?: ProductFeatureDraft[];
   variants?: ProductVariantDraft[];
   personalizationFields?: ProductPersonalizationFieldDraft[];
+  /** Gelişmiş stok: varsayılan varyant tedarikçi stoğu (salt okunur) */
+  supplierStock?: number;
 };
 
 function slugPreview(value: string) {
@@ -733,7 +735,9 @@ export function ProductEditor({
                 </p>
               </div>
               <div className="p-5">
-                <label className="mb-1.5 block text-sm font-medium text-slate-700">Stok adedi</label>
+                <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                  {advancedInventory ? "Depo stoğu" : "Stok adedi"}
+                </label>
                 <input
                   type="number"
                   min={0}
@@ -743,6 +747,12 @@ export function ProductEditor({
                   className={catalogStockInputClass(`${inputClass} max-w-xs`, advancedInventory)}
                 />
                 <CatalogStockHint locked={advancedInventory} />
+                {advancedInventory ? (
+                  <SupplierStockInfo
+                    warehouseStock={defaultVariant?.stockQuantity ?? 0}
+                    supplierStock={defaultVariant?.supplierStock ?? 0}
+                  />
+                ) : null}
               </div>
             </section>
           ) : null}
@@ -1239,7 +1249,9 @@ export function ProductEditor({
 
             {!hasCombinations ? (
               <div className="max-w-xs">
-                <label className="mb-1.5 block text-sm font-medium text-slate-700">Stok adedi</label>
+                <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                  {advancedInventory ? "Depo stoğu" : "Stok adedi"}
+                </label>
                 <input
                   type="number"
                   min={0}
@@ -1249,6 +1261,12 @@ export function ProductEditor({
                   className={catalogStockInputClass(inputClass, advancedInventory)}
                 />
                 <CatalogStockHint locked={advancedInventory} />
+                {advancedInventory ? (
+                  <SupplierStockInfo
+                    warehouseStock={defaultVariant?.stockQuantity ?? 0}
+                    supplierStock={defaultVariant?.supplierStock ?? 0}
+                  />
+                ) : null}
               </div>
             ) : null}
 

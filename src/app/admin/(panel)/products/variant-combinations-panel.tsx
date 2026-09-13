@@ -20,7 +20,7 @@ import {
 } from "@/lib/product-combination-filters";
 import type { GeneratorAttribute } from "./generate-combinations-modal";
 import { VariantEditModal, type ProductGalleryPick } from "./variant-edit-modal";
-import { CatalogStockHint, catalogStockInputClass } from "./catalog-stock-field";
+import { CatalogStockHint, SupplierStockInfo, catalogStockInputClass } from "./catalog-stock-field";
 
 function AttributeFilterDropdown({
   axis,
@@ -308,7 +308,9 @@ export function VariantCombinationsPanel({
               : "Bu ürün tek SKU. Beden/renk için kombinasyon üretin veya stok adedini aşağıdan girin."}
           </p>
           <div>
-            <label className="mb-1.5 block text-sm font-medium text-slate-700">Stok adedi</label>
+            <label className="mb-1.5 block text-sm font-medium text-slate-700">
+              {lockStock ? "Depo stoğu" : "Stok adedi"}
+            </label>
             <input
               type="number"
               min={0}
@@ -326,6 +328,14 @@ export function VariantCombinationsPanel({
               className={catalogStockInputClass(inputClass, lockStock)}
             />
             <CatalogStockHint locked={lockStock} />
+            {lockStock ? (
+              <SupplierStockInfo
+                warehouseStock={defaultStock}
+                supplierStock={
+                  variants.find((item) => item.selections.length === 0)?.supplierStock ?? 0
+                }
+              />
+            ) : null}
           </div>
         </div>
       ) : (
@@ -389,7 +399,7 @@ export function VariantCombinationsPanel({
                     <th className="py-2 pr-2">Referans</th>
                     <th className="py-2 pr-2">Satış (KDV hariç)</th>
                     <th className="py-2 pr-2">İndirimli</th>
-                    <th className="py-2 pr-2">Adet</th>
+                    <th className="py-2 pr-2">{lockStock ? "Depo" : "Adet"}</th>
                     <th className="py-2 pr-2">Varsayılan</th>
                     <th />
                   </tr>
@@ -500,7 +510,13 @@ export function VariantCombinationsPanel({
                             "w-20 rounded-md border border-[#e9ebec] px-2 py-1 text-sm",
                             lockStock,
                           )}
+                          title={lockStock ? "Depo stoğu (satılabilir)" : undefined}
                         />
+                        {lockStock ? (
+                          <p className="mt-1 text-[10px] leading-tight text-slate-500">
+                            Ted. {Math.max(0, variant.supplierStock ?? 0)}
+                          </p>
+                        ) : null}
                       </td>
                       <td className="py-2 pr-2">
                         <input

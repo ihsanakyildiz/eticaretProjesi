@@ -16,12 +16,16 @@ const PERSONALIZATION_IMAGE_MIME = [
   "image/jpeg",
   "image/webp",
   "image/tiff",
+  "image/heic",
+  "image/heif",
   ".png",
   ".jpg",
   ".jpeg",
   ".webp",
   ".tif",
   ".tiff",
+  ".heic",
+  ".heif",
 ];
 
 export async function uploadPersonalizationImageAction(
