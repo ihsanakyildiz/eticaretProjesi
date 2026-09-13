@@ -44,6 +44,9 @@ import {
   StockShortageError,
   syncOrderStockForStatus,
 } from "@/lib/order-stock";
+import { ensureOrderWarehouseReservationSchema } from "@/lib/ensure-order-warehouse-reservation-schema";
+import { setOrderItemWarehouseReserved } from "@/lib/order-warehouse-reservation";
+import { isAdvancedInventoryEnabled } from "@/lib/advanced-inventory";
 import { prisma } from "@/lib/prisma";
 
 export type OrderFormState = {
@@ -232,6 +235,7 @@ export async function updateOrderStatusAction(input: { id: string; status: Order
       id: true,
       status: true,
       paymentProvider: true,
+      allItemsWarehouseReserved: true,
       payments: { select: { amountMinor: true } },
       refunds: { select: { amountMinor: true } },
     },
@@ -240,6 +244,16 @@ export async function updateOrderStatusAction(input: { id: string; status: Order
 
   const blocked = statusChangeBlockedByFulfillment(parseOrderStatus(order.status), status);
   if (blocked) return { error: blocked };
+
+  if (
+    status === "SHIPPED" &&
+    (await isAdvancedInventoryEnabled()) &&
+    !(order as typeof order & { allItemsWarehouseReserved?: boolean }).allItemsWarehouseReserved
+  ) {
+    return {
+      error: "Tüm kalemler depodan rezerve edilmeden kargoya çıkarılamaz.",
+    };
+  }
 
   const remaining = Math.max(0, paidTotalMinor(order.payments) - refundedTotalMinor(order.refunds));
 
@@ -787,4 +801,39 @@ export async function deleteOrdersAction(input: { ids: string[] }) {
   }
   revalidateOrders();
   return { success: true, message: `${ids.length} sipariş silindi.` };
+}
+
+export async function setOrderItemWarehouseReservationAction(input: {
+  itemId: string;
+  reserved: boolean;
+}) {
+  const gate = await requirePermission("orders", "update");
+  if (!gate.ok) return { error: gate.error };
+  if (!(await isAdvancedInventoryEnabled())) {
+    return { error: "Depo rezervasyonu yalnızca gelişmiş stok sisteminde kullanılır." };
+  }
+
+  const itemId = String(input.itemId ?? "").trim();
+  if (!itemId) return { error: "Kalem bulunamadı." };
+
+  try {
+    await ensureOrderWarehouseReservationSchema().catch(() => undefined);
+    await prisma.$transaction(async (tx) => {
+      await setOrderItemWarehouseReserved(tx, itemId, Boolean(input.reserved));
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Rezervasyon güncellenemedi.";
+    return { error: message };
+  }
+
+  const item = await prisma.orderItem.findUnique({
+    where: { id: itemId },
+    select: { orderId: true },
+  });
+  revalidateOrders(item?.orderId);
+  revalidatePath("/admin/warehouse");
+  return {
+    success: true,
+    message: input.reserved ? "Ürün müşteriye rezerve edildi." : "Rezervasyon kaldırıldı.",
+  };
 }

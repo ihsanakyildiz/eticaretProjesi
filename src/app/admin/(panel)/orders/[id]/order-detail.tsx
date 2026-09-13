@@ -81,6 +81,8 @@ export type OrderDetailModel = {
   refunds: OrderRefundRow[];
   cases: OrderCaseView[];
   messages: { id: string; body: string; visibleToCustomer: boolean; createdAt: string }[];
+  allItemsWarehouseReserved?: boolean;
+  advancedInventory?: boolean;
 };
 
 const inputClass =
@@ -147,6 +149,17 @@ export function OrderDetail({ order }: { order: OrderDetailModel }) {
             <Warehouse className="h-4 w-4" />
             Depo paketleme
           </Link>
+        ) : null}
+        {order.advancedInventory ? (
+          <span
+            className={
+              order.allItemsWarehouseReserved
+                ? "rounded-md bg-emerald-50 px-2.5 py-1.5 text-xs font-semibold text-emerald-700"
+                : "rounded-md bg-amber-50 px-2.5 py-1.5 text-xs font-semibold text-amber-800"
+            }
+          >
+            {order.allItemsWarehouseReserved ? "Kargoya hazır" : "Stok bekleniyor"}
+          </span>
         ) : null}
         <div className="ml-auto flex items-center gap-1">
           {order.previousId ? (
@@ -298,6 +311,7 @@ export function OrderDetail({ order }: { order: OrderDetailModel }) {
             catalog={order.catalog}
             isPending={isPending}
             onRun={run}
+            advancedInventory={Boolean(order.advancedInventory)}
           />
 
           <OrderWorkspaceTabs

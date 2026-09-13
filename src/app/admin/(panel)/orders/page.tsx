@@ -7,6 +7,8 @@ import { prisma } from "@/lib/prisma";
 import { splitFullName } from "@/lib/customers";
 import { orderLineDiscount, readStoredCompareAt } from "@/lib/order-discount";
 import { parseOrderPaymentMethod, parseOrderStatus } from "@/lib/orders";
+import { ensureOrderWarehouseReservationSchema } from "@/lib/ensure-order-warehouse-reservation-schema";
+import { isAdvancedInventoryEnabled } from "@/lib/advanced-inventory";
 import { OrdersSubnav } from "./orders-subnav";
 import { OrdersTable } from "./orders-table";
 
@@ -18,6 +20,8 @@ export const metadata: Metadata = {
 export default async function OrdersPage() {
   const since = new Date();
   since.setDate(since.getDate() - 30);
+  await ensureOrderWarehouseReservationSchema().catch(() => undefined);
+  const advancedInventory = await isAdvancedInventoryEnabled();
 
   const [orders, recentOrders] = await Promise.all([
     prisma.order.findMany({
@@ -49,6 +53,9 @@ export default async function OrdersPage() {
     const firstName = order.user.firstName?.trim() || fromName.firstName;
     const lastName = order.user.lastName?.trim() || fromName.lastName;
     const shipping = order.addresses.find((address) => address.kind === OrderAddressKind.SHIPPING);
+    const orderRecord = order as typeof order & {
+      allItemsWarehouseReserved?: boolean;
+    };
     return {
       id: order.id,
       orderNo: order.orderNo,
@@ -63,6 +70,8 @@ export default async function OrdersPage() {
       createdAt: order.createdAt.toISOString(),
       carrierName: order.carrierName,
       trackingNumber: order.trackingNumber,
+      allItemsWarehouseReserved: Boolean(orderRecord.allItemsWarehouseReserved),
+      advancedInventory,
       shippingLines: shipping
         ? [
             `${shipping.firstName} ${shipping.lastName}`.trim(),
@@ -91,10 +100,13 @@ export default async function OrdersPage() {
           totalMinor: item.totalMinor,
           compareAtMinor: readStoredCompareAt(item),
         });
+        const itemRecord = item as typeof item & { reservedQuantity?: number };
         return {
+          id: item.id,
           title: item.variantTitle ? `${item.title} ${item.variantTitle}` : item.title,
           sku: item.sku,
           quantity: item.quantity,
+          reservedQuantity: Number(itemRecord.reservedQuantity) || 0,
           totalMinor: item.totalMinor,
           discountMinor: discount.savingsMinor,
           discountPercent: discount.percent,

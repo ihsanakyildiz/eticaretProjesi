@@ -48,6 +48,7 @@ export function ProductCard({
       : null;
   const hoverImage = catalogCardHoverImage(product);
   const availability = catalogCardAvailability(product);
+  const availabilityLabel = catalogCardAvailabilityLabel(availability);
   const { productHref } = useCatalogUrls();
   const countdownAt = onSale ? saleEndsAt : campaign?.countdown ? campaign.endsAt : null;
 
@@ -139,13 +140,15 @@ export function ProductCard({
             </p>
           ) : null}
           {countdownAt ? <SaleCountdown endsAt={countdownAt} compact /> : null}
-          <p
-            className={`mt-1 text-[11px] ${
-              availability === "out_of_stock" ? "text-site-muted" : "text-emerald-600"
-            }`}
-          >
-            {catalogCardAvailabilityLabel(availability)}
-          </p>
+          {availabilityLabel ? (
+            <p
+              className={`mt-1 text-[11px] ${
+                availability === "out_of_stock" ? "text-site-muted" : "text-emerald-600"
+              }`}
+            >
+              {availabilityLabel}
+            </p>
+          ) : null}
         </div>
       </div>
     </SiteLink>

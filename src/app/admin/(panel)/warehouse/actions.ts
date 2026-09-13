@@ -2,6 +2,7 @@
 
 import { OrderAddressKind, OrderStatus } from "@prisma/client";
 import { revalidatePath } from "next/cache";
+import { isAdvancedInventoryEnabled } from "@/lib/advanced-inventory";
 import { isOpenOrderCaseStatus, parseOrderCaseStatus } from "@/lib/order-cases";
 import { parseOrderStatus } from "@/lib/orders";
 import { syncOrderStockForStatus } from "@/lib/order-stock";
@@ -199,6 +200,7 @@ export async function shipPackedOrderAction(input: {
       status: true,
       carrierName: true,
       trackingNumber: true,
+      allItemsWarehouseReserved: true,
       user: { select: { email: true } },
       addresses: {
         where: { kind: OrderAddressKind.SHIPPING },
@@ -217,6 +219,14 @@ export async function shipPackedOrderAction(input: {
   }
   if (order.items.length === 0 || order.items.some((item) => item.packedQuantity < item.quantity)) {
     return { error: "Tüm ürünler okutulmadan kargoya çıkarılamaz." };
+  }
+  if (
+    (await isAdvancedInventoryEnabled()) &&
+    !(order as typeof order & { allItemsWarehouseReserved?: boolean }).allItemsWarehouseReserved
+  ) {
+    return {
+      error: "Tüm kalemler depodan rezerve edilmeden kargoya çıkarılamaz. Siparişte stok bekleniyor.",
+    };
   }
 
   const carrierName = input.carrierName?.trim().slice(0, 191) || order.carrierName || "Depo";
@@ -247,6 +257,7 @@ export async function shipPackedOrderAction(input: {
   }
 
   await prisma.$transaction(async (tx) => {
+    await syncOrderStockForStatus(tx, order.id, OrderStatus.SHIPPED);
     await tx.order.update({
       where: { id: order.id },
       data: {

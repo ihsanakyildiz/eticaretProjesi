@@ -188,8 +188,6 @@ export function ProductBuyBox({
       : null;
   const cartPriceIncl =
     cartExcl != null ? taxIncludedMinor(cartExcl, taxRatePercent) : null;
-  const hasPhysicalStock =
-    !variant?.trackInventory || (variant?.stockQuantity ?? 0) > 0;
   const canOrder =
     availableForOrder &&
     Boolean(
@@ -202,6 +200,14 @@ export function ProductBuyBox({
           outOfStockBehavior,
         }),
     );
+  const hasWarehouseStock =
+    Boolean(variant) &&
+    (variant!.trackInventory === false || (variant!.stockQuantity ?? 0) > 0);
+  const stockStatusLabel = !canOrder
+    ? outOfStockLabel || "Tükendi"
+    : hasWarehouseStock
+      ? inStockLabel || "24 Saatte Kargo"
+      : null;
   const unitLabel = productSaleUnitShort(saleUnit);
   const displaySku = (variant?.sku?.trim() || sku?.trim() || "") || null;
   const showMeta = Boolean(brandName || displaySku || onlineOnly);
@@ -439,14 +445,14 @@ export function ProductBuyBox({
           </div>
         ) : null}
 
-        <p className="mt-4 text-sm text-site-muted">
-          {hasPhysicalStock
-            ? inStockLabel || "Stokta"
-            : canOrder
-              ? outOfStockLabel || "Ön sipariş"
-              : outOfStockLabel || "Tükendi"}
-          {variant?.trackInventory ? ` · ${variant.stockQuantity} ${unitLabel}` : ""}
-        </p>
+        {stockStatusLabel ? (
+          <p className="mt-4 text-sm text-site-muted">
+            {stockStatusLabel}
+            {hasWarehouseStock && variant?.trackInventory
+              ? ` · ${variant.stockQuantity} ${unitLabel}`
+              : ""}
+          </p>
+        ) : null}
 
         {personalizationFields.length > 0 ? (
           <div className="mt-5 space-y-3 rounded-lg border border-site-border bg-site-surface/40 p-4">

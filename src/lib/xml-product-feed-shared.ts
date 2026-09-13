@@ -45,7 +45,7 @@ export function xmlFeedOutOfStockLabel(value: XmlFeedOutOfStockBehavior) {
     case "DENY":
       return "Siparişe izin verme";
     case "ALLOW":
-      return "Siparişe izin ver (ön sipariş)";
+      return "Siparişe izin ver (açık tut)";
     case "DEFAULT":
       return "Varsayılan davranış";
     default: {

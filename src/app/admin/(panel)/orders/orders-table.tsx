@@ -16,7 +16,7 @@ import {
   type OrderStatusCode,
 } from "@/lib/orders";
 import { formatMinorTry } from "@/lib/product-money";
-import { deleteOrderAction, deleteOrdersAction, updateOrderStatusAction } from "./actions";
+import { deleteOrderAction, deleteOrdersAction, setOrderItemWarehouseReservationAction, updateOrderStatusAction } from "./actions";
 import { OrderStatusSelect } from "./order-status-select";
 
 export type OrderRow = {
@@ -33,12 +33,16 @@ export type OrderRow = {
   createdAt: string;
   carrierName: string | null;
   trackingNumber: string | null;
+  allItemsWarehouseReserved?: boolean;
+  advancedInventory?: boolean;
   shippingLines: string[];
   billingLines: string[];
   items: {
+    id: string;
     title: string;
     sku: string | null;
     quantity: number;
+    reservedQuantity: number;
     totalMinor: number;
     discountMinor?: number;
     discountPercent?: number;
@@ -82,6 +86,22 @@ export function OrdersTable({ orders }: { orders: OrderRow[] }) {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [statusById, setStatusById] = useState<Record<string, OrderStatusCode>>({});
+  const [reservationByItem, setReservationByItem] = useState<Record<string, boolean>>({});
+
+  const toggleItemReservation = (itemId: string, reserved: boolean, current: boolean) => {
+    if (!canUpdate) return;
+    setReservationByItem((prev) => ({ ...prev, [itemId]: reserved }));
+    startTransition(async () => {
+      const result = await setOrderItemWarehouseReservationAction({ itemId, reserved });
+      if (result.error) {
+        setReservationByItem((prev) => ({ ...prev, [itemId]: current }));
+        setError(result.error);
+        return;
+      }
+      setError(null);
+      router.refresh();
+    });
+  };
 
   const filtered = useMemo(() => {
     return orders.filter((order) => {
@@ -366,21 +386,34 @@ export function OrdersTable({ orders }: { orders: OrderRow[] }) {
                       {orderPaymentMethodLabel(order.paymentMethod)}
                     </td>
                     <td className="px-2 py-2.5">
-                      {canUpdate ? (
-                        <OrderStatusSelect
-                          value={statusById[order.id] ?? order.status}
-                          disabled={isPending}
-                          onChange={(status) => changeStatus(order.id, status)}
-                        />
-                      ) : (
-                        <span
-                          className={`inline-flex rounded px-2 py-0.5 text-[11px] font-semibold ${orderStatusBadgeClass(
-                            statusById[order.id] ?? order.status,
-                          )}`}
-                        >
-                          {orderStatusLabel(statusById[order.id] ?? order.status)}
-                        </span>
-                      )}
+                      <div className="flex flex-col gap-1">
+                        {canUpdate ? (
+                          <OrderStatusSelect
+                            value={statusById[order.id] ?? order.status}
+                            disabled={isPending}
+                            onChange={(status) => changeStatus(order.id, status)}
+                          />
+                        ) : (
+                          <span
+                            className={`inline-flex rounded px-2 py-0.5 text-[11px] font-semibold ${orderStatusBadgeClass(
+                              statusById[order.id] ?? order.status,
+                            )}`}
+                          >
+                            {orderStatusLabel(statusById[order.id] ?? order.status)}
+                          </span>
+                        )}
+                        {order.advancedInventory ? (
+                          <span
+                            className={`inline-flex w-fit rounded px-1.5 py-0.5 text-[10px] font-semibold ${
+                              order.allItemsWarehouseReserved
+                                ? "bg-emerald-50 text-emerald-700"
+                                : "bg-amber-50 text-amber-700"
+                            }`}
+                          >
+                            {order.allItemsWarehouseReserved ? "Kargoya hazır" : "Stok bekleniyor"}
+                          </span>
+                        ) : null}
+                      </div>
                     </td>
                     <td className="px-2 py-2.5 whitespace-nowrap text-slate-600">
                       {formatOrderDateTime(order.createdAt)}
@@ -449,28 +482,67 @@ export function OrdersTable({ orders }: { orders: OrderRow[] }) {
                               Ürünler ({order.items.length})
                             </p>
                             <ul className="mt-2 divide-y divide-[#e9ebec] text-sm">
-                              {order.items.map((item) => (
-                                <li key={`${item.sku}-${item.title}`} className="flex justify-between gap-3 py-1.5">
-                                  <span>
-                                    {item.title}
-                                    {item.sku ? (
-                                      <span className="block text-xs text-slate-400">{item.sku}</span>
-                                    ) : null}
-                                    <span className="text-xs text-slate-400">Adet: {item.quantity}</span>
-                                  </span>
-                                  <span className="shrink-0 text-right">
-                                    <span className="block font-medium">{formatMinorTry(item.totalMinor)}</span>
-                                    {item.discountMinor && item.discountMinor > 0 ? (
-                                      <span className="block text-[11px] font-medium text-emerald-600">
-                                        −{formatMinorTry(item.discountMinor)}
-                                        {item.discountPercent
-                                          ? ` (%${item.discountPercent})`
-                                          : ""}
+                              {order.items.map((item) => {
+                                const reserved =
+                                  reservationByItem[item.id] ??
+                                  item.reservedQuantity >= item.quantity;
+                                return (
+                                  <li
+                                    key={item.id}
+                                    className="flex justify-between gap-3 py-1.5"
+                                  >
+                                    <span className="flex min-w-0 items-start gap-2">
+                                      {order.advancedInventory ? (
+                                        <input
+                                          type="checkbox"
+                                          className="mt-0.5 accent-[#0ab39c]"
+                                          checked={reserved}
+                                          disabled={!canUpdate || isPending}
+                                          title={
+                                            reserved
+                                              ? "Rezerve — kaldırınca stok sıradakine geçer"
+                                              : "Rezerve et"
+                                          }
+                                          onChange={(event) =>
+                                            toggleItemReservation(
+                                              item.id,
+                                              event.target.checked,
+                                              reserved,
+                                            )
+                                          }
+                                        />
+                                      ) : null}
+                                      <span>
+                                        {item.title}
+                                        {item.sku ? (
+                                          <span className="block text-xs text-slate-400">
+                                            {item.sku}
+                                          </span>
+                                        ) : null}
+                                        <span className="text-xs text-slate-400">
+                                          Adet: {item.quantity}
+                                          {order.advancedInventory
+                                            ? ` · Rezerve: ${item.reservedQuantity}/${item.quantity}`
+                                            : ""}
+                                        </span>
                                       </span>
-                                    ) : null}
-                                  </span>
-                                </li>
-                              ))}
+                                    </span>
+                                    <span className="shrink-0 text-right">
+                                      <span className="block font-medium">
+                                        {formatMinorTry(item.totalMinor)}
+                                      </span>
+                                      {item.discountMinor && item.discountMinor > 0 ? (
+                                        <span className="block text-[11px] font-medium text-emerald-600">
+                                          −{formatMinorTry(item.discountMinor)}
+                                          {item.discountPercent
+                                            ? ` (%${item.discountPercent})`
+                                            : ""}
+                                        </span>
+                                      ) : null}
+                                    </span>
+                                  </li>
+                                );
+                              })}
                             </ul>
                             <Link
                               href={`/admin/orders/${order.id}`}

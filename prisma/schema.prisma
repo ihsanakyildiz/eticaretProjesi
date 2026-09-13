@@ -196,6 +196,8 @@ model Order {
   paymentProvider String?            @db.VarChar(32)
   paymentToken    String?            @db.VarChar(191)
   stockReserved   Boolean            @default(false)
+  /// Gelişmiş stok: tüm kalemler depo rezervasyonunu tamamladıysa kargoya hazır
+  allItemsWarehouseReserved Boolean  @default(false)
   currency        String             @default("TRY") @db.VarChar(3)
   productsMinor   Int                @default(0)
   shippingMinor   Int                @default(0)
@@ -241,6 +243,9 @@ model OrderItem {
   sku             String?         @db.VarChar(191)
   quantity        Int
   packedQuantity  Int             @default(0)
+  /// Gelişmiş stok: bu müşteriye ayrılmış depo adedi (0…quantity)
+  reservedQuantity Int            @default(0)
+  warehouseReservedAt DateTime?
   unitPriceMinor  Int
   /// Sipariş anındaki liste fiyatı (KDV dahil); ödenenden yüksekse indirim vardır
   compareAtMinor  Int?

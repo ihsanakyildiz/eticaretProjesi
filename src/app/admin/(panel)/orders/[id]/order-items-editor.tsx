@@ -14,7 +14,7 @@ import {
 } from "@/lib/product-money";
 import type { CartPersonalization } from "@/lib/product-personalization";
 import { PersonalizationValuesDisplay } from "@/components/personalization-values-display";
-import { addOrderItemAction, deleteOrderItemAction, updateOrderItemAction } from "../actions";
+import { addOrderItemAction, deleteOrderItemAction, setOrderItemWarehouseReservationAction, updateOrderItemAction } from "../actions";
 
 export type CatalogProduct = {
   id: string;
@@ -38,6 +38,7 @@ export type OrderItemRow = {
   variantTitle: string | null;
   sku: string | null;
   quantity: number;
+  reservedQuantity?: number;
   unitPriceMinor: number;
   compareAtMinor?: number | null;
   taxRatePercent: number;
@@ -83,6 +84,7 @@ export function OrderItemsEditor({
   catalog,
   isPending,
   onRun,
+  advancedInventory = false,
 }: {
   orderId: string;
   items: OrderItemRow[];
@@ -93,10 +95,12 @@ export function OrderItemsEditor({
   catalog: CatalogProduct[];
   isPending: boolean;
   onRun: (task: () => Promise<{ error?: string }>) => void;
+  advancedInventory?: boolean;
 }) {
   const [adding, setAdding] = useState(false);
   const [addDraft, setAddDraft] = useState<AddDraft>(emptyAdd);
   const [editDraft, setEditDraft] = useState<EditDraft | null>(null);
+  const [reservationByItem, setReservationByItem] = useState<Record<string, boolean>>({});
 
   const selectedProduct = catalog.find((product) => product.id === addDraft.productId) ?? null;
   const selectedVariant =
@@ -197,6 +201,7 @@ export function OrderItemsEditor({
         <table className="w-full min-w-[860px] text-left text-sm">
           <thead className="text-xs text-slate-400 uppercase">
             <tr>
+              {advancedInventory ? <th className="py-2 pr-2">Rez.</th> : null}
               <th className="py-2 pr-3">Ürün</th>
               <th className="py-2 pr-3">Birim fiyat</th>
               <th className="py-2 pr-3">İndirim</th>
@@ -210,8 +215,43 @@ export function OrderItemsEditor({
             {items.map((item) => {
               const editing = editDraft?.itemId === item.id;
               const discount = orderLineDiscount(item);
+              const reservedQty = item.reservedQuantity ?? 0;
+              const isReserved =
+                reservationByItem[item.id] ?? reservedQty >= item.quantity;
               return (
                 <tr key={item.id} className="border-t border-[#e9ebec]">
+                  {advancedInventory ? (
+                    <td className="py-2.5 pr-2 align-top">
+                      <input
+                        type="checkbox"
+                        className="mt-1 accent-[#0ab39c]"
+                        checked={isReserved}
+                        disabled={isPending}
+                        title={
+                          isReserved
+                            ? "Rezerve — kaldırınca stok sıradakine geçer"
+                            : "Rezerve et"
+                        }
+                        onChange={(event) => {
+                          const next = event.target.checked;
+                          setReservationByItem((prev) => ({ ...prev, [item.id]: next }));
+                          onRun(async () => {
+                            const result = await setOrderItemWarehouseReservationAction({
+                              itemId: item.id,
+                              reserved: next,
+                            });
+                            if (result.error) {
+                              setReservationByItem((prev) => ({
+                                ...prev,
+                                [item.id]: !next,
+                              }));
+                            }
+                            return result;
+                          });
+                        }}
+                      />
+                    </td>
+                  ) : null}
                   <td className="py-2.5 pr-3">
                     <div className="flex items-start gap-3">
                       <Thumb src={item.image} alt={item.title} />
@@ -228,6 +268,11 @@ export function OrderItemsEditor({
                           <p className="mt-1 text-xs text-slate-500">{item.personalizationSummary}</p>
                         ) : null}
                         {item.sku ? <p className="text-xs text-slate-400">{item.sku}</p> : null}
+                        {advancedInventory ? (
+                          <p className="mt-1 text-xs text-slate-500">
+                            Rezerve: {reservedQty}/{item.quantity}
+                          </p>
+                        ) : null}
                       </div>
                     </div>
                   </td>

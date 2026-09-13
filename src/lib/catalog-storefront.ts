@@ -179,10 +179,10 @@ export function catalogCardAvailability(product: {
     trackInventory?: boolean;
     allowBackorder?: boolean;
   }>;
-}): "in_stock" | "preorder" | "out_of_stock" {
+}): "ships_fast" | "for_sale" | "out_of_stock" {
   if (!product.availableForOrder) return "out_of_stock";
   const variants = product.variants;
-  if (variants.length === 0) return "in_stock";
+  if (variants.length === 0) return "for_sale";
 
   const anyPurchasable = variants.some((variant) =>
     isVariantPurchasable({
@@ -194,20 +194,21 @@ export function catalogCardAvailability(product: {
   );
   if (!anyPurchasable) return "out_of_stock";
 
-  const anyPhysical = variants.some(
+  // stockQuantity sipariş rezervasyonundan sonra düşer; kalan = satılabilir depo.
+  const hasWarehouseStock = variants.some(
     (variant) => variant.trackInventory === false || variant.stockQuantity > 0,
   );
-  return anyPhysical ? "in_stock" : "preorder";
+  return hasWarehouseStock ? "ships_fast" : "for_sale";
 }
 
 export function catalogCardAvailabilityLabel(
   availability: ReturnType<typeof catalogCardAvailability>,
-): string {
+): string | null {
   switch (availability) {
-    case "in_stock":
-      return "Stokta";
-    case "preorder":
-      return "Ön sipariş";
+    case "ships_fast":
+      return "24 Saatte Kargo";
+    case "for_sale":
+      return null;
     case "out_of_stock":
       return "Tükendi";
     default: {
@@ -219,12 +220,11 @@ export function catalogCardAvailabilityLabel(
 
 export function catalogCardSchemaAvailability(
   availability: ReturnType<typeof catalogCardAvailability>,
-): "InStock" | "PreOrder" | "OutOfStock" {
+): "InStock" | "OutOfStock" {
   switch (availability) {
-    case "in_stock":
+    case "ships_fast":
+    case "for_sale":
       return "InStock";
-    case "preorder":
-      return "PreOrder";
     case "out_of_stock":
       return "OutOfStock";
     default: {

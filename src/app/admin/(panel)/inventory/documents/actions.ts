@@ -17,6 +17,8 @@ import {
 } from "@/lib/inventory-labels";
 import { findVariantByScan } from "@/lib/inventory-scan";
 import { getDefaultStockWarehouse, getWarehouseOnHand } from "@/lib/inventory";
+import { isAdvancedInventoryEnabled } from "@/lib/advanced-inventory";
+import { onWarehouseStockIncreased } from "@/lib/order-warehouse-reservation";
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/staff-permissions";
 
@@ -355,6 +357,10 @@ export async function confirmStockDocumentAction(documentId: string): Promise<St
           confirmedById: gate.session.user?.id ?? null,
         },
       });
+      if (await isAdvancedInventoryEnabled()) {
+        const variantIds = document.lines.map((line) => line.variantId).filter(Boolean);
+        await onWarehouseStockIncreased(tx, variantIds);
+      }
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Stok uygulanamadı.";

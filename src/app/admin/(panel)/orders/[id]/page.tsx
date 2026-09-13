@@ -4,7 +4,9 @@ import { notFound } from "next/navigation";
 import { OrderAddressKind } from "@prisma/client";
 import { ShoppingBag } from "lucide-react";
 import { ensureOrderDiscountSchema } from "@/lib/ensure-order-discount-schema";
+import { ensureOrderWarehouseReservationSchema } from "@/lib/ensure-order-warehouse-reservation-schema";
 import { ensureProductPersonalizationSchema } from "@/lib/ensure-product-personalization-schema";
+import { isAdvancedInventoryEnabled } from "@/lib/advanced-inventory";
 import {
   readStoredCompareAt,
   readStoredDiscountMinor,
@@ -52,6 +54,8 @@ export default async function OrderDetailPage({ params }: Props) {
   const { id } = await params;
   await ensureOrderDiscountSchema().catch(() => undefined);
   await ensureProductPersonalizationSchema().catch(() => undefined);
+  await ensureOrderWarehouseReservationSchema().catch(() => undefined);
+  const advancedInventory = await isAdvancedInventoryEnabled();
   const order = await prisma.order.findUnique({
     where: { id },
     include: {
@@ -267,12 +271,15 @@ export default async function OrderDetailPage({ params }: Props) {
                 ].filter((line): line is string => Boolean(line)),
               }
             : null,
-          items: order.items.map((item) => ({
+          items: order.items.map((item) => {
+            const itemRecord = item as typeof item & { reservedQuantity?: number };
+            return {
             id: item.id,
             title: item.title,
             variantTitle: item.variantTitle,
             sku: item.sku,
             quantity: item.quantity,
+            reservedQuantity: Number(itemRecord.reservedQuantity) || 0,
             unitPriceMinor: item.unitPriceMinor,
             compareAtMinor: snapshotCompareAtMinor(
               readStoredCompareAt(item) ??
@@ -284,7 +291,8 @@ export default async function OrderDetailPage({ params }: Props) {
             image: item.image,
             stock: item.variantId ? (stockByVariant.get(item.variantId) ?? null) : null,
             ...personalizationFromStoredJson(personalizationByItemId.get(item.id) ?? null),
-          })),
+          };
+          }),
           catalog: catalog.map((product) => ({
             id: product.id,
             title: product.title,
@@ -327,6 +335,11 @@ export default async function OrderDetailPage({ params }: Props) {
             visibleToCustomer: message.visibleToCustomer,
             createdAt: message.createdAt.toISOString(),
           })),
+          allItemsWarehouseReserved: Boolean(
+            (order as typeof order & { allItemsWarehouseReserved?: boolean })
+              .allItemsWarehouseReserved,
+          ),
+          advancedInventory,
         }}
       />
     </div>

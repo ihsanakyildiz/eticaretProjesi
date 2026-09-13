@@ -1021,7 +1021,7 @@ export function ProductEditor({
                     label = "Siparişe izin verme";
                     break;
                   case "ALLOW":
-                    label = "Siparişe izin ver (ön sipariş)";
+                    label = "Siparişe izin ver (açık tut)";
                     break;
                   case "DEFAULT":
                     label = "Varsayılan davranış";
@@ -1047,9 +1047,17 @@ export function ProductEditor({
             <div className="mt-4 grid gap-4 md:grid-cols-2">
               <div>
                 <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                  Stokta etiketi
+                  Depo stoğu etiketi
                 </label>
-                <input name="inStockLabel" defaultValue={initial?.inStockLabel ?? ""} className={inputClass} />
+                <input
+                  name="inStockLabel"
+                  defaultValue={initial?.inStockLabel ?? ""}
+                  placeholder="24 Saatte Kargo"
+                  className={inputClass}
+                />
+                <p className="mt-1 text-xs text-slate-500">
+                  Satılabilir depo stoğu varken gösterilir. Boşsa varsayılan: 24 Saatte Kargo.
+                </p>
               </div>
               <div>
                 <label className="mb-1.5 block text-sm font-medium text-slate-700">

@@ -1,4 +1,5 @@
 import { OrderPaymentMethod, OrderStatus } from "@prisma/client";
+import { syncOrderStockForStatus } from "@/lib/order-stock";
 import { prisma } from "@/lib/prisma";
 
 export async function acceptCardPayment(input: {
@@ -36,23 +37,24 @@ export async function acceptCardPayment(input: {
   );
   if (duplicate) return { ok: true };
 
-  await prisma.$transaction([
-    prisma.order.update({
+  await prisma.$transaction(async (tx) => {
+    await tx.order.update({
       where: { id: order.id },
       data: { status: OrderStatus.PAYMENT_ACCEPTED },
-    }),
-    prisma.orderStatusEvent.create({
+    });
+    await tx.orderStatusEvent.create({
       data: { orderId: order.id, status: OrderStatus.PAYMENT_ACCEPTED },
-    }),
-    prisma.orderPayment.create({
+    });
+    await tx.orderPayment.create({
       data: {
         orderId: order.id,
         method: OrderPaymentMethod.CREDIT_CARD,
         amountMinor: order.totalMinor,
         transactionId: input.transactionId.slice(0, 191),
       },
-    }),
-  ]);
+    });
+    await syncOrderStockForStatus(tx, order.id, OrderStatus.PAYMENT_ACCEPTED);
+  });
 
   return { ok: true };
 }

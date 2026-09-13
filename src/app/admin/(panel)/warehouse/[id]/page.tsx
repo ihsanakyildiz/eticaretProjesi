@@ -3,6 +3,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { OrderAddressKind, OrderStatus } from "@prisma/client";
 import { ArrowLeft, Warehouse } from "lucide-react";
+import { isAdvancedInventoryEnabled } from "@/lib/advanced-inventory";
+import { ensureOrderWarehouseReservationSchema } from "@/lib/ensure-order-warehouse-reservation-schema";
 import { splitFullName } from "@/lib/customers";
 import { isOpenOrderCaseStatus, parseOrderCaseStatus } from "@/lib/order-cases";
 import { orderStatusLabel, parseOrderStatus } from "@/lib/orders";
@@ -25,6 +27,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
 export default async function WarehousePackPage({ params }: Props) {
   const { id } = await params;
+  await ensureOrderWarehouseReservationSchema().catch(() => undefined);
+  const advancedInventory = await isAdvancedInventoryEnabled();
   const [order, settings, carriers] = await Promise.all([
     prisma.order.findUnique({
       where: { id },
@@ -35,6 +39,7 @@ export default async function WarehousePackPage({ params }: Props) {
         status: true,
         carrierName: true,
         trackingNumber: true,
+        allItemsWarehouseReserved: true,
         user: { select: { firstName: true, lastName: true, name: true, email: true } },
         addresses: true,
         cases: { select: { status: true } },
@@ -60,6 +65,11 @@ export default async function WarehousePackPage({ params }: Props) {
   const addressLines = shipping ? warehouseAddressLines(shipping) : [];
   const blocked = order.cases.some((row) => isOpenOrderCaseStatus(parseOrderCaseStatus(row.status)));
   const shipped = order.status === OrderStatus.SHIPPED;
+  const stockWaiting =
+    advancedInventory &&
+    !Boolean(
+      (order as typeof order & { allItemsWarehouseReserved?: boolean }).allItemsWarehouseReserved,
+    );
   const packable = isWarehouseReadyStatus(status) && !blocked;
   const lines = await loadOrderPickLines(order.id);
 
@@ -106,6 +116,16 @@ export default async function WarehousePackPage({ params }: Props) {
         </div>
       ) : null}
 
+      {stockWaiting && !shipped ? (
+        <div
+          role="alert"
+          className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 print:hidden"
+        >
+          Stok bekleniyor — tüm kalemler depodan rezerve edilmeden kargoya çıkarılamaz. Paketleme
+          yapılabilir; kargo çıkışı stok tamamlanınca açılır.
+        </div>
+      ) : null}
+
       {!packable && !shipped ? (
         <div
           role="alert"
@@ -114,7 +134,7 @@ export default async function WarehousePackPage({ params }: Props) {
           Bu sipariş depodan kargoya çıkarılamaz. Durum: {orderStatusLabel(status)}.
         </div>
       ) : (
-        <WarehousePackStation order={model} />
+        <WarehousePackStation order={model} shipBlockedByStock={stockWaiting} />
       )}
     </div>
   );

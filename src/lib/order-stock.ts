@@ -1,10 +1,17 @@
 import "server-only";
 
 import { OrderStatus, type Prisma } from "@prisma/client";
+import { isAdvancedInventoryEnabled } from "@/lib/advanced-inventory";
 import {
   consumeAvailableStock,
   restoreOrderStockToWarehouses,
 } from "@/lib/inventory";
+import {
+  clearOrderItemReservationsAfterShip,
+  onOrderBecamePayable,
+  orderStatusHoldsWarehouseReservation,
+  releaseOrderWarehouseReservations,
+} from "@/lib/order-warehouse-reservation";
 import { allowsOrderWhenOutOfStock, StockShortageError } from "@/lib/product-stock";
 
 export { StockShortageError };
@@ -70,6 +77,21 @@ async function restoreTrackedStock(
 }
 
 export async function reserveOrderStock(tx: Tx, orderId: string) {
+  if (await isAdvancedInventoryEnabled()) {
+    const order = await tx.order.findUnique({
+      where: { id: orderId },
+      select: { id: true, status: true },
+    });
+    if (!order) return;
+    if (!orderStatusHoldsWarehouseReservation(order.status)) return;
+    await onOrderBecamePayable(tx, orderId);
+    await tx.order.update({
+      where: { id: orderId },
+      data: { stockReserved: true },
+    });
+    return;
+  }
+
   const order = await tx.order.findUnique({
     where: { id: orderId },
     select: {
@@ -100,6 +122,15 @@ export async function reserveOrderStock(tx: Tx, orderId: string) {
 }
 
 export async function releaseOrderStock(tx: Tx, orderId: string) {
+  if (await isAdvancedInventoryEnabled()) {
+    await releaseOrderWarehouseReservations(tx, orderId);
+    await tx.order.update({
+      where: { id: orderId },
+      data: { stockReserved: false },
+    });
+    return;
+  }
+
   const order = await tx.order.findUnique({
     where: { id: orderId },
     select: {
@@ -124,7 +155,41 @@ export async function releaseOrderStock(tx: Tx, orderId: string) {
   });
 }
 
+async function consumeWarehouseOnShip(tx: Tx, orderId: string) {
+  const order = await tx.order.findUnique({
+    where: { id: orderId },
+    select: {
+      id: true,
+      items: {
+        select: {
+          variantId: true,
+          quantity: true,
+          reservedQuantity: true,
+          title: true,
+        },
+      },
+    },
+  });
+  if (!order) return;
+
+  for (const item of order.items) {
+    if (!item.variantId) continue;
+    const qty = item.reservedQuantity > 0 ? item.reservedQuantity : item.quantity;
+    if (qty <= 0) continue;
+    await consumeAvailableStock(tx, {
+      variantId: item.variantId,
+      quantity: qty,
+      title: item.title,
+      orderId: order.id,
+      note: "Kargo — depo çıkışı",
+    });
+  }
+  await clearOrderItemReservationsAfterShip(tx, orderId);
+}
+
 export async function syncOrderStockForStatus(tx: Tx, orderId: string, nextStatus: OrderStatus) {
+  const advanced = await isAdvancedInventoryEnabled();
+
   switch (nextStatus) {
     case OrderStatus.CANCELED:
       await releaseOrderStock(tx, orderId);
@@ -132,12 +197,49 @@ export async function syncOrderStockForStatus(tx: Tx, orderId: string, nextStatu
     case OrderStatus.REFUNDED:
       return;
     case OrderStatus.AWAITING_PAYMENT:
+    case OrderStatus.PAYMENT_ERROR:
+      if (advanced) {
+        await releaseOrderWarehouseReservations(tx, orderId);
+        await tx.order.update({
+          where: { id: orderId },
+          data: { stockReserved: false },
+        });
+      }
+      return;
     case OrderStatus.PAYMENT_ACCEPTED:
-    case OrderStatus.PROCESSING:
+    case OrderStatus.PROCESSING: {
+      // FIFO allocate açık sipariş durumuna bakar; önce hedef status yazılmalı
+      const current = await tx.order.findUnique({
+        where: { id: orderId },
+        select: { status: true },
+      });
+      if (current && current.status !== nextStatus) {
+        await tx.order.update({
+          where: { id: orderId },
+          data: { status: nextStatus },
+        });
+      }
+      await reserveOrderStock(tx, orderId);
+      return;
+    }
     case OrderStatus.SHIPPED:
     case OrderStatus.DELIVERED:
-    case OrderStatus.PAYMENT_ERROR:
-      await reserveOrderStock(tx, orderId);
+      if (advanced) {
+        const order = await tx.order.findUnique({
+          where: { id: orderId },
+          select: { status: true, stockReserved: true },
+        });
+        // Fiziksel düşüm yalnızca ilk kez kargoya geçerken
+        if (order && order.status !== OrderStatus.SHIPPED && order.status !== OrderStatus.DELIVERED) {
+          await consumeWarehouseOnShip(tx, orderId);
+          await tx.order.update({
+            where: { id: orderId },
+            data: { stockReserved: true },
+          });
+        }
+      } else {
+        await reserveOrderStock(tx, orderId);
+      }
       return;
     default: {
       const _exhaustive: never = nextStatus;
@@ -151,6 +253,10 @@ export async function restockOrderItemQuantities(
   lines: { variantId: string | null; quantity: number }[],
   orderId: string,
 ) {
+  if (await isAdvancedInventoryEnabled()) {
+    // Gelişmiş stokta fiziksel düşüm kargoda; iade/restock klasik hareketle yapılır
+    return;
+  }
   for (const line of lines) {
     await restoreTrackedStock(tx, {
       orderId,
@@ -163,7 +269,7 @@ export async function restockOrderItemQuantities(
 export async function markOrderStockReleased(tx: Tx, orderId: string) {
   await tx.order.update({
     where: { id: orderId },
-    data: { stockReserved: false },
+    data: { stockReserved: false, allItemsWarehouseReserved: false },
   });
 }
 
@@ -172,6 +278,12 @@ export async function applyReservedStockDelta(
   input: { orderId: string; variantId: string | null; quantityDelta: number; title: string },
 ) {
   if (input.quantityDelta === 0 || !input.variantId) return;
+
+  if (await isAdvancedInventoryEnabled()) {
+    await onOrderBecamePayable(tx, input.orderId);
+    return;
+  }
+
   const order = await tx.order.findUnique({
     where: { id: input.orderId },
     select: { stockReserved: true },

@@ -36,7 +36,13 @@ export type WarehousePackModel = {
   shipped: boolean;
 };
 
-export function WarehousePackStation({ order }: { order: WarehousePackModel }) {
+export function WarehousePackStation({
+  order,
+  shipBlockedByStock = false,
+}: {
+  order: WarehousePackModel;
+  shipBlockedByStock?: boolean;
+}) {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const labelHostRef = useRef<HTMLDivElement>(null);
@@ -370,7 +376,12 @@ export function WarehousePackStation({ order }: { order: WarehousePackModel }) {
           </button>
           <button
             type="button"
-            disabled={isPending || !complete}
+            disabled={isPending || !complete || shipBlockedByStock}
+            title={
+              shipBlockedByStock
+                ? "Tüm kalemler rezerve edilmeden kargoya çıkarılamaz"
+                : undefined
+            }
             onClick={() =>
               startTransition(async () => {
                 const result = await shipPackedOrderAction({

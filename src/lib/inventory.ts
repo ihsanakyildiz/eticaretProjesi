@@ -79,12 +79,29 @@ export async function sumWarehouseOnHand(db: InventoryClient, variantId: string)
 }
 
 export async function syncVariantStockFromWarehouses(db: InventoryClient, variantId: string) {
-  const total = await sumWarehouseOnHand(db, variantId);
+  const physical = await sumWarehouseOnHand(db, variantId);
+  let reserved = 0;
+  try {
+    const agg = await db.orderItem.aggregate({
+      where: {
+        variantId,
+        reservedQuantity: { gt: 0 },
+        order: {
+          status: { in: ["PAYMENT_ACCEPTED", "PROCESSING"] },
+        },
+      },
+      _sum: { reservedQuantity: true },
+    });
+    reserved = agg._sum.reservedQuantity ?? 0;
+  } catch {
+    reserved = 0;
+  }
+  const sellable = Math.max(0, physical - reserved);
   await db.productVariant.update({
     where: { id: variantId },
-    data: { stockQuantity: total },
+    data: { stockQuantity: sellable },
   });
-  return total;
+  return sellable;
 }
 
 export async function getWarehouseOnHand(

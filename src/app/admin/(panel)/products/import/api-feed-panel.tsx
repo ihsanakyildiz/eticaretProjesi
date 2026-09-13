@@ -1370,7 +1370,7 @@ function FeedEditor({
               ))}
             </div>
             <p className="mt-1.5 text-xs text-slate-500">
-              Limitin altındaki ürüne uygulanır. Ön sipariş seçiliyse ürün siparişe açık kalır.
+              Limitin altındaki ürüne uygulanır. “Açık tut” seçiliyse ürün siparişe açık kalır.
             </p>
           </div>
         </div>
@@ -1388,7 +1388,7 @@ function FeedEditor({
             />
             <AdminSwitch
               label="Stoğu sıfır olan ürünleri satışa kapat"
-              description="Stok 0 veya boşsa kapanır. Stokta olanlar bir sonraki kontrolde stoğu bitince kapanır. Ön sipariş seçiliyse açık kalır."
+              description="Stok 0 veya boşsa kapanır. Stokta olanlar bir sonraki kontrolde stoğu bitince kapanır. Açık tut seçiliyse açık kalır."
               checked={editor.closeZeroStock}
               onChange={(checked) => onChange("closeZeroStock", checked)}
             />
