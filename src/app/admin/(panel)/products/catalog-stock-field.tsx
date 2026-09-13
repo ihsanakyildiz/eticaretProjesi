@@ -28,19 +28,15 @@ export function SupplierStockInfo({
 }) {
   const warehouse = Math.max(0, warehouseStock);
   const supplier = Math.max(0, supplierStock);
-  const total = warehouse + supplier;
   return (
     <div className="mt-2 space-y-1 rounded-md border border-[#e9ebec] bg-[#f8f9fa] px-3 py-2 text-xs text-slate-600">
       <p>
         <span className="font-medium text-slate-700">Depo stoğu:</span> {warehouse}
-        <span className="text-slate-400"> (satılabilir)</span>
+        <span className="text-slate-400"> (satılabilir · irsaliye/sayım)</span>
       </p>
       <p>
         <span className="font-medium text-slate-700">Tedarikçi stoğu:</span> {supplier}
-        <span className="text-slate-400"> (XML/API · salt okunur)</span>
-      </p>
-      <p>
-        <span className="font-medium text-slate-700">Toplam (bilgi):</span> {total}
+        <span className="text-slate-400"> (XML/API · salt okunur · satış aç/kapa)</span>
       </p>
     </div>
   );
