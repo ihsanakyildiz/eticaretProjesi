@@ -12,6 +12,8 @@ import {
 import { finalizeIyzicoCheckout } from "@/lib/iyzico-complete";
 import { prisma } from "@/lib/prisma";
 import { formatMinorTry } from "@/lib/product-money";
+import { parseStoredPersonalization } from "@/lib/product-personalization";
+import { PersonalizationValuesDisplay } from "@/components/personalization-values-display";
 import { getSettingsMapUncached } from "@/lib/settings";
 
 type PageProps = {
@@ -54,6 +56,17 @@ export default async function OrderThanksPage({ params }: PageProps) {
   if (session?.user?.id && order.userId !== session.user.id && session.user.role === "MEMBER") {
     notFound();
   }
+
+  const personalizationRows = await prisma
+    .$queryRaw<Array<{ id: string; personalizationJson: string | null }>>`
+      SELECT id, personalizationJson
+      FROM order_items
+      WHERE orderId = ${order.id}
+    `
+    .catch(() => [] as Array<{ id: string; personalizationJson: string | null }>);
+  const personalizationByItemId = new Map(
+    personalizationRows.map((row) => [row.id, row.personalizationJson]),
+  );
 
   const shipping = order.addresses.find((row) => row.kind === "SHIPPING");
   const provider = parseOrderPaymentProvider(order.paymentProvider);
@@ -98,15 +111,25 @@ export default async function OrderThanksPage({ params }: PageProps) {
 
       <div className="mx-auto mt-10 max-w-3xl rounded-lg border border-site-border bg-site-card p-5 sm:p-6">
         <ul className="space-y-3 text-sm">
-          {order.items.map((item) => (
-            <li key={item.id} className="flex justify-between gap-4">
-              <span className="text-site-fg">
-                {item.title}
-                {item.variantTitle ? ` (${item.variantTitle})` : ""} × {item.quantity}
-              </span>
-              <span className="font-medium">{formatMinorTry(item.totalMinor)}</span>
-            </li>
-          ))}
+          {order.items.map((item) => {
+            const personalization = parseStoredPersonalization(
+              personalizationByItemId.get(item.id),
+            );
+            return (
+              <li key={item.id} className="flex justify-between gap-4 text-left">
+                <span className="min-w-0 text-site-fg">
+                  {item.title}
+                  {item.variantTitle ? ` (${item.variantTitle})` : ""} × {item.quantity}
+                  {personalization ? (
+                    <div className="mt-1.5 text-site-muted">
+                      <PersonalizationValuesDisplay personalization={personalization} />
+                    </div>
+                  ) : null}
+                </span>
+                <span className="font-medium">{formatMinorTry(item.totalMinor)}</span>
+              </li>
+            );
+          })}
         </ul>
         <div className="mt-4 flex justify-between border-t border-site-border pt-4 text-sm">
           <span className="text-site-muted">Kargo</span>

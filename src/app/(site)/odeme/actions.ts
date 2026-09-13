@@ -215,23 +215,15 @@ export async function placeOrderAction(
       if (personalizationByVariant.size > 0) {
         const createdItems = await tx.orderItem.findMany({
           where: { orderId: order.id },
-          select: { id: true, variantId: true, quantity: true, totalMinor: true },
+          orderBy: { createdAt: "asc" },
+          select: { id: true },
         });
-        // Match by variant + totals order among duplicates
-        const used = new Set<string>();
-        for (const line of sellable) {
-          if (!line.personalization?.values.length) continue;
+        for (let index = 0; index < sellable.length; index += 1) {
+          const line = sellable[index];
+          const match = createdItems[index];
+          if (!line?.personalization?.values.length || !match) continue;
           const json = personalizationByVariant.get(`${line.variantId}:${line.lineKey}`);
           if (!json) continue;
-          const match = createdItems.find(
-            (row) =>
-              row.variantId === line.variantId &&
-              row.quantity === line.quantity &&
-              row.totalMinor === line.totalMinor &&
-              !used.has(row.id),
-          );
-          if (!match) continue;
-          used.add(match.id);
           await tx.$executeRaw`
             UPDATE order_items
             SET personalizationJson = ${json}

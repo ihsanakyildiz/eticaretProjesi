@@ -23,7 +23,7 @@ import {
   type CheckoutStep,
 } from "@/lib/checkout-steps";
 import { formatMinorTry, taxExcludedMinor } from "@/lib/product-money";
-import { formatPersonalizationSummary } from "@/lib/product-personalization";
+import { PersonalizationValuesDisplay } from "@/components/personalization-values-display";
 
 const initialOrderState: PlaceOrderState = {};
 
@@ -431,9 +431,9 @@ export function CheckoutFlow({
         <ul className="mt-3 space-y-2 text-sm text-site-muted">
           {(cart?.lines ?? []).map((line, index) => (
             <li key={line.lineKey} className="flex justify-between gap-3">
-              <span className="flex min-w-0 items-center gap-2">
+              <span className="flex min-w-0 items-start gap-2">
                 {line.image ? (
-                  <span className="relative h-8 w-8 shrink-0 overflow-hidden rounded bg-site-surface">
+                  <span className="relative mt-0.5 h-8 w-8 shrink-0 overflow-hidden rounded bg-site-surface">
                     <SiteImage
                       src={line.image}
                       alt=""
@@ -444,14 +444,14 @@ export function CheckoutFlow({
                     />
                   </span>
                 ) : null}
-                <span className="min-w-0 truncate">
+                <span className="min-w-0">
                   <span className="block truncate">
                     {line.title} × {line.quantity}
                   </span>
                   {line.personalization ? (
-                    <span className="mt-0.5 block truncate text-xs text-site-muted">
-                      {formatPersonalizationSummary(line.personalization)}
-                    </span>
+                    <div className="mt-1 text-site-muted">
+                      <PersonalizationValuesDisplay personalization={line.personalization} />
+                    </div>
                   ) : null}
                 </span>
               </span>

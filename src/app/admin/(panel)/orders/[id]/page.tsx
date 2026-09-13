@@ -21,20 +21,20 @@ import {
 } from "@/lib/orders";
 import { parseOrderPaymentProvider } from "@/lib/checkout-payment-choice";
 import { toOrderCaseView } from "@/lib/order-case-workflow";
+import {
+  formatPersonalizationSummary,
+  parseStoredPersonalization,
+} from "@/lib/product-personalization";
 import { OrderDetail } from "./order-detail";
 
-function personalizationSummaryFromItem(item: { personalizationJson?: string | null } | Record<string, unknown>) {
-  const raw = String(
-    (item as { personalizationJson?: unknown }).personalizationJson ?? "",
-  ).trim();
-  if (!raw) return null;
-  try {
-    const parsed = JSON.parse(raw) as { summary?: unknown };
-    const summary = String(parsed.summary ?? "").trim();
-    return summary || null;
-  } catch {
-    return null;
-  }
+function personalizationFromStoredJson(raw: string | null | undefined) {
+  const personalization = parseStoredPersonalization(raw);
+  return {
+    personalization: personalization ?? null,
+    personalizationSummary: personalization
+      ? formatPersonalizationSummary(personalization)
+      : null,
+  };
 }
 
 type Props = { params: Promise<{ id: string }> };
@@ -283,9 +283,7 @@ export default async function OrderDetailPage({ params }: Props) {
             totalMinor: item.totalMinor,
             image: item.image,
             stock: item.variantId ? (stockByVariant.get(item.variantId) ?? null) : null,
-            personalizationSummary: personalizationSummaryFromItem({
-              personalizationJson: personalizationByItemId.get(item.id) ?? null,
-            }),
+            ...personalizationFromStoredJson(personalizationByItemId.get(item.id) ?? null),
           })),
           catalog: catalog.map((product) => ({
             id: product.id,

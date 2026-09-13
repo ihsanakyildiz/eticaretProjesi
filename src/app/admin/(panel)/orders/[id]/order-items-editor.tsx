@@ -12,6 +12,8 @@ import {
   taxExcludedMinor,
   taxIncludedMinor,
 } from "@/lib/product-money";
+import type { CartPersonalization } from "@/lib/product-personalization";
+import { PersonalizationValuesDisplay } from "@/components/personalization-values-display";
 import { addOrderItemAction, deleteOrderItemAction, updateOrderItemAction } from "../actions";
 
 export type CatalogProduct = {
@@ -43,6 +45,7 @@ export type OrderItemRow = {
   image: string | null;
   stock: number | null;
   personalizationSummary?: string | null;
+  personalization?: CartPersonalization | null;
 };
 
 const inputClass =
@@ -217,7 +220,11 @@ export function OrderItemsEditor({
                         {item.variantTitle ? (
                           <p className="text-xs text-slate-500">{item.variantTitle}</p>
                         ) : null}
-                        {item.personalizationSummary ? (
+                        {item.personalization ? (
+                          <div className="mt-1.5 text-slate-500">
+                            <PersonalizationValuesDisplay personalization={item.personalization} />
+                          </div>
+                        ) : item.personalizationSummary ? (
                           <p className="mt-1 text-xs text-slate-500">{item.personalizationSummary}</p>
                         ) : null}
                         {item.sku ? <p className="text-xs text-slate-400">{item.sku}</p> : null}

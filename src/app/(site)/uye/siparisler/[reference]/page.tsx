@@ -15,6 +15,8 @@ import {
   parseOrderPaymentProvider,
 } from "@/lib/checkout-payment-choice";
 import { formatMinorTry } from "@/lib/product-money";
+import { parseStoredPersonalization } from "@/lib/product-personalization";
+import { PersonalizationValuesDisplay } from "@/components/personalization-values-display";
 import { canOpenOrderReviews } from "@/lib/reviews";
 import { ensureMemberPortalAccess } from "../../actions";
 import { toOrderCaseView } from "@/lib/order-case-workflow";
@@ -159,27 +161,22 @@ export default async function MemberOrderDetailPage({ params }: PageProps) {
         <h3 className="text-base font-semibold text-site-fg">Ürünler</h3>
         <ul className="mt-4 space-y-3 text-sm">
           {order.items.map((item) => {
-            let personalizationNote = "";
-            try {
-              const raw = personalizationByItemId.get(item.id);
-              if (raw) {
-                const parsed = JSON.parse(raw) as { summary?: unknown };
-                personalizationNote = String(parsed.summary ?? "").trim();
-              }
-            } catch {
-              personalizationNote = "";
-            }
+            const personalization = parseStoredPersonalization(
+              personalizationByItemId.get(item.id),
+            );
             return (
-            <li key={item.id} className="flex justify-between gap-4">
-              <span className="text-site-fg">
-                {item.title}
-                {item.variantTitle ? ` (${item.variantTitle})` : ""} × {item.quantity}
-                {personalizationNote ? (
-                  <span className="mt-1 block text-xs text-site-muted">{personalizationNote}</span>
-                ) : null}
-              </span>
-              <span className="font-medium">{formatMinorTry(item.totalMinor)}</span>
-            </li>
+              <li key={item.id} className="flex justify-between gap-4">
+                <span className="min-w-0 text-site-fg">
+                  {item.title}
+                  {item.variantTitle ? ` (${item.variantTitle})` : ""} × {item.quantity}
+                  {personalization ? (
+                    <div className="mt-1.5 text-site-muted">
+                      <PersonalizationValuesDisplay personalization={personalization} />
+                    </div>
+                  ) : null}
+                </span>
+                <span className="font-medium">{formatMinorTry(item.totalMinor)}</span>
+              </li>
             );
           })}
         </ul>

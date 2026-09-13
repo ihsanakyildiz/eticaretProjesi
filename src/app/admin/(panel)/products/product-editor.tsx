@@ -1600,141 +1600,148 @@ export function ProductEditor({
             </p>
           </div>
           <div className="space-y-5 p-5">
-            <div className="max-w-sm">
-              <label className="mb-1.5 block text-sm font-medium text-slate-700">Alan türü</label>
-              <select
-                value={personalizationKind}
-                onChange={(event) =>
-                  setPersonalizationKind(event.target.value as ProductPersonalizationKindCode)
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+              <div className="max-w-sm flex-1">
+                <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                  Eklenecek alan türü
+                </label>
+                <select
+                  value={personalizationKind}
+                  onChange={(event) =>
+                    setPersonalizationKind(event.target.value as ProductPersonalizationKindCode)
+                  }
+                  className={inputClass}
+                >
+                  {PRODUCT_PERSONALIZATION_KINDS.map((kind) => (
+                    <option key={kind} value={kind}>
+                      {productPersonalizationKindLabel(kind)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <button
+                type="button"
+                onClick={() =>
+                  setPersonalizationFields((prev) => [
+                    ...prev,
+                    emptyPersonalizationDraft(personalizationKind),
+                  ])
                 }
-                className={inputClass}
+                className="inline-flex h-[42px] items-center justify-center gap-2 rounded-md border border-[#e9ebec] px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                aria-label="Alan ekle"
+                title="Alan ekle"
               >
-                {PRODUCT_PERSONALIZATION_KINDS.map((kind) => (
-                  <option key={kind} value={kind}>
-                    {productPersonalizationKindLabel(kind)}
-                  </option>
-                ))}
-              </select>
+                <Plus className="h-4 w-4" />
+                Alan ekle
+              </button>
             </div>
 
             <div className="space-y-3">
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-sm font-medium text-slate-700">
-                  {productPersonalizationKindLabel(personalizationKind)} alanları
-                </p>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setPersonalizationFields((prev) => [
-                      ...prev,
-                      emptyPersonalizationDraft(personalizationKind),
-                    ])
-                  }
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-[#e9ebec] text-slate-700 hover:bg-slate-50"
-                  aria-label="Alan ekle"
-                  title="Alan ekle"
-                >
-                  <Plus className="h-4 w-4" />
-                </button>
-              </div>
+              <p className="text-sm font-medium text-slate-700">Tanımlı alanlar</p>
 
-              {personalizationFields.filter((field) => field.kind === personalizationKind).length ===
-              0 ? (
+              {personalizationFields.length === 0 ? (
                 <p className="rounded-md border border-dashed border-[#e9ebec] px-4 py-6 text-sm text-slate-500">
-                  Henüz alan yok. Artı ile{" "}
-                  {personalizationKind === "TEXT" ? "yazı" : "görsel"} alanı ekleyin.
+                  Henüz alan yok. Tür seçip alan ekleyin; yazı ve görsel alanları birlikte
+                  listelenir.
                 </p>
               ) : (
                 <ul className="space-y-3">
-                  {personalizationFields
-                    .filter((field) => field.kind === personalizationKind)
-                    .map((field) => (
-                      <li
-                        key={field.clientKey}
-                        className="flex flex-col gap-2 rounded-md border border-[#e9ebec] p-3 sm:flex-row sm:items-center"
+                  {personalizationFields.map((field) => (
+                    <li
+                      key={field.clientKey}
+                      className="flex flex-col gap-2 rounded-md border border-[#e9ebec] p-3 sm:flex-row sm:items-center"
+                    >
+                      <span
+                        className={`shrink-0 rounded-md px-2 py-1 text-[11px] font-semibold sm:mt-5 ${
+                          field.kind === "TEXT"
+                            ? "bg-sky-50 text-sky-700"
+                            : "bg-violet-50 text-violet-700"
+                        }`}
                       >
-                        <div className="min-w-0 flex-1">
+                        {productPersonalizationKindLabel(field.kind)}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <label className="mb-1 block text-xs font-medium text-slate-500">
+                          {field.kind === "TEXT"
+                            ? "Yazı alanı adı (ör. Ad Soyad)"
+                            : "Görsel alanı adı (ör. Logo)"}
+                        </label>
+                        <input
+                          value={field.label}
+                          onChange={(event) =>
+                            setPersonalizationFields((prev) =>
+                              prev.map((row) =>
+                                row.clientKey === field.clientKey
+                                  ? { ...row, label: event.target.value }
+                                  : row,
+                              ),
+                            )
+                          }
+                          placeholder={
+                            field.kind === "TEXT" ? "Ad Soyad" : "Kişiye özel görsel"
+                          }
+                          className={inputClass}
+                        />
+                      </div>
+                      {field.kind === "TEXT" ? (
+                        <div className="w-full sm:w-28">
                           <label className="mb-1 block text-xs font-medium text-slate-500">
-                            {personalizationKind === "TEXT"
-                              ? "Yazı alanı adı (ör. Ad Soyad)"
-                              : "Görsel alanı adı (ör. Logo)"}
+                            Max karakter
                           </label>
                           <input
-                            value={field.label}
+                            type="number"
+                            min={1}
+                            max={500}
+                            value={field.maxLength ?? 80}
                             onChange={(event) =>
                               setPersonalizationFields((prev) =>
                                 prev.map((row) =>
                                   row.clientKey === field.clientKey
-                                    ? { ...row, label: event.target.value }
+                                    ? {
+                                        ...row,
+                                        maxLength: Math.min(
+                                          500,
+                                          Math.max(1, Number(event.target.value) || 80),
+                                        ),
+                                      }
                                     : row,
                                 ),
                               )
-                            }
-                            placeholder={
-                              personalizationKind === "TEXT" ? "Ad Soyad" : "Kişiye özel görsel"
                             }
                             className={inputClass}
                           />
                         </div>
-                        {personalizationKind === "TEXT" ? (
-                          <div className="w-full sm:w-28">
-                            <label className="mb-1 block text-xs font-medium text-slate-500">
-                              Max karakter
-                            </label>
-                            <input
-                              type="number"
-                              min={1}
-                              max={500}
-                              value={field.maxLength ?? 80}
-                              onChange={(event) =>
-                                setPersonalizationFields((prev) =>
-                                  prev.map((row) =>
-                                    row.clientKey === field.clientKey
-                                      ? {
-                                          ...row,
-                                          maxLength: Math.min(
-                                            500,
-                                            Math.max(1, Number(event.target.value) || 80),
-                                          ),
-                                        }
-                                      : row,
-                                  ),
-                                )
-                              }
-                              className={inputClass}
-                            />
-                          </div>
-                        ) : null}
-                        <label className="flex items-center gap-2 text-sm text-slate-600 sm:pt-5">
-                          <input
-                            type="checkbox"
-                            checked={field.required}
-                            onChange={(event) =>
-                              setPersonalizationFields((prev) =>
-                                prev.map((row) =>
-                                  row.clientKey === field.clientKey
-                                    ? { ...row, required: event.target.checked }
-                                    : row,
-                                ),
-                              )
-                            }
-                          />
-                          Zorunlu
-                        </label>
-                        <button
-                          type="button"
-                          onClick={() =>
+                      ) : null}
+                      <label className="flex items-center gap-2 text-sm text-slate-600 sm:pt-5">
+                        <input
+                          type="checkbox"
+                          checked={field.required}
+                          onChange={(event) =>
                             setPersonalizationFields((prev) =>
-                              prev.filter((row) => row.clientKey !== field.clientKey),
+                              prev.map((row) =>
+                                row.clientKey === field.clientKey
+                                  ? { ...row, required: event.target.checked }
+                                  : row,
+                              ),
                             )
                           }
-                          className="inline-flex h-9 w-9 items-center justify-center self-end rounded-md text-slate-400 hover:bg-rose-50 hover:text-rose-600 sm:self-center sm:pt-5"
-                          aria-label="Alanı kaldır"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </li>
-                    ))}
+                        />
+                        Zorunlu
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setPersonalizationFields((prev) =>
+                            prev.filter((row) => row.clientKey !== field.clientKey),
+                          )
+                        }
+                        className="inline-flex h-9 w-9 items-center justify-center self-end rounded-md text-slate-400 hover:bg-rose-50 hover:text-rose-600 sm:self-center sm:pt-5"
+                        aria-label="Alanı kaldır"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </li>
+                  ))}
                 </ul>
               )}
             </div>
@@ -1742,10 +1749,15 @@ export function ProductEditor({
             {personalizationFields.length > 0 ? (
               <p className="text-xs text-slate-500">
                 Toplam {personalizationFields.length} alan tanımlı
-                {personalizationFields.some((field) => field.kind !== personalizationKind)
-                  ? ` · Diğer türler için select’ten geçiş yapın`
-                  : ""}
-                .
+                {" · "}
+                {
+                  personalizationFields.filter((field) => field.kind === "TEXT").length
+                }{" "}
+                yazı,{" "}
+                {
+                  personalizationFields.filter((field) => field.kind === "IMAGE").length
+                }{" "}
+                görsel.
               </p>
             ) : null}
           </div>

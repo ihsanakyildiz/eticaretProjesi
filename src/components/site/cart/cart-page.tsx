@@ -12,7 +12,7 @@ import { SiteLink } from "@/components/site/site-link";
 import { cartLineIssueLabel } from "@/lib/cart-sync";
 import type { CartDeliveryCode, HydratedCartLine } from "@/lib/checkout-types";
 import { formatMinorTl, formatMinorTry, taxExcludedMinor } from "@/lib/product-money";
-import { formatPersonalizationSummary } from "@/lib/product-personalization";
+import { PersonalizationValuesDisplay } from "@/components/personalization-values-display";
 
 const CART_ORANGE = "text-[#f27a1a]";
 
@@ -366,9 +366,9 @@ function CartLineRow({
               <p className="mt-1 text-xs text-site-muted">{line.variantTitle}</p>
             ) : null}
             {line.personalization ? (
-              <p className="mt-1 text-xs text-site-muted">
-                {formatPersonalizationSummary(line.personalization)}
-              </p>
+              <div className="mt-1.5 text-site-muted">
+                <PersonalizationValuesDisplay personalization={line.personalization} />
+              </div>
             ) : null}
             {issueLabel ? (
               <p className="mt-2 text-xs font-medium text-rose-600">{issueLabel}</p>

@@ -137,6 +137,27 @@ export function formatPersonalizationSummary(personalization?: CartPersonalizati
     .join(" · ");
 }
 
+/** Sipariş kalemindeki personalizationJson → sepet/sipariş görüntüleme modeli */
+export function parseStoredPersonalization(
+  raw: string | null | undefined,
+): CartPersonalization | undefined {
+  const text = String(raw ?? "").trim();
+  if (!text) return undefined;
+  try {
+    const parsed = JSON.parse(text) as unknown;
+    if (!parsed || typeof parsed !== "object") return undefined;
+    const fromValues = normalizePersonalization(parsed);
+    if (fromValues) return fromValues;
+    // Eski / alternatif biçim: düz dizi
+    if (Array.isArray(parsed)) {
+      return normalizePersonalization({ values: parsed });
+    }
+    return undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export function validatePersonalizationInput(
   fields: ProductPersonalizationFieldView[],
   values: CartPersonalizationEntry[],
