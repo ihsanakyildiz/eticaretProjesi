@@ -44,7 +44,12 @@ export type CartPersonalizationEntry = {
   kind: ProductPersonalizationKindCode;
   label: string;
   textValue?: string;
+  /** Baskı orijinali (teslim sonrası silinir) */
   imageUrl?: string;
+  /** Küçük önizleme (kalıcı) */
+  imageThumbUrl?: string;
+  /** Teslim sonrası orijinal silindi */
+  originalPurged?: boolean;
 };
 
 export type CartPersonalization = {
@@ -78,15 +83,36 @@ export function normalizePersonalization(
     if (!fieldId || !isProductPersonalizationKind(kindRaw) || !label) continue;
     const textValue = String((item as { textValue?: unknown }).textValue ?? "").trim();
     const imageUrl = String((item as { imageUrl?: unknown }).imageUrl ?? "").trim();
+    const imageThumbUrl = String((item as { imageThumbUrl?: unknown }).imageThumbUrl ?? "").trim();
+    const originalPurged = (item as { originalPurged?: unknown }).originalPurged === true;
     if (kindRaw === "TEXT") {
       if (!textValue) continue;
       values.push({ fieldId, kind: kindRaw, label, textValue: textValue.slice(0, 500) });
       continue;
     }
-    if (!imageUrl || !imageUrl.startsWith("/uploads/")) continue;
-    values.push({ fieldId, kind: kindRaw, label, imageUrl: imageUrl.slice(0, 500) });
+    const resolvedUrl = imageUrl || imageThumbUrl;
+    if (!resolvedUrl || !resolvedUrl.startsWith("/uploads/")) continue;
+    values.push({
+      fieldId,
+      kind: kindRaw,
+      label,
+      imageUrl: resolvedUrl.slice(0, 500),
+      imageThumbUrl: imageThumbUrl.startsWith("/uploads/")
+        ? imageThumbUrl.slice(0, 500)
+        : undefined,
+      originalPurged: originalPurged || undefined,
+    });
   }
   return values.length > 0 ? { values } : undefined;
+}
+
+export function personalizationPreviewUrl(entry: CartPersonalizationEntry) {
+  return entry.imageThumbUrl || entry.imageUrl || "";
+}
+
+export function personalizationOpenUrl(entry: CartPersonalizationEntry) {
+  if (entry.originalPurged) return entry.imageThumbUrl || entry.imageUrl || "";
+  return entry.imageUrl || entry.imageThumbUrl || "";
 }
 
 export function personalizationFingerprint(personalization?: CartPersonalization) {
@@ -188,6 +214,7 @@ export function validatePersonalizationInput(
       continue;
     }
     const imageUrl = current?.imageUrl?.trim() ?? "";
+    const imageThumbUrl = current?.imageThumbUrl?.trim() ?? "";
     if (!imageUrl) {
       if (field.required) return { ok: false, error: `"${field.label}" için görsel yükleyin.` };
       continue;
@@ -200,6 +227,8 @@ export function validatePersonalizationInput(
       kind: "IMAGE",
       label: field.label,
       imageUrl,
+      imageThumbUrl:
+        imageThumbUrl.startsWith("/uploads/") ? imageThumbUrl.slice(0, 500) : undefined,
     });
   }
   return { ok: true, personalization: { values: next } };

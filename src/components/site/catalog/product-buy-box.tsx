@@ -110,7 +110,7 @@ export function ProductBuyBox({
   const [personalizationError, setPersonalizationError] = useState<string | null>(null);
   const [personalizationBusy, setPersonalizationBusy] = useState(false);
   const [personalizationValues, setPersonalizationValues] = useState<
-    Record<string, { textValue?: string; imageUrl?: string }>
+    Record<string, { textValue?: string; imageUrl?: string; imageThumbUrl?: string }>
   >({});
   const addedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const urlReadyRef = useRef(false);
@@ -219,6 +219,7 @@ export function ProductBuyBox({
       label: field.label,
       textValue: personalizationValues[field.id]?.textValue,
       imageUrl: personalizationValues[field.id]?.imageUrl,
+      imageThumbUrl: personalizationValues[field.id]?.imageThumbUrl,
     }));
 
   const tryAddToCart = async (goToCart: boolean) => {
@@ -257,7 +258,11 @@ export function ProductBuyBox({
       }
       setPersonalizationValues((prev) => ({
         ...prev,
-        [fieldId]: { ...prev[fieldId], imageUrl: result.url },
+        [fieldId]: {
+          ...prev[fieldId],
+          imageUrl: result.url,
+          imageThumbUrl: result.thumbUrl,
+        },
       }));
     } finally {
       setPersonalizationBusy(false);
@@ -474,7 +479,7 @@ export function ProductBuyBox({
                   <div className="space-y-2">
                     <input
                       type="file"
-                      accept="image/png,image/jpeg,image/webp,image/gif"
+                      accept="image/png,image/jpeg,image/webp,image/tiff,.tif,.tiff"
                       disabled={personalizationBusy}
                       onChange={(event) => {
                         const file = event.target.files?.[0] ?? null;
@@ -483,10 +488,18 @@ export function ProductBuyBox({
                       }}
                       className="block w-full text-sm text-site-muted file:mr-3 file:rounded-md file:border-0 file:bg-site-primary file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white"
                     />
-                    {personalizationValues[field.id]?.imageUrl ? (
+                    <p className="text-[11px] text-site-muted">
+                      Baskı için yüksek çözünürlüklü orijinal dosya yükleyin (en fazla 25 MB).
+                      Görsel küçültülmez. Siparişe dönüşmeyen yüklemeler 1 hafta sonra silinir.
+                    </p>
+                    {personalizationValues[field.id]?.imageUrl ||
+                    personalizationValues[field.id]?.imageThumbUrl ? (
                       <div className="relative h-20 w-20 overflow-hidden rounded-md border border-site-border">
                         <SiteImage
-                          src={personalizationValues[field.id]!.imageUrl!}
+                          src={
+                            personalizationValues[field.id]!.imageThumbUrl ||
+                            personalizationValues[field.id]!.imageUrl!
+                          }
                           alt={field.label}
                           fill
                           className="object-cover"

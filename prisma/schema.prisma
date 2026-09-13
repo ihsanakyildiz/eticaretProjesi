@@ -1706,6 +1706,22 @@ model ProductPersonalizationField {
   @@map("product_personalization_fields")
 }
 
+/// Sepete eklenen kişiye özel baskı görselleri — siparişe bağlanmazsa 7 günde silinir;
+/// teslim sonrası orijinal silinir, thumb kalır
+model PersonalizationUpload {
+  id               String    @id @default(cuid())
+  publicPath       String    @unique @db.VarChar(500)
+  thumbPath        String?   @db.VarChar(500)
+  orderId          String?
+  claimedAt        DateTime?
+  originalPurgedAt DateTime?
+  createdAt        DateTime  @default(now())
+
+  @@index([claimedAt, createdAt])
+  @@index([orderId, originalPurgedAt])
+  @@map("personalization_uploads")
+}
+
 model ProductImage {
   id        String   @id @default(cuid())
   productId String

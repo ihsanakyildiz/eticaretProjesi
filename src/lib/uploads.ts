@@ -423,4 +423,6 @@ export function getPngCompanion(publicPath: string) {
 export const uploadLimits = {
   image: MAX_IMAGE_BYTES,
   file: MAX_FILE_BYTES,
+  /** Kişiye özel baskı görselleri — orijinal çözünürlük korunur */
+  personalization: 25 * 1024 * 1024,
 };

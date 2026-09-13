@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { purgeExpiredPersonalizationUploads } from "@/lib/personalization-uploads";
 import { expireEndedProductSales } from "@/lib/product-sale-expire";
 import { resumeBackgroundWorkers } from "@/lib/resume-background-workers";
 import { requirePermission } from "@/lib/staff-permissions";
@@ -30,7 +31,11 @@ export async function GET(request: Request) {
   if (!allowed) return NextResponse.json({ error: "Yetkisiz." }, { status: 401 });
   await expireEndedProductSales();
   await resumeBackgroundWorkers();
-  return NextResponse.json({ ok: true });
+  const personalizationPurge = await purgeExpiredPersonalizationUploads().catch((error) => {
+    console.error(error);
+    return { deleted: 0, orphanDeleted: 0, claimedLate: 0, error: true as const };
+  });
+  return NextResponse.json({ ok: true, personalizationPurge });
 }
 
 export async function POST(request: Request) {

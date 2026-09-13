@@ -37,6 +37,7 @@ import { parseMajorToMinor } from "@/lib/product-money";
 import { executeOrderRefund, paidTotalMinor, refundedTotalMinor } from "@/lib/order-refunds";
 import { getClientIp } from "@/lib/request-ip";
 import { goodsHaveLeftWarehouse, statusChangeBlockedByFulfillment } from "@/lib/order-cases";
+import { purgePersonalizationOriginalsForOrder } from "@/lib/personalization-uploads";
 import {
   applyReservedStockDelta,
   releaseOrderStock,
@@ -283,6 +284,13 @@ export async function updateOrderStatusAction(input: { id: string; status: Order
     console.error(error);
     return { error: "Durum güncellenemedi." };
   }
+
+  if (status === "DELIVERED") {
+    await purgePersonalizationOriginalsForOrder(id).catch((error) => {
+      console.error(error);
+    });
+  }
+
   revalidateOrders(id);
   return { success: true, message: "Durum güncellendi." };
 }

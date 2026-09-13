@@ -25,6 +25,7 @@ import { ensureProductPersonalizationSchema } from "@/lib/ensure-product-persona
 import { orderDiscountSummary, snapshotCompareAtMinor } from "@/lib/order-discount";
 import { nextOrderNo, snapshotAddress, uniqueOrderReference } from "@/lib/order-server";
 import { reserveOrderStock, StockShortageError } from "@/lib/order-stock";
+import { claimPersonalizationUploads } from "@/lib/personalization-uploads";
 import { prisma } from "@/lib/prisma";
 import { formatPersonalizationSummary } from "@/lib/product-personalization";
 import { getSettingsMap } from "@/lib/settings";
@@ -235,6 +236,14 @@ export async function placeOrderAction(
       await reserveOrderStock(tx, order.id);
       return order;
     });
+
+    const orderedImageUrls = sellable.flatMap(
+      (line) =>
+        line.personalization?.values
+          .filter((item) => item.kind === "IMAGE" && item.imageUrl)
+          .map((item) => item.imageUrl!) ?? [],
+    );
+    await claimPersonalizationUploads(orderedImageUrls, created.id).catch(() => undefined);
 
     revalidatePath("/admin/orders");
     revalidateTag("products");

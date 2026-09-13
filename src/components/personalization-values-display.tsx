@@ -1,4 +1,8 @@
 import type { CartPersonalization } from "@/lib/product-personalization";
+import {
+  personalizationOpenUrl,
+  personalizationPreviewUrl,
+} from "@/lib/product-personalization";
 
 export function PersonalizationValuesDisplay({
   personalization,
@@ -20,30 +24,35 @@ export function PersonalizationValuesDisplay({
                 <span className="break-words">{item.textValue}</span>
               </li>
             );
-          case "IMAGE":
+          case "IMAGE": {
+            const preview = personalizationPreviewUrl(item);
+            const openUrl = personalizationOpenUrl(item);
             return (
               <li key={item.fieldId} className="flex flex-wrap items-center gap-2">
                 <span className="font-medium opacity-90">{item.label}:</span>
-                {item.imageUrl ? (
+                {preview ? (
                   <a
-                    href={item.imageUrl}
+                    href={openUrl || preview}
                     target="_blank"
                     rel="noreferrer"
                     className="inline-flex items-center gap-2 hover:opacity-90"
-                    title="Görseli aç"
+                    title={item.originalPurged ? "Önizleme" : "Görseli aç"}
                   >
                     <img
-                      src={item.imageUrl}
+                      src={preview}
                       alt={item.label}
                       className="h-12 w-12 rounded border border-black/10 object-cover"
                     />
-                    <span className="underline underline-offset-2">Görseli aç</span>
+                    <span className="underline underline-offset-2">
+                      {item.originalPurged ? "Önizleme" : "Görseli aç"}
+                    </span>
                   </a>
                 ) : (
                   <span>görsel yok</span>
                 )}
               </li>
             );
+          }
           default: {
             const _exhaustive: never = item.kind;
             return _exhaustive;

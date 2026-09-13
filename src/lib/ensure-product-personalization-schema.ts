@@ -51,6 +51,35 @@ async function ensureProductPersonalizationSchemaOnce() {
       "ALTER TABLE `order_items` ADD COLUMN `personalizationJson` LONGTEXT NULL",
     );
   }
+
+  if (!(await tableExists("personalization_uploads"))) {
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE \`personalization_uploads\` (
+        \`id\` VARCHAR(191) NOT NULL,
+        \`publicPath\` VARCHAR(500) NOT NULL,
+        \`thumbPath\` VARCHAR(500) NULL,
+        \`orderId\` VARCHAR(191) NULL,
+        \`claimedAt\` DATETIME(3) NULL,
+        \`originalPurgedAt\` DATETIME(3) NULL,
+        \`createdAt\` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+        PRIMARY KEY (\`id\`),
+        UNIQUE INDEX \`personalization_uploads_publicPath_key\` (\`publicPath\`),
+        INDEX \`personalization_uploads_claimedAt_createdAt_idx\` (\`claimedAt\`, \`createdAt\`),
+        INDEX \`personalization_uploads_orderId_originalPurgedAt_idx\` (\`orderId\`, \`originalPurgedAt\`)
+      ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+    `);
+  } else {
+    if (!(await columnExists("personalization_uploads", "thumbPath"))) {
+      await prisma.$executeRawUnsafe(
+        "ALTER TABLE `personalization_uploads` ADD COLUMN `thumbPath` VARCHAR(500) NULL",
+      );
+    }
+    if (!(await columnExists("personalization_uploads", "originalPurgedAt"))) {
+      await prisma.$executeRawUnsafe(
+        "ALTER TABLE `personalization_uploads` ADD COLUMN `originalPurgedAt` DATETIME(3) NULL",
+      );
+    }
+  }
 }
 
 export async function ensureProductPersonalizationSchema() {
