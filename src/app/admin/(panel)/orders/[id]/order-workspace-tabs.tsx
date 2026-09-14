@@ -66,7 +66,7 @@ export function OrderWorkspaceTabs({
   createdAt: string;
   isPending: boolean;
   onStatusChange: (status: OrderStatusCode) => void;
-  onRun: (task: () => Promise<{ error?: string }>) => void;
+  onRun: (task: () => Promise<{ error?: string; success?: boolean; message?: string }>) => void;
 }) {
   const [tab, setTab] = useState<TabId>("status");
   const [noteOpen, setNoteOpen] = useState(Boolean(privateNote));
@@ -154,7 +154,7 @@ function renderTab(
     createdAt: string;
     isPending: boolean;
     onStatusChange: (status: OrderStatusCode) => void;
-    onRun: (task: () => Promise<{ error?: string }>) => void;
+    onRun: (task: () => Promise<{ error?: string; success?: boolean; message?: string }>) => void;
   },
 ) {
   switch (tab) {
@@ -192,7 +192,7 @@ function StatusTab({
   setNote: (value: string) => void;
   isPending: boolean;
   onStatusChange: (status: OrderStatusCode) => void;
-  onRun: (task: () => Promise<{ error?: string }>) => void;
+  onRun: (task: () => Promise<{ error?: string; success?: boolean; message?: string }>) => void;
 }) {
   return (
     <div className="space-y-4">
@@ -286,7 +286,7 @@ function DocumentsTab({
   orderId: string;
   documents: OrderDocumentRow[];
   isPending: boolean;
-  onRun: (task: () => Promise<{ error?: string }>) => void;
+  onRun: (task: () => Promise<{ error?: string; success?: boolean; message?: string }>) => void;
 }) {
   return (
     <div className="space-y-4">
@@ -401,7 +401,7 @@ function CarriersTab({
   weightKg: number;
   createdAt: string;
   isPending: boolean;
-  onRun: (task: () => Promise<{ error?: string }>) => void;
+  onRun: (task: () => Promise<{ error?: string; success?: boolean; message?: string }>) => void;
 }) {
   return (
     <div className="overflow-x-auto">
@@ -486,7 +486,7 @@ function CarriersTab({
                           shipping: carrierDraft.shipping,
                           weightKg: carrierDraft.weightKg,
                         });
-                        if (!result.error) setEditingCarrier(false);
+                        if (!("error" in result && result.error)) setEditingCarrier(false);
                         return result;
                       })
                     }

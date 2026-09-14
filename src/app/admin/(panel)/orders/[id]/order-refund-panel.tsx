@@ -99,7 +99,7 @@ export function OrderRefundPanel({
                   amount,
                   note,
                 });
-                if (!result.error) setNote("");
+                if (!("error" in result && result.error)) setNote("");
                 return result;
               })
             }

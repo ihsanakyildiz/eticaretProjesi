@@ -291,7 +291,7 @@ export function OrderDetail({ order }: { order: OrderDetailModel }) {
                     body: message,
                     visibleToCustomer: showToCustomer,
                   });
-                  if (!result.error) setMessage("");
+                  if (!("error" in result && result.error)) setMessage("");
                   return result;
                 })
               }

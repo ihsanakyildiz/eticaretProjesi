@@ -96,7 +96,7 @@ export function OrdersTable({ orders }: { orders: OrderRow[] }) {
     setReservationByItem((prev) => ({ ...prev, [itemId]: reserved }));
     startTransition(async () => {
       const result = await setOrderItemWarehouseReservationAction({ itemId, reserved });
-      if (result.error) {
+      if ("error" in result && result.error) {
         setReservationByItem((prev) => ({ ...prev, [itemId]: current }));
         setError(result.error);
         return;
@@ -157,7 +157,7 @@ export function OrdersTable({ orders }: { orders: OrderRow[] }) {
     if (!window.confirm("Bu sipariş silinecek. Devam edilsin mi?")) return;
     startTransition(async () => {
       const result = await deleteOrderAction({ id });
-      if (result.error) {
+      if ("error" in result && result.error) {
         setError(result.error);
         return;
       }
@@ -172,7 +172,7 @@ export function OrdersTable({ orders }: { orders: OrderRow[] }) {
     setStatusById((current) => ({ ...current, [id]: status }));
     startTransition(async () => {
       const result = await updateOrderStatusAction({ id, status });
-      if (result.error) {
+      if ("error" in result && result.error) {
         setStatusById((current) => {
           const next = { ...current };
           if (previous) next[id] = previous;
@@ -192,7 +192,7 @@ export function OrdersTable({ orders }: { orders: OrderRow[] }) {
     if (!window.confirm(`${selected.length} sipariş silinecek. Bu işlem geri alınamaz.`)) return;
     startTransition(async () => {
       const result = await deleteOrdersAction({ ids: selected });
-      if (result.error) {
+      if ("error" in result && result.error) {
         setError(result.error);
         return;
       }
