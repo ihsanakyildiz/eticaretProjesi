@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -11,6 +11,7 @@ import {
   ChevronRight,
   Copy,
   Loader2,
+  MoreVertical,
   Pencil,
   Power,
   RotateCcw,
@@ -18,7 +19,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { Can, useCan } from "@/components/admin/admin-permissions";
+import { useCan } from "@/components/admin/admin-permissions";
 import { AdminPublicTextLink } from "@/components/admin/admin-public-link";
 import { SearchableSelect } from "@/components/admin/searchable-select";
 import {
@@ -514,8 +515,26 @@ export function ProductsTable({
   >({});
   const [saleTarget, setSaleTarget] = useState<ProductSaleTarget | null>(null);
   const [feedLockOverrides, setFeedLockOverrides] = useState<Record<string, boolean>>({});
+  const [menuId, setMenuId] = useState<string | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
   const from = total === 0 ? 0 : (page - 1) * pageSize + 1;
   const to = Math.min(page * pageSize, total);
+
+  useEffect(() => {
+    if (!menuId) return;
+    const onPointer = (event: MouseEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) setMenuId(null);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMenuId(null);
+    };
+    window.addEventListener("mousedown", onPointer);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("mousedown", onPointer);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [menuId]);
 
   const confirmDelete = () => {
     if (!deleteTarget) return;
@@ -646,7 +665,7 @@ export function ProductsTable({
   };
 
   const productGridClass =
-    "grid grid-cols-[minmax(0,2fr)_100px_120px_minmax(0,1fr)_130px_90px_48px_44px_176px_40px] gap-2";
+    "grid grid-cols-[minmax(0,2fr)_100px_120px_minmax(0,1fr)_130px_90px_48px_44px_52px_40px] gap-2";
 
   return (
     <>
@@ -683,7 +702,7 @@ export function ProductsTable({
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <div className="min-w-[1150px]">
+            <div className="min-w-[1040px]">
               <div className={`${productGridClass} border-b border-[#e9ebec] bg-[#f3f6f9] px-4 py-2.5 text-xs font-semibold tracking-wide text-slate-500 uppercase`}>
                 <span>Ürün</span>
                 <span>SKU</span>
@@ -906,52 +925,93 @@ export function ProductsTable({
                       </span>
                     )}
                   </span>
-                  <div className="flex items-center justify-end gap-1 pt-0.5">
-                    <Can resource="products" action="update">
-                      <Link
-                        href={`/admin/products/${product.id}/edit`}
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[#e9ebec] text-slate-500 hover:bg-slate-50 hover:text-[#405189]"
-                        title="Düzenle"
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Link>
-                    </Can>
-                    {canCreate ? (
-                      <button
-                        type="button"
-                        onClick={() => duplicateProduct(product)}
-                        disabled={isPending}
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[#e9ebec] text-slate-500 hover:bg-slate-50 hover:text-[#405189] disabled:opacity-60"
-                        title="Kopyala"
-                      >
-                        <Copy className="h-3.5 w-3.5" />
-                      </button>
-                    ) : null}
-                    {canUpdate ? (
-                      <button
-                        type="button"
-                        onClick={() => toggleActive(product)}
-                        disabled={isPending}
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[#e9ebec] text-slate-500 hover:bg-slate-50 hover:text-[#0ab39c] disabled:opacity-60"
-                        title={product.isActive ? "Taslağa al" : "Yayınla"}
-                      >
-                        <Power className="h-3.5 w-3.5" />
-                      </button>
-                    ) : null}
-                    {canDelete ? (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setActionError(null);
-                          setDeleteTarget(product);
-                        }}
-                        disabled={isPending}
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[#e9ebec] text-slate-500 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-60"
-                        title="Sil"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    ) : null}
+                  <div
+                    className="relative flex items-center justify-end pt-0.5"
+                    ref={menuId === product.id ? menuRef : undefined}
+                  >
+                    {canUpdate || canCreate || canDelete ? (
+                      <>
+                        <button
+                          type="button"
+                          disabled={isPending}
+                          onClick={() =>
+                            setMenuId((current) => (current === product.id ? null : product.id))
+                          }
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[#e9ebec] text-slate-500 hover:bg-slate-50 disabled:opacity-60"
+                          title="İşlemler"
+                          aria-expanded={menuId === product.id}
+                          aria-haspopup="menu"
+                        >
+                          <MoreVertical className="h-3.5 w-3.5" />
+                        </button>
+                        {menuId === product.id ? (
+                          <div
+                            role="menu"
+                            className="absolute top-9 right-0 z-30 min-w-[10.5rem] rounded-md border border-[#e9ebec] bg-white py-1 shadow-lg"
+                          >
+                            {canUpdate ? (
+                              <Link
+                                href={`/admin/products/${product.id}/edit`}
+                                role="menuitem"
+                                onClick={() => setMenuId(null)}
+                                className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-slate-700 hover:bg-slate-50"
+                              >
+                                <Pencil className="h-3.5 w-3.5 text-slate-500" />
+                                Düzenle
+                              </Link>
+                            ) : null}
+                            {canCreate ? (
+                              <button
+                                type="button"
+                                role="menuitem"
+                                disabled={isPending}
+                                onClick={() => {
+                                  setMenuId(null);
+                                  duplicateProduct(product);
+                                }}
+                                className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                              >
+                                <Copy className="h-3.5 w-3.5 text-slate-500" />
+                                Kopyala
+                              </button>
+                            ) : null}
+                            {canUpdate ? (
+                              <button
+                                type="button"
+                                role="menuitem"
+                                disabled={isPending}
+                                onClick={() => {
+                                  setMenuId(null);
+                                  toggleActive(product);
+                                }}
+                                className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                              >
+                                <Power className="h-3.5 w-3.5 text-slate-500" />
+                                {product.isActive ? "Taslağa al" : "Yayınla"}
+                              </button>
+                            ) : null}
+                            {canDelete ? (
+                              <button
+                                type="button"
+                                role="menuitem"
+                                disabled={isPending}
+                                onClick={() => {
+                                  setMenuId(null);
+                                  setActionError(null);
+                                  setDeleteTarget(product);
+                                }}
+                                className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-rose-600 hover:bg-rose-50 disabled:opacity-60"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                                Sil
+                              </button>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </>
+                    ) : (
+                      <span className="text-xs text-slate-400">—</span>
+                    )}
                   </div>
                   {hasVariants ? (
                     <button
