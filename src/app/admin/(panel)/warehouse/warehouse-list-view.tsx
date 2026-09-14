@@ -31,8 +31,8 @@ export async function WarehouseListView({
   const emptyLabel =
     kind === "ready"
       ? query.q
-        ? "Bu aramaya uyan gönderime hazır sipariş yok."
-        : "Gönderime hazır sipariş yok."
+        ? "Bu aramaya uyan kargoya hazır sipariş yok."
+        : "Kargoya hazır (tüm ürünleri rezerve) sipariş yok."
       : query.q
         ? "Bu aramaya uyan kargolanmış sipariş yok."
         : "Henüz kargoya çıkarılan sipariş yok.";
@@ -47,7 +47,7 @@ export async function WarehouseListView({
         </h1>
         <p className="mt-2 max-w-2xl text-sm text-slate-500">
           {kind === "ready"
-            ? "Ödemesi alınmış siparişleri okutarak paketleyin. Tüm satırlar tamamlanınca kargo barkodlu etiketi yazdırın."
+            ? "Ödemesi alınmış ve tüm ürünleri depodan rezerve edilmiş (kargoya hazır) siparişleri okutarak paketleyin. Tüm satırlar tamamlanınca kargo barkodlu etiketi yazdırın."
             : "Kargoya çıkan siparişlerin etiketini tekrar yazdırın. Yanlış çıkışları gönderime hazır listesine geri alabilirsiniz."}
         </p>
         <nav className="mt-4 flex flex-wrap gap-2" aria-label="Depo listeleri">

@@ -5,8 +5,10 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ChevronLeft, ChevronRight, Printer, Warehouse } from "lucide-react";
 import {
+  ORDER_FULFILLMENT_LOCKED_MESSAGE,
   ORDER_PAYMENT_METHODS,
   formatOrderDateTime,
+  isOrderFulfillmentLocked,
   orderPaymentMethodLabel,
   type OrderPaymentMethodCode,
   type OrderStatusCode,
@@ -100,6 +102,7 @@ export function OrderDetail({ order }: { order: OrderDetailModel }) {
   const [notice, setNotice] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const discount = orderDiscountSummary(order.items);
+  const fulfillmentLocked = isOrderFulfillmentLocked(order.status);
 
   const run = (task: () => Promise<{ error?: string; message?: string }>) => {
     startTransition(async () => {
@@ -120,14 +123,14 @@ export function OrderDetail({ order }: { order: OrderDetailModel }) {
       <div className="flex flex-wrap items-center gap-2 rounded-lg border border-[#e9ebec] bg-white p-4 shadow-sm">
         <OrderStatusSelect
           value={status}
-          disabled={isPending}
+          disabled={isPending || fulfillmentLocked}
           onChange={setStatus}
           size="md"
           className="w-full max-w-md"
         />
         <button
           type="button"
-          disabled={isPending}
+          disabled={isPending || fulfillmentLocked}
           onClick={() => run(() => updateOrderStatusAction({ id: order.id, status }))}
           className="rounded-md bg-slate-800 px-3 py-2 text-sm font-semibold text-white disabled:opacity-60"
         >
@@ -159,6 +162,11 @@ export function OrderDetail({ order }: { order: OrderDetailModel }) {
             }
           >
             {order.allItemsWarehouseReserved ? "Kargoya hazır" : "Stok bekleniyor"}
+          </span>
+        ) : null}
+        {fulfillmentLocked ? (
+          <span className="rounded-md bg-sky-50 px-2.5 py-1.5 text-xs font-semibold text-sky-800">
+            Kargoda — düzenleme kilitli
           </span>
         ) : null}
         <div className="ml-auto flex items-center gap-1">
@@ -197,6 +205,11 @@ export function OrderDetail({ order }: { order: OrderDetailModel }) {
       {notice ? (
         <div className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm text-emerald-800">
           {notice}
+        </div>
+      ) : null}
+      {fulfillmentLocked ? (
+        <div className="rounded-md border border-sky-200 bg-sky-50 px-4 py-2 text-sm text-sky-800">
+          {ORDER_FULFILLMENT_LOCKED_MESSAGE}
         </div>
       ) : null}
 
@@ -312,6 +325,7 @@ export function OrderDetail({ order }: { order: OrderDetailModel }) {
             isPending={isPending}
             onRun={run}
             advancedInventory={Boolean(order.advancedInventory)}
+            readOnly={fulfillmentLocked}
           />
 
           <OrderWorkspaceTabs
@@ -325,7 +339,7 @@ export function OrderDetail({ order }: { order: OrderDetailModel }) {
             shippingMinor={order.shippingMinor}
             weightKg={order.weightKg}
             createdAt={order.createdAt}
-            isPending={isPending}
+            isPending={isPending || fulfillmentLocked}
             onStatusChange={setStatus}
             onRun={run}
           />
@@ -424,7 +438,7 @@ export function OrderDetail({ order }: { order: OrderDetailModel }) {
               />
               <button
                 type="button"
-                disabled={isPending}
+                disabled={isPending || fulfillmentLocked}
                 onClick={() =>
                   run(() =>
                     addOrderPaymentAction({

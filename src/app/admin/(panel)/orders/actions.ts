@@ -22,8 +22,10 @@ import {
   uniqueOrderReference,
 } from "@/lib/order-server";
 import {
+  ORDER_FULFILLMENT_LOCKED_MESSAGE,
   orderDocumentKindLabel,
   orderStatusLabel,
+  isOrderFulfillmentLocked,
   parseOrderDocumentKind,
   parseOrderPaymentMethod,
   parseOrderStatus,
@@ -65,6 +67,18 @@ function revalidateOrders(id?: string) {
     revalidatePath(`/admin/orders/${id}`);
     revalidatePath(`/admin/orders/${id}/documents`, "layout");
   }
+}
+
+async function assertOrderEditable(orderId: string): Promise<{ error?: string }> {
+  const order = await prisma.order.findUnique({
+    where: { id: orderId },
+    select: { status: true },
+  });
+  if (!order) return { error: "Sipariş bulunamadı." };
+  if (isOrderFulfillmentLocked(parseOrderStatus(order.status))) {
+    return { error: ORDER_FULFILLMENT_LOCKED_MESSAGE };
+  }
+  return {};
 }
 
 function parseItemsJson(raw: string): { variantId: string; quantity: number }[] {
@@ -242,6 +256,10 @@ export async function updateOrderStatusAction(input: { id: string; status: Order
   });
   if (!order) return { error: "Sipariş bulunamadı." };
 
+  if (isOrderFulfillmentLocked(parseOrderStatus(order.status))) {
+    return { error: ORDER_FULFILLMENT_LOCKED_MESSAGE };
+  }
+
   const blocked = statusChangeBlockedByFulfillment(parseOrderStatus(order.status), status);
   if (blocked) return { error: blocked };
 
@@ -323,6 +341,9 @@ export async function addOrderPaymentAction(input: {
   if (!id) return { error: "Sipariş bulunamadı." };
   if (amountMinor === null || amountMinor <= 0) return { error: "Geçerli bir tutar girin." };
 
+  const locked = await assertOrderEditable(id);
+  if (locked.error) return locked;
+
   const order = await prisma.order.findUnique({ where: { id }, select: { id: true } });
   if (!order) return { error: "Sipariş bulunamadı." };
 
@@ -371,6 +392,9 @@ export async function updateOrderNoteAction(input: { id: string; privateNote: st
   const id = String(input.id ?? "").trim();
   if (!id) return { error: "Sipariş bulunamadı." };
 
+  const locked = await assertOrderEditable(id);
+  if (locked.error) return locked;
+
   await prisma.order.update({
     where: { id },
     data: { privateNote: input.privateNote.trim().slice(0, 4000) || null },
@@ -415,6 +439,9 @@ export async function updateOrderShippingAction(input: {
 
   const id = String(input.id ?? "").trim();
   if (!id) return { error: "Sipariş bulunamadı." };
+
+  const locked = await assertOrderEditable(id);
+  if (locked.error) return locked;
 
   const shippingMinor =
     input.shipping === undefined ? undefined : parseMajorToMinor(input.shipping);
@@ -577,6 +604,9 @@ export async function addOrderItemAction(input: {
   if (quantity < 1) return { error: "Adet en az 1 olmalı." };
   if (unitInclMinor === null || unitInclMinor <= 0) return { error: "Geçerli bir birim fiyat girin." };
 
+  const locked = await assertOrderEditable(orderId);
+  if (locked.error) return locked;
+
   const [order, variant] = await Promise.all([
     prisma.order.findUnique({ where: { id: orderId }, select: { id: true } }),
     prisma.productVariant.findFirst({
@@ -671,6 +701,9 @@ export async function updateOrderItemAction(input: {
   if (quantity < 1) return { error: "Adet en az 1 olmalı." };
   if (unitInclMinor === null || unitInclMinor <= 0) return { error: "Geçerli bir birim fiyat girin." };
 
+  const locked = await assertOrderEditable(orderId);
+  if (locked.error) return locked;
+
   const item = await prisma.orderItem.findFirst({
     where: { id: itemId, orderId },
     select: {
@@ -731,6 +764,9 @@ export async function deleteOrderItemAction(input: { orderId: string; itemId: st
   const itemId = String(input.itemId ?? "").trim();
   if (!orderId || !itemId) return { error: "Satır bulunamadı." };
 
+  const locked = await assertOrderEditable(orderId);
+  if (locked.error) return locked;
+
   const count = await prisma.orderItem.count({ where: { orderId } });
   if (count <= 1) return { error: "Siparişte en az bir ürün kalmalı." };
 
@@ -766,6 +802,8 @@ export async function deleteOrderAction(input: { id: string }) {
 
   const id = String(input.id ?? "").trim();
   if (!id) return { error: "Sipariş bulunamadı." };
+  const locked = await assertOrderEditable(id);
+  if (locked.error) return locked;
   try {
     await prisma.$transaction(async (tx) => {
       await releaseOrderStock(tx, id);
@@ -787,6 +825,16 @@ export async function deleteOrdersAction(input: { ids: string[] }) {
     new Set((input.ids ?? []).map((id) => String(id ?? "").trim()).filter(Boolean)),
   );
   if (ids.length === 0) return { error: "Silinecek sipariş seçin." };
+
+  const lockedOrders = await prisma.order.findMany({
+    where: { id: { in: ids }, status: { in: [OrderStatus.SHIPPED, OrderStatus.DELIVERED] } },
+    select: { orderNo: true },
+  });
+  if (lockedOrders.length > 0) {
+    return {
+      error: `Kargoya çıkmış siparişler silinemez (#${lockedOrders.map((row) => row.orderNo).join(", #")}).`,
+    };
+  }
 
   try {
     await prisma.$transaction(async (tx) => {
@@ -816,6 +864,15 @@ export async function setOrderItemWarehouseReservationAction(input: {
   const itemId = String(input.itemId ?? "").trim();
   if (!itemId) return { error: "Kalem bulunamadı." };
 
+  const existing = await prisma.orderItem.findUnique({
+    where: { id: itemId },
+    select: { orderId: true, order: { select: { status: true } } },
+  });
+  if (!existing) return { error: "Kalem bulunamadı." };
+  if (isOrderFulfillmentLocked(parseOrderStatus(existing.order.status))) {
+    return { error: ORDER_FULFILLMENT_LOCKED_MESSAGE };
+  }
+
   try {
     await ensureOrderWarehouseReservationSchema().catch(() => undefined);
     await prisma.$transaction(async (tx) => {
@@ -826,11 +883,7 @@ export async function setOrderItemWarehouseReservationAction(input: {
     return { error: message };
   }
 
-  const item = await prisma.orderItem.findUnique({
-    where: { id: itemId },
-    select: { orderId: true },
-  });
-  revalidateOrders(item?.orderId);
+  revalidateOrders(existing.orderId);
   revalidatePath("/admin/warehouse");
   return {
     success: true,

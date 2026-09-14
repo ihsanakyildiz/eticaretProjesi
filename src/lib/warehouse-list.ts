@@ -1,5 +1,7 @@
 import { OrderAddressKind, OrderCaseStatus, OrderStatus, Prisma } from "@prisma/client";
+import { isAdvancedInventoryEnabled } from "@/lib/advanced-inventory";
 import { splitFullName } from "@/lib/customers";
+import { ensureOrderWarehouseReservationSchema } from "@/lib/ensure-order-warehouse-reservation-schema";
 import { parseOrderStatus, type OrderStatusCode } from "@/lib/orders";
 import { prisma } from "@/lib/prisma";
 
@@ -37,12 +39,16 @@ const ORDER_LIST_SELECT = {
   addresses: { select: { kind: true, city: true } },
 } satisfies Prisma.OrderSelect;
 
-export function warehouseListWhere(kind: WarehouseListKind): Prisma.OrderWhereInput {
+export function warehouseListWhere(
+  kind: WarehouseListKind,
+  options?: { requireAllItemsReserved?: boolean },
+): Prisma.OrderWhereInput {
   switch (kind) {
     case "ready":
       return {
         status: { in: [OrderStatus.PAYMENT_ACCEPTED, OrderStatus.PROCESSING] },
         cases: { none: { status: { in: [...OPEN_CASE_BLOCK] } } },
+        ...(options?.requireAllItemsReserved ? { allItemsWarehouseReserved: true } : {}),
       };
     case "shipped":
       return { status: OrderStatus.SHIPPED };
@@ -158,13 +164,16 @@ export async function loadWarehouseOrderPage(input: {
   const requestedPage = Math.max(1, input.page ?? 1);
   const q = (input.q ?? "").trim();
   const search = searchWhere(q);
-  const base = warehouseListWhere(input.kind);
+  await ensureOrderWarehouseReservationSchema().catch(() => undefined);
+  const requireAllItemsReserved = await isAdvancedInventoryEnabled();
+  const readyOpts = { requireAllItemsReserved };
+  const base = warehouseListWhere(input.kind, input.kind === "ready" ? readyOpts : undefined);
   const where: Prisma.OrderWhereInput = search ? { AND: [base, search] } : base;
 
   try {
     const [matchedTotal, readyCount, shippedCount] = await Promise.all([
       prisma.order.count({ where }),
-      prisma.order.count({ where: warehouseListWhere("ready") }),
+      prisma.order.count({ where: warehouseListWhere("ready", readyOpts) }),
       prisma.order.count({ where: warehouseListWhere("shipped") }),
     ]);
     const pageCount = Math.max(1, Math.ceil(matchedTotal / pageSize));

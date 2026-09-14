@@ -91,6 +91,29 @@ export function orderPaymentMethodLabel(method: OrderPaymentMethodCode): string 
   }
 }
 
+/** Kargoya çıkmış / teslim edilmiş siparişlerde içerik düzenlemesi kapalı */
+export function isOrderFulfillmentLocked(status: OrderStatusCode): boolean {
+  switch (status) {
+    case "SHIPPED":
+    case "DELIVERED":
+      return true;
+    case "AWAITING_PAYMENT":
+    case "PAYMENT_ACCEPTED":
+    case "PROCESSING":
+    case "CANCELED":
+    case "PAYMENT_ERROR":
+    case "REFUNDED":
+      return false;
+    default: {
+      const _exhaustive: never = status;
+      return _exhaustive;
+    }
+  }
+}
+
+export const ORDER_FULFILLMENT_LOCKED_MESSAGE =
+  "Kargoya çıkmış siparişte değişiklik yapılamaz.";
+
 export function orderStatusColor(status: OrderStatusCode): string {
   switch (status) {
     case "AWAITING_PAYMENT":

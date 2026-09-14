@@ -85,6 +85,7 @@ export function OrderItemsEditor({
   isPending,
   onRun,
   advancedInventory = false,
+  readOnly = false,
 }: {
   orderId: string;
   items: OrderItemRow[];
@@ -96,11 +97,13 @@ export function OrderItemsEditor({
   isPending: boolean;
   onRun: (task: () => Promise<{ error?: string }>) => void;
   advancedInventory?: boolean;
+  readOnly?: boolean;
 }) {
   const [adding, setAdding] = useState(false);
   const [addDraft, setAddDraft] = useState<AddDraft>(emptyAdd);
   const [editDraft, setEditDraft] = useState<EditDraft | null>(null);
   const [reservationByItem, setReservationByItem] = useState<Record<string, boolean>>({});
+  const locked = readOnly || isPending;
 
   const selectedProduct = catalog.find((product) => product.id === addDraft.productId) ?? null;
   const selectedVariant =
@@ -181,20 +184,22 @@ export function OrderItemsEditor({
     <section className="rounded-lg border border-[#e9ebec] bg-white p-4 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-sm font-semibold text-slate-800">Ürünler ({items.length})</h2>
-        <Can resource="orders" action="update">
-          <button
-            type="button"
-            disabled={isPending || catalog.length === 0}
-            onClick={() => {
-              setEditDraft(null);
-              setAdding(true);
-            }}
-            className="inline-flex items-center gap-1.5 rounded-md bg-[#0ab39c] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#099885] disabled:opacity-50"
-          >
-            <Plus className="h-3.5 w-3.5" />
-            Ürün ekle
-          </button>
-        </Can>
+        {!readOnly ? (
+          <Can resource="orders" action="update">
+            <button
+              type="button"
+              disabled={locked || catalog.length === 0}
+              onClick={() => {
+                setEditDraft(null);
+                setAdding(true);
+              }}
+              className="inline-flex items-center gap-1.5 rounded-md bg-[#0ab39c] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#099885] disabled:opacity-50"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Ürün ekle
+            </button>
+          </Can>
+        ) : null}
       </div>
 
       <div className="mt-3 overflow-x-auto">
@@ -226,7 +231,7 @@ export function OrderItemsEditor({
                         type="checkbox"
                         className="mt-1 accent-[#0ab39c]"
                         checked={isReserved}
-                        disabled={isPending}
+                        disabled={locked}
                         title={
                           isReserved
                             ? "Rezerve — kaldırınca stok sıradakine geçer"
@@ -340,7 +345,7 @@ export function OrderItemsEditor({
                         <>
                           <button
                             type="button"
-                            disabled={isPending}
+                            disabled={locked}
                             onClick={() =>
                               onRun(async () => {
                                 const result = await updateOrderItemAction({
@@ -360,7 +365,7 @@ export function OrderItemsEditor({
                           </button>
                           <button
                             type="button"
-                            disabled={isPending}
+                            disabled={locked}
                             onClick={() => setEditDraft(null)}
                             className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[#e9ebec] text-slate-500 hover:bg-slate-50"
                             title="Vazgeç"
@@ -368,12 +373,14 @@ export function OrderItemsEditor({
                             <X className="h-3.5 w-3.5" />
                           </button>
                         </>
+                      ) : readOnly ? (
+                        <span className="text-xs text-slate-400">—</span>
                       ) : (
                         <>
                           <Can resource="orders" action="update">
                             <button
                               type="button"
-                              disabled={isPending}
+                              disabled={locked}
                               onClick={() => startEdit(item)}
                               className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[#e9ebec] text-slate-500 hover:bg-slate-50 hover:text-[#405189]"
                               title="Düzenle"
@@ -384,7 +391,7 @@ export function OrderItemsEditor({
                           <Can resource="orders" action="update">
                             <button
                               type="button"
-                              disabled={isPending || items.length <= 1}
+                              disabled={locked || items.length <= 1}
                               onClick={() => {
                                 if (!window.confirm("Bu ürün siparişten silinsin mi?")) return;
                                 onRun(() => deleteOrderItemAction({ orderId, itemId: item.id }));
@@ -406,7 +413,7 @@ export function OrderItemsEditor({
         </table>
       </div>
 
-      {adding ? (
+      {adding && !readOnly ? (
         <div className="mt-4 rounded-md border border-[#e9ebec] bg-[#f8f9fa] p-3">
           <p className="text-xs font-semibold tracking-wide text-slate-400 uppercase">Ürün ekle</p>
           <div className="mt-3 grid gap-3 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_7.5rem_7.5rem_5rem_auto]">
@@ -466,7 +473,7 @@ export function OrderItemsEditor({
             <div className="flex items-end gap-2">
               <button
                 type="button"
-                disabled={isPending}
+                disabled={locked}
                 onClick={resetAdd}
                 className="rounded-md border border-[#e9ebec] bg-white px-3 py-2 text-sm font-medium text-slate-600"
               >
@@ -474,7 +481,7 @@ export function OrderItemsEditor({
               </button>
               <button
                 type="button"
-                disabled={isPending || !selectedVariant}
+                disabled={locked || !selectedVariant}
                 onClick={() =>
                   onRun(async () => {
                     const result = await addOrderItemAction({
