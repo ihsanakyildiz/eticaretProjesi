@@ -85,6 +85,7 @@ import {
 import { ProductGalleryEditor, type ProductGalleryItem } from "./product-gallery-editor";
 import { VariantCombinationsPanel } from "./variant-combinations-panel";
 import { CatalogStockHint, SupplierStockInfo, catalogStockInputClass } from "./catalog-stock-field";
+import { AutoBarcodeButton } from "./auto-barcode-button";
 
 const initialState: ProductFormState = {};
 
@@ -806,23 +807,38 @@ export function ProductEditor({
               {!hasCombinations ? (
                 <div>
                   <label className="mb-1.5 block text-sm font-medium text-slate-700">Barkod</label>
-                  <input
-                    value={barcode}
-                    onChange={(e) => {
-                      const next = e.target.value;
-                      setVariants((prev) =>
-                        prev.map((item) =>
-                          item.combinationKey === DEFAULT_VARIANT_COMBINATION_KEY
-                            ? { ...item, barcode: next }
-                            : item,
-                        ),
-                      );
-                    }}
-                    className={inputClass}
-                    placeholder="Depo / kargo barkodu"
-                  />
+                  <div className="flex items-center gap-2">
+                    <input
+                      value={barcode}
+                      onChange={(e) => {
+                        const next = e.target.value;
+                        setVariants((prev) =>
+                          prev.map((item) =>
+                            item.combinationKey === DEFAULT_VARIANT_COMBINATION_KEY
+                              ? { ...item, barcode: next }
+                              : item,
+                          ),
+                        );
+                      }}
+                      className={inputClass}
+                      placeholder="Depo / kargo barkodu"
+                    />
+                    <AutoBarcodeButton
+                      excludeVariantId={defaultVariant?.id}
+                      onAssigned={(next) => {
+                        setVariants((prev) =>
+                          prev.map((item) =>
+                            item.combinationKey === DEFAULT_VARIANT_COMBINATION_KEY
+                              ? { ...item, barcode: next }
+                              : item,
+                          ),
+                        );
+                      }}
+                    />
+                  </div>
                   <p className="mt-1 text-xs text-slate-500">
-                    Depo paketleme ve stok eşlemesi için kullanılır.
+                    Depo paketleme ve stok eşlemesi için kullanılır. Boşsa yanındaki butonla otomatik
+                    atanır.
                   </p>
                 </div>
               ) : (

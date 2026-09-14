@@ -43,7 +43,7 @@ import {
 } from "@/lib/product-variants";
 import { slugify } from "@/lib/slug";
 import { normalizeProductBarcode } from "@/lib/product-barcode";
-import { variantDraftBarcodeError, invalidateDuplicateBarcodeCount } from "@/lib/product-barcode-db";
+import { variantDraftBarcodeError, invalidateDuplicateBarcodeCount, allocateUniqueProductBarcode } from "@/lib/product-barcode-db";
 import {
   deletePublicAsset,
   saveOptimizedImage,
@@ -1103,6 +1103,23 @@ export async function listProductVariantsAction(productId: string): Promise<{
   const variants = await loadProductListVariants(id);
   if (!variants) return { error: "Ürün bulunamadı." };
   return { variants };
+}
+
+export async function suggestUniqueProductBarcodeAction(input?: {
+  excludeVariantId?: string;
+}): Promise<{ error?: string; barcode?: string }> {
+  const gate = await requirePermission("products", "update");
+  if (!gate.ok) return { error: gate.error };
+  try {
+    const excludeVariantId = String(input?.excludeVariantId ?? "").trim();
+    const barcode = await allocateUniqueProductBarcode({
+      excludeVariantIds: excludeVariantId ? [excludeVariantId] : [],
+    });
+    return { barcode };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Barkod üretilemedi.";
+    return { error: message };
+  }
 }
 
 export async function updateProductVariantQuickAction(input: {

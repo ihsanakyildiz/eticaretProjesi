@@ -14,6 +14,7 @@ import {
 import { FEED_SYNC_LOCK_TITLE, FeedSyncLockCheckbox } from "./product-list-feed-lock";
 import { ProductSaleModal, SalePlusButton, type ProductSaleTarget } from "./product-list-sale-modal";
 import { QuickEditCell } from "./product-list-quick-edit";
+import { AutoBarcodeButton } from "./auto-barcode-button";
 
 function VariantQuickRow({
   variant,
@@ -97,15 +98,32 @@ function VariantQuickRow({
         </div>
       </div>
       <span className="truncate pt-1.5 font-mono text-xs text-slate-500">{variant.sku}</span>
-      <QuickEditCell
-        savedValue={variant.barcode ?? ""}
-        ariaLabel={`${variant.title} barkod`}
-        placeholder="Barkod"
-        disabled={!canUpdate}
-        formatGhost={(value) => value.trim() || "—"}
-        normalize={(raw) => ({ ok: true, value: raw.replace(/\s+/g, "").trim().toUpperCase() })}
-        onCommit={(value) => saveField({ barcode: value })}
-      />
+      <div className="flex min-w-0 items-start gap-1">
+        <div className="min-w-0 flex-1">
+          <QuickEditCell
+            savedValue={variant.barcode ?? ""}
+            ariaLabel={`${variant.title} barkod`}
+            placeholder="Barkod"
+            disabled={!canUpdate}
+            formatGhost={(value) => value.trim() || "—"}
+            normalize={(raw) => ({
+              ok: true,
+              value: raw.replace(/\s+/g, "").trim().toUpperCase(),
+            })}
+            onCommit={(value) => saveField({ barcode: value })}
+          />
+        </div>
+        {canUpdate && !(variant.barcode ?? "").trim() ? (
+          <AutoBarcodeButton
+            className="mt-0.5 h-8 w-8"
+            excludeVariantId={variant.id}
+            onAssigned={async (barcode) => {
+              const result = await saveField({ barcode });
+              if (result.error) window.alert(result.error);
+            }}
+          />
+        ) : null}
+      </div>
       <QuickEditCell
         savedValue={formatMinorToMajorInput(variant.priceMinor)}
         ariaLabel={`${variant.title} fiyat`}

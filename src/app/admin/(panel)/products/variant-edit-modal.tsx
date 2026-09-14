@@ -16,6 +16,7 @@ import {
 import type { ProductVariantDraft } from "@/lib/product-editor";
 import type { GeneratorAttribute } from "./generate-combinations-modal";
 import { CatalogStockHint, SupplierStockInfo, catalogStockInputClass } from "./catalog-stock-field";
+import { AutoBarcodeButton } from "./auto-barcode-button";
 
 export type ProductGalleryPick = {
   preview: string;
@@ -282,14 +283,23 @@ export function VariantEditModal({
             </div>
             <div>
               <label className="mb-1.5 block text-sm font-medium text-slate-700">Barkod</label>
-              <input
-                value={form.barcode}
-                onChange={(e) => {
-                  setBarcodeError(null);
-                  setForm((prev) => ({ ...prev, barcode: e.target.value }));
-                }}
-                className={inputClass}
-              />
+              <div className="flex items-center gap-2">
+                <input
+                  value={form.barcode}
+                  onChange={(e) => {
+                    setBarcodeError(null);
+                    setForm((prev) => ({ ...prev, barcode: e.target.value }));
+                  }}
+                  className={inputClass}
+                />
+                <AutoBarcodeButton
+                  excludeVariantId={variant.id}
+                  onAssigned={(barcode) => {
+                    setBarcodeError(null);
+                    setForm((prev) => ({ ...prev, barcode }));
+                  }}
+                />
+              </div>
               {barcodeError ? <p className="mt-1 text-xs text-rose-600">{barcodeError}</p> : null}
             </div>
             <div>

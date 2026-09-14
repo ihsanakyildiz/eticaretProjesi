@@ -61,6 +61,7 @@ import { ProductListVariantsPanel } from "./product-list-expand";
 import { FEED_SYNC_LOCK_TITLE, FeedSyncLockCheckbox } from "./product-list-feed-lock";
 import { ProductSaleModal, SalePlusButton, type ProductSaleTarget } from "./product-list-sale-modal";
 import { QuickEditCell } from "./product-list-quick-edit";
+import { AutoBarcodeButton } from "./auto-barcode-button";
 
 export type { ProductRow };
 
@@ -776,18 +777,32 @@ export function ProductsTable({
                       —
                     </span>
                   ) : (
-                    <QuickEditCell
-                      savedValue={barcodeValue ?? ""}
-                      ariaLabel={`${product.title} barkod`}
-                      placeholder="Barkod"
-                      disabled={!canQuickEdit}
-                      formatGhost={(value) => value.trim() || "—"}
-                      normalize={(raw) => ({
-                        ok: true,
-                        value: raw.replace(/\s+/g, "").trim().toUpperCase(),
-                      })}
-                      onCommit={(value) => saveSimpleVariant(product, { barcode: value })}
-                    />
+                    <div className="flex min-w-0 items-start gap-1">
+                      <div className="min-w-0 flex-1">
+                        <QuickEditCell
+                          savedValue={barcodeValue ?? ""}
+                          ariaLabel={`${product.title} barkod`}
+                          placeholder="Barkod"
+                          disabled={!canQuickEdit}
+                          formatGhost={(value) => value.trim() || "—"}
+                          normalize={(raw) => ({
+                            ok: true,
+                            value: raw.replace(/\s+/g, "").trim().toUpperCase(),
+                          })}
+                          onCommit={(value) => saveSimpleVariant(product, { barcode: value })}
+                        />
+                      </div>
+                      {canQuickEdit && !(barcodeValue ?? "").trim() ? (
+                        <AutoBarcodeButton
+                          className="mt-0.5 h-8 w-8"
+                          excludeVariantId={product.defaultVariantId ?? undefined}
+                          onAssigned={async (barcode) => {
+                            const result = await saveSimpleVariant(product, { barcode });
+                            if (result.error) window.alert(result.error);
+                          }}
+                        />
+                      ) : null}
+                    </div>
                   )}
                   <span className="truncate pt-1.5 text-slate-500">{product.categoryName || "—"}</span>
                   {hasVariants ? (

@@ -2,7 +2,7 @@ import "server-only";
 
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { draftBarcodeConflict, normalizeProductBarcode } from "@/lib/product-barcode";
+import { draftBarcodeConflict, inventProductBarcodeCandidate, normalizeProductBarcode } from "@/lib/product-barcode";
 import type { DuplicateBarcodeGroup, DuplicateBarcodeVariant } from "@/lib/product-barcode";
 
 export type { DuplicateBarcodeGroup, DuplicateBarcodeVariant };
@@ -208,6 +208,20 @@ export async function findBarcodeOwner(
     productId: owner.productId,
     productTitle: owner.productTitle,
   };
+}
+
+/** DB’de benzersiz bir iç EAN-13 üretir. */
+export async function allocateUniqueProductBarcode(
+  options?: { excludeVariantIds?: string[]; attempts?: number },
+): Promise<string> {
+  const attempts = Math.max(1, options?.attempts ?? 24);
+  const exclude = options?.excludeVariantIds ?? [];
+  for (let i = 0; i < attempts; i += 1) {
+    const candidate = inventProductBarcodeCandidate(Date.now() + i * 97);
+    const owner = await findBarcodeOwner(candidate, exclude);
+    if (!owner) return candidate;
+  }
+  throw new Error("Benzersiz barkod üretilemedi. Tekrar deneyin.");
 }
 
 export async function uniqueBarcodeOrNull(

@@ -21,6 +21,7 @@ import {
 import type { GeneratorAttribute } from "./generate-combinations-modal";
 import { VariantEditModal, type ProductGalleryPick } from "./variant-edit-modal";
 import { CatalogStockHint, SupplierStockInfo, catalogStockInputClass } from "./catalog-stock-field";
+import { AutoBarcodeButton } from "./auto-barcode-button";
 
 function AttributeFilterDropdown({
   axis,
@@ -310,21 +311,33 @@ export function VariantCombinationsPanel({
           </p>
           <div>
             <label className="mb-1.5 block text-sm font-medium text-slate-700">Barkod</label>
-            <input
-              value={
-                variants.find((item) => item.selections.length === 0)?.barcode ?? ""
-              }
-              onChange={(e) => {
-                const barcode = e.target.value;
-                onVariantsChange((prev) =>
-                  prev.map((item) =>
-                    item.selections.length === 0 ? { ...item, barcode, sku: sku || item.sku } : item,
-                  ),
-                );
-              }}
-              className={inputClass}
-              placeholder="Depo / kargo barkodu"
-            />
+            <div className="flex items-center gap-2">
+              <input
+                value={
+                  variants.find((item) => item.selections.length === 0)?.barcode ?? ""
+                }
+                onChange={(e) => {
+                  const barcode = e.target.value;
+                  onVariantsChange((prev) =>
+                    prev.map((item) =>
+                      item.selections.length === 0 ? { ...item, barcode, sku: sku || item.sku } : item,
+                    ),
+                  );
+                }}
+                className={inputClass}
+                placeholder="Depo / kargo barkodu"
+              />
+              <AutoBarcodeButton
+                excludeVariantId={variants.find((item) => item.selections.length === 0)?.id}
+                onAssigned={(barcode) => {
+                  onVariantsChange((prev) =>
+                    prev.map((item) =>
+                      item.selections.length === 0 ? { ...item, barcode, sku: sku || item.sku } : item,
+                    ),
+                  );
+                }}
+              />
+            </div>
           </div>
           <div>
             <label className="mb-1.5 block text-sm font-medium text-slate-700">
