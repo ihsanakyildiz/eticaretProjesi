@@ -2674,11 +2674,14 @@ model StorefrontCartLine {
   variantId      String
   quantity       Int
   unitPriceMinor Int      @default(0)
+  /// Sepette uygulanan hediye çeki kodu (normalize UPPER)
+  couponCode     String?  @db.VarChar(64)
   updatedAt      DateTime @updatedAt
 
   @@unique([sessionKey, variantId])
   @@index([productId])
   @@index([updatedAt])
+  @@index([couponCode, updatedAt])
   @@map("storefront_cart_lines")
 }
 

@@ -42,13 +42,14 @@ export async function syncStorefrontCartFromHydrated(cart: HydratedCart) {
     await prisma.$executeRaw`
       DELETE FROM \`storefront_cart_lines\` WHERE \`sessionKey\` = ${sessionKey}
     `;
+    const couponCode = cart.coupon?.code?.trim().toUpperCase() || null;
     for (const line of lines) {
       const id = newSessionKey();
       await prisma.$executeRaw`
         INSERT INTO \`storefront_cart_lines\`
-          (\`id\`, \`sessionKey\`, \`productId\`, \`variantId\`, \`quantity\`, \`unitPriceMinor\`, \`updatedAt\`)
+          (\`id\`, \`sessionKey\`, \`productId\`, \`variantId\`, \`quantity\`, \`unitPriceMinor\`, \`couponCode\`, \`updatedAt\`)
         VALUES
-          (${id}, ${sessionKey}, ${line.productId}, ${line.variantId}, ${line.quantity}, ${line.unitPriceMinor}, NOW(3))
+          (${id}, ${sessionKey}, ${line.productId}, ${line.variantId}, ${line.quantity}, ${line.unitPriceMinor}, ${couponCode}, NOW(3))
       `;
     }
   } catch (error) {

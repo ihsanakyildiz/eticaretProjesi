@@ -5,8 +5,9 @@ import { BarChart3, Plus, ShoppingBag, ShoppingCart, UserRound, Wallet, type Luc
 import { Can } from "@/components/admin/admin-permissions";
 import { prisma } from "@/lib/prisma";
 import { splitFullName } from "@/lib/customers";
-import { orderLineDiscount, readStoredCompareAt } from "@/lib/order-discount";
+import { orderLineDiscount, readStoredCompareAt, readStoredCouponCode, readStoredCouponDiscountMinor } from "@/lib/order-discount";
 import { parseOrderPaymentMethod, parseOrderStatus } from "@/lib/orders";
+import { ensureOrderCouponSchema } from "@/lib/ensure-order-coupon-schema";
 import { ensureOrderWarehouseReservationSchema } from "@/lib/ensure-order-warehouse-reservation-schema";
 import { isAdvancedInventoryEnabled } from "@/lib/advanced-inventory";
 import { OrdersSubnav } from "./orders-subnav";
@@ -21,6 +22,7 @@ export default async function OrdersPage() {
   const since = new Date();
   since.setDate(since.getDate() - 30);
   await ensureOrderWarehouseReservationSchema().catch(() => undefined);
+  await ensureOrderCouponSchema().catch(() => undefined);
   const advancedInventory = await isAdvancedInventoryEnabled();
 
   const [orders, recentOrders] = await Promise.all([
@@ -65,6 +67,8 @@ export default async function OrdersPage() {
       customerName: [firstName, lastName].filter(Boolean).join(" ") || order.user.email,
       customerEmail: order.user.email,
       totalMinor: order.totalMinor,
+      couponCode: readStoredCouponCode(order),
+      couponDiscountMinor: readStoredCouponDiscountMinor(order),
       paymentMethod: parseOrderPaymentMethod(order.paymentMethod),
       status: parseOrderStatus(order.status),
       createdAt: order.createdAt.toISOString(),

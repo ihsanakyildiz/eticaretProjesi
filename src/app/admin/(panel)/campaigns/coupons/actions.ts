@@ -16,6 +16,7 @@ import {
   searchDiscountCouponProducts,
   updateDiscountCoupon,
 } from "@/lib/discount-coupons";
+import { loadDiscountCouponStatsDetail } from "@/lib/discount-coupon-stats";
 import { requirePermission } from "@/lib/staff-permissions";
 
 function revalidateCoupons(id?: string) {
@@ -134,4 +135,14 @@ export async function disableCouponAction(couponId: string) {
   if ("error" in result) return { error: result.error };
   revalidateCoupons(id);
   return { id };
+}
+
+export async function loadCouponStatsAction(couponId: string) {
+  const gate = await requirePermission("campaigns", "view");
+  if (!gate.ok) return { error: gate.error };
+  const id = String(couponId ?? "").trim();
+  if (!id) return { error: "Hediye çeki bulunamadı." };
+  const stats = await loadDiscountCouponStatsDetail(id);
+  if (!stats) return { error: "Hediye çeki bulunamadı." };
+  return { stats };
 }

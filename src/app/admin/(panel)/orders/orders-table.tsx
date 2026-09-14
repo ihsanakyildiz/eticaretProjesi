@@ -29,6 +29,8 @@ export type OrderRow = {
   customerName: string;
   customerEmail: string;
   totalMinor: number;
+  couponCode: string | null;
+  couponDiscountMinor: number;
   paymentMethod: OrderPaymentMethodCode;
   status: OrderStatusCode;
   createdAt: string;
@@ -57,6 +59,7 @@ type Filters = {
   orderNo: string;
   reference: string;
   customer: string;
+  coupon: string;
   payment: "all" | OrderPaymentMethodCode;
   status: "all" | OrderStatusCode;
   dateFrom: string;
@@ -68,6 +71,7 @@ const emptyFilters: Filters = {
   orderNo: "",
   reference: "",
   customer: "",
+  coupon: "",
   payment: "all",
   status: "all",
   dateFrom: "",
@@ -75,7 +79,7 @@ const emptyFilters: Filters = {
   readyOnly: false,
 };
 
-const COLUMN_COUNT = 11;
+const COLUMN_COUNT = 12;
 
 export function OrdersTable({ orders }: { orders: OrderRow[] }) {
   const router = useRouter();
@@ -123,6 +127,11 @@ export function OrdersTable({ orders }: { orders: OrderRow[] }) {
           .includes(applied.customer.toLocaleLowerCase("tr-TR"))
       ) {
         return false;
+      }
+      if (applied.coupon) {
+        const needle = applied.coupon.trim().toLocaleUpperCase("tr-TR");
+        const code = (order.couponCode ?? "").toLocaleUpperCase("tr-TR");
+        if (!code.includes(needle)) return false;
       }
       if (applied.payment !== "all" && order.paymentMethod !== applied.payment) return false;
       if (applied.status !== "all" && order.status !== applied.status) return false;
@@ -283,7 +292,7 @@ export function OrdersTable({ orders }: { orders: OrderRow[] }) {
         <div className="border-b border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700">{error}</div>
       ) : null}
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[1180px] border-collapse text-left text-sm">
+        <table className="w-full min-w-[1280px] border-collapse text-left text-sm">
           <thead>
             <tr className="border-b border-[#e9ebec] bg-[#f3f6f9] text-[11px] font-semibold tracking-wide text-slate-500 uppercase">
               <th className="w-10 px-3 py-2">
@@ -300,6 +309,7 @@ export function OrdersTable({ orders }: { orders: OrderRow[] }) {
               <th className="px-2 py-2">Teslimat</th>
               <th className="px-2 py-2">Müşteri</th>
               <th className="px-2 py-2">Toplam</th>
+              <th className="px-2 py-2">Hediye çeki</th>
               <th className="px-2 py-2">Ödeme</th>
               <th className="px-2 py-2">Durum</th>
               <th className="px-2 py-2">Tarih</th>
@@ -334,6 +344,19 @@ export function OrdersTable({ orders }: { orders: OrderRow[] }) {
                 />
               </td>
               <td className="px-2 py-1.5" />
+              <td className="px-2 py-1.5">
+                <input
+                  value={draft.coupon}
+                  onChange={(event) =>
+                    setDraft((current) => ({
+                      ...current,
+                      coupon: event.target.value.toUpperCase(),
+                    }))
+                  }
+                  placeholder="Hediye çeki"
+                  className={`${filterInputClass} font-mono uppercase`}
+                />
+              </td>
               <td className="px-2 py-1.5">
                 <select
                   value={draft.payment}
@@ -432,6 +455,20 @@ export function OrdersTable({ orders }: { orders: OrderRow[] }) {
                       <p className="text-xs text-slate-400">{order.customerEmail}</p>
                     </td>
                     <td className="px-2 py-2.5 font-medium text-slate-800">{formatMinorTry(order.totalMinor)}</td>
+                    <td className="px-2 py-2.5">
+                      {order.couponCode ? (
+                        <div>
+                          <p className="font-mono text-xs font-semibold text-[#405189]">{order.couponCode}</p>
+                          {order.couponDiscountMinor > 0 ? (
+                            <p className="text-[11px] text-emerald-700">
+                              −{formatMinorTry(order.couponDiscountMinor)}
+                            </p>
+                          ) : null}
+                        </div>
+                      ) : (
+                        <span className="text-slate-300">—</span>
+                      )}
+                    </td>
                     <td className="px-2 py-2.5 text-slate-600">
                       {orderPaymentMethodLabel(order.paymentMethod)}
                     </td>

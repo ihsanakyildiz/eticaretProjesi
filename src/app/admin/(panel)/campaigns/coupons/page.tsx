@@ -3,9 +3,11 @@ import Link from "next/link";
 import { Gift, Plus } from "lucide-react";
 import { Can } from "@/components/admin/admin-permissions";
 import { discountCouponStatusLabel } from "@/lib/discount-coupon-kinds";
+import { loadDiscountCouponStatsSummaries } from "@/lib/discount-coupon-stats";
 import { loadAdminDiscountCouponPage } from "@/lib/discount-coupons";
 import { formatMinorTl } from "@/lib/product-money";
 import { CampaignsTabs } from "../campaigns-tabs";
+import { CouponStatsButton } from "./coupon-stats-modal";
 import { DisableCouponButton } from "./disable-coupon-button";
 
 export const dynamic = "force-dynamic";
@@ -48,6 +50,7 @@ export default async function CouponsPage({
   const rawPage = Array.isArray(params.page) ? params.page[0] : params.page;
   const page = Math.max(1, Number(rawPage) || 1);
   const list = await loadAdminDiscountCouponPage(page);
+  const stats = await loadDiscountCouponStatsSummaries(list.coupons.map((coupon) => coupon.id));
 
   return (
     <div className="space-y-6">
@@ -64,7 +67,8 @@ export default async function CouponsPage({
             </h1>
             <p className="mt-2 max-w-2xl text-sm text-slate-500">
               İndirim kodları oluşturun: yüzde veya sabit tutar, süre, minimum sepet ve
-              kategori/marka/ürün kapsamı. Sepette kullanım sonraki aşamada eklenecek.
+              kategori/marka/ürün kapsamı. Kullanım istatistiklerini listedeki butondan
+              inceleyebilirsiniz.
             </p>
           </div>
           <Can resource="campaigns" action="create">
@@ -93,13 +97,14 @@ export default async function CouponsPage({
                 <th className="px-4 py-3">Durum</th>
                 <th className="px-4 py-3">Süre</th>
                 <th className="px-4 py-3">Min. sepet</th>
+                <th className="px-4 py-3">İstatistik</th>
                 <th className="px-4 py-3 text-right">İşlem</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#e9ebec]">
               {list.coupons.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-10 text-center text-slate-500">
+                  <td colSpan={8} className="px-4 py-10 text-center text-slate-500">
                     Henüz hediye çeki yok. Yeni kod oluşturun.
                   </td>
                 </tr>
@@ -148,6 +153,13 @@ export default async function CouponsPage({
                       {coupon.minSubtotalMinor > 0
                         ? formatMinorTl(coupon.minSubtotalMinor)
                         : "—"}
+                    </td>
+                    <td className="px-4 py-3">
+                      <CouponStatsButton
+                        couponId={coupon.id}
+                        code={coupon.code}
+                        usageCount={stats.get(coupon.id)?.usageCount ?? coupon.redemptionCount}
+                      />
                     </td>
                     <td className="px-4 py-3 text-right">
                       <div className="flex justify-end gap-3">
