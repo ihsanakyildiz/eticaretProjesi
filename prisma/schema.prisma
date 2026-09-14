@@ -2536,6 +2536,8 @@ model Campaign {
   name        String         @db.VarChar(191)
   kind        CampaignKind
   valueInt    Int            @default(0)
+  /// FREE_SHIPPING: min sepet (kuruş); 0 = limitsiz
+  minSubtotalMinor Int       @default(0)
   status      CampaignStatus @default(ACTIVE)
   countdown   Boolean        @default(false)
   startsAt    DateTime?

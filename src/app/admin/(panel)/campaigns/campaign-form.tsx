@@ -24,6 +24,7 @@ export type CampaignFormInitial = {
   name: string;
   kind: CampaignKindCode;
   value: string;
+  minSubtotal: string;
   countdown: boolean;
   startsAt: string;
   endsAt: string;
@@ -54,6 +55,7 @@ export function CampaignForm({
   const [name, setName] = useState(initial?.name ?? "");
   const [kind, setKind] = useState<CampaignKindCode>(initial?.kind ?? "PERCENT_OFF");
   const [value, setValue] = useState(initial?.value ?? "15");
+  const [minSubtotal, setMinSubtotal] = useState(initial?.minSubtotal ?? "");
   const [countdown, setCountdown] = useState(initial?.countdown ?? false);
   const [startsAt, setStartsAt] = useState(initial?.startsAt ?? "");
   const [endsAt, setEndsAt] = useState(initial?.endsAt ?? "");
@@ -88,6 +90,7 @@ export function CampaignForm({
     form.set("name", name);
     form.set("kind", kind);
     form.set("value", value);
+    form.set("minSubtotal", kind === "FREE_SHIPPING" ? minSubtotal : "");
     form.set("countdown", countdown ? "true" : "false");
     form.set("startsAt", startsAt);
     form.set("endsAt", endsAt);
@@ -204,7 +207,23 @@ export function CampaignForm({
                 required
               />
             </label>
-          ) : null}
+          ) : (
+            <label>
+              <span className="mb-1 block text-xs font-medium text-slate-500">
+                Minimum sepet tutarı (TL, boş = limitsiz)
+              </span>
+              <input
+                className={inputClass}
+                value={minSubtotal}
+                onChange={(event) => setMinSubtotal(event.target.value)}
+                inputMode="decimal"
+                placeholder="Örn. 1500"
+              />
+              <span className="mt-1 block text-xs text-slate-500">
+                Doluysa kargo bedava yalnızca bu tutar ve üzeri ürün sepetlerinde uygulanır.
+              </span>
+            </label>
+          )}
           <label className="flex items-center gap-2 self-end pb-2 text-sm text-slate-700">
             <input
               type="checkbox"

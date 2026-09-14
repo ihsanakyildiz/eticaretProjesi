@@ -13,6 +13,7 @@ import {
   campaignKindLabel,
   campaignOfferLabel,
   campaignPhase,
+  campaignMinSubtotalInput,
   campaignValueInput,
   isCampaignKind,
   type CampaignKindCode,
@@ -22,6 +23,7 @@ import {
   type CatalogCampaignBadge,
   type CatalogCampaignFacet,
 } from "@/lib/campaign-kinds";
+import { ensureCampaignMinSubtotalSchema } from "@/lib/ensure-campaign-min-subtotal-schema";
 import { revalidateTag } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import {
@@ -57,6 +59,9 @@ export {
   parseCampaignValue,
   parseCampaignWindow,
   campaignValueInput,
+  freeShippingApplies,
+  parseCampaignMinSubtotal,
+  campaignMinSubtotalInput,
 } from "@/lib/campaign-kinds";
 export type {
   CampaignKindCode,
@@ -82,6 +87,7 @@ export type CampaignWriteInput = CampaignTargetInput & {
   name: string;
   kind: CampaignKindCode;
   valueInt: number;
+  minSubtotalMinor: number;
   countdown: boolean;
   startsAt: Date | null;
   endsAt: Date | null;
@@ -317,6 +323,7 @@ async function applyChunk(
     id: string;
     kind: CampaignKindCode;
     valueInt: number;
+    minSubtotalMinor?: number;
     startsAt: Date | null;
     endsAt: Date | null;
   },
@@ -411,7 +418,11 @@ async function applyChunk(
           }),
         );
       }
-    } else if (campaign.kind === "FREE_SHIPPING" && product.extraShippingMinor > 0) {
+    } else if (
+      campaign.kind === "FREE_SHIPPING" &&
+      product.extraShippingMinor > 0 &&
+      (campaign.minSubtotalMinor ?? 0) <= 0
+    ) {
       writes.push(
         prisma.product.update({
           where: { id: product.id },
@@ -450,11 +461,14 @@ export async function createAndApplyCampaign(input: CampaignWriteInput) {
   }
 
   const campaignId = crypto.randomUUID();
+  await ensureCampaignMinSubtotalSchema().catch(() => undefined);
+  const minSubtotalMinor =
+    input.kind === "FREE_SHIPPING" ? Math.max(0, input.minSubtotalMinor) : 0;
   await prisma.$executeRaw`
     INSERT INTO campaigns
-      (id, name, kind, valueInt, status, countdown, startsAt, endsAt, inStockOnly, createdAt, updatedAt)
+      (id, name, kind, valueInt, minSubtotalMinor, status, countdown, startsAt, endsAt, inStockOnly, createdAt, updatedAt)
     VALUES
-      (${campaignId}, ${name}, ${input.kind}, ${input.valueInt}, 'ACTIVE', ${input.countdown}, ${input.startsAt}, ${input.endsAt}, ${input.inStockOnly}, NOW(3), NOW(3))
+      (${campaignId}, ${name}, ${input.kind}, ${input.valueInt}, ${minSubtotalMinor}, 'ACTIVE', ${input.countdown}, ${input.startsAt}, ${input.endsAt}, ${input.inStockOnly}, NOW(3), NOW(3))
   `;
   for (const categoryId of uniqueIds(input.categoryIds)) {
     await prisma.$executeRaw`
@@ -472,6 +486,7 @@ export async function createAndApplyCampaign(input: CampaignWriteInput) {
     id: campaignId,
     kind: input.kind,
     valueInt: input.valueInt,
+    minSubtotalMinor,
     startsAt: input.startsAt,
     endsAt: input.endsAt,
   };
@@ -485,6 +500,7 @@ export async function createAndApplyCampaign(input: CampaignWriteInput) {
         id: campaign.id,
         kind: campaign.kind,
         valueInt: campaign.valueInt,
+        minSubtotalMinor: campaign.minSubtotalMinor,
         startsAt: campaign.startsAt,
         endsAt: campaign.endsAt,
       },
@@ -676,6 +692,8 @@ export async function updateAndReapplyCampaign(campaignId: string, input: Campai
     id,
     kind: input.kind,
     valueInt: input.valueInt,
+    minSubtotalMinor:
+      input.kind === "FREE_SHIPPING" ? Math.max(0, input.minSubtotalMinor) : 0,
     startsAt: input.startsAt,
     endsAt: input.endsAt,
   };
@@ -705,12 +723,14 @@ export async function updateAndReapplyCampaign(campaignId: string, input: Campai
     skipped += result.skipped;
   }
 
+  await ensureCampaignMinSubtotalSchema().catch(() => undefined);
   await prisma.$executeRaw`
     UPDATE campaigns
     SET
       name = ${name},
       kind = ${input.kind},
       valueInt = ${input.valueInt},
+      minSubtotalMinor = ${offer.minSubtotalMinor},
       countdown = ${input.countdown},
       startsAt = ${input.startsAt},
       endsAt = ${input.endsAt},
@@ -772,6 +792,7 @@ export type LiveProductCampaign = {
   id: string;
   kind: CampaignKindCode;
   valueInt: number;
+  minSubtotalMinor: number;
   name: string;
   countdown: boolean;
   endsAt: Date | null;
@@ -783,6 +804,7 @@ type CampaignSqlRow = {
   name: string;
   kind: string;
   valueInt: number;
+  minSubtotalMinor: number | null;
   countdown: number | boolean;
   startsAt: Date | null;
   endsAt: Date | null;
@@ -792,6 +814,7 @@ type CampaignSqlRow = {
 async function loadCampaignSqlRows(productIds: string[], now: Date, liveOnly: boolean) {
   const ids = uniqueIds(productIds);
   if (ids.length === 0) return [];
+  await ensureCampaignMinSubtotalSchema().catch(() => undefined);
   try {
     return await prisma.$queryRaw<CampaignSqlRow[]>`
       SELECT
@@ -800,6 +823,7 @@ async function loadCampaignSqlRows(productIds: string[], now: Date, liveOnly: bo
         c.name,
         c.kind,
         c.valueInt,
+        c.minSubtotalMinor,
         c.countdown,
         c.startsAt,
         c.endsAt,
@@ -830,6 +854,7 @@ export async function loadLiveCampaignsByProductIds(
       id: row.id,
       kind: row.kind,
       valueInt: row.valueInt,
+      minSubtotalMinor: Number(row.minSubtotalMinor ?? 0),
       name: row.name,
       countdown: Boolean(row.countdown),
       endsAt: row.endsAt,
@@ -852,7 +877,7 @@ export async function attachCatalogCampaigns<T extends { id: string }>(
             name: live.name,
             kind: live.kind,
             valueInt: live.valueInt,
-            label: campaignOfferLabel(live.kind, live.valueInt),
+            label: campaignOfferLabel(live.kind, live.valueInt, live.minSubtotalMinor),
             endsAt: live.countdown ? live.endsAt : null,
             countdown: live.countdown,
           }
@@ -900,9 +925,9 @@ export async function loadLiveCampaignFacets(input: {
   const now = new Date();
   try {
     const rows = await prisma.$queryRaw<
-      Array<{ id: string; name: string; kind: string; valueInt: number }>
+      Array<{ id: string; name: string; kind: string; valueInt: number; minSubtotalMinor: number | null }>
     >`
-      SELECT DISTINCT c.id, c.name, c.kind, c.valueInt, c.createdAt
+      SELECT DISTINCT c.id, c.name, c.kind, c.valueInt, c.minSubtotalMinor, c.createdAt
       FROM campaigns c
       WHERE c.status = 'ACTIVE'
         AND (c.startsAt IS NULL OR c.startsAt <= ${now})
@@ -930,7 +955,13 @@ export async function loadLiveCampaignFacets(input: {
     `;
     return rows.flatMap((row) => {
       if (!isCampaignKind(row.kind)) return [];
-      return [{ id: row.id, name: row.name, label: campaignOfferLabel(row.kind, row.valueInt) }];
+      return [
+        {
+          id: row.id,
+          name: row.name,
+          label: campaignOfferLabel(row.kind, row.valueInt, Number(row.minSubtotalMinor ?? 0)),
+        },
+      ];
     });
   } catch {
     return [];
@@ -947,7 +978,7 @@ export async function loadCampaignNamesByProductIds(
     if (map.has(row.productId) || !isCampaignKind(row.kind)) continue;
     map.set(row.productId, {
       name: row.name,
-      label: campaignOfferLabel(row.kind, row.valueInt),
+      label: campaignOfferLabel(row.kind, row.valueInt, Number(row.minSubtotalMinor ?? 0)),
     });
   }
   return map;
@@ -973,6 +1004,7 @@ export type AdminCampaignListRow = {
 export async function loadAdminCampaignPage(page = 1, pageSize = 30) {
   const safePage = Math.max(1, page);
   const offset = (safePage - 1) * pageSize;
+  await ensureCampaignMinSubtotalSchema().catch(() => undefined);
   const [countRows, rows] = await Promise.all([
     prisma.$queryRaw<Array<{ total: bigint | number }>>`SELECT COUNT(*) AS total FROM campaigns`,
     prisma.$queryRaw<
@@ -981,6 +1013,7 @@ export async function loadAdminCampaignPage(page = 1, pageSize = 30) {
         name: string;
         kind: string;
         valueInt: number;
+        minSubtotalMinor: number | null;
         status: string;
         countdown: number | boolean;
         startsAt: Date | null;
@@ -995,6 +1028,7 @@ export async function loadAdminCampaignPage(page = 1, pageSize = 30) {
         c.name,
         c.kind,
         c.valueInt,
+        c.minSubtotalMinor,
         c.status,
         c.countdown,
         c.startsAt,
@@ -1026,13 +1060,14 @@ export async function loadAdminCampaignPage(page = 1, pageSize = 30) {
     campaigns: rows.flatMap((row): AdminCampaignListRow[] => {
       if (!isCampaignKind(row.kind)) return [];
       const status: CampaignStatusCode = row.status === "DISABLED" ? "DISABLED" : "ACTIVE";
+      const minSubtotalMinor = Number(row.minSubtotalMinor ?? 0);
       return [
         {
           id: row.id,
           name: row.name,
           kind: row.kind,
           kindLabel: campaignKindLabel(row.kind),
-          offerLabel: campaignOfferLabel(row.kind, row.valueInt),
+          offerLabel: campaignOfferLabel(row.kind, row.valueInt, minSubtotalMinor),
           valueInt: row.valueInt,
           status,
           phase: campaignPhase({ status, startsAt: row.startsAt, endsAt: row.endsAt }, now),
@@ -1112,12 +1147,15 @@ export async function loadAdminCampaignDetail(id: string) {
   ]);
   const now = new Date();
   const status: CampaignStatusCode = campaign.status === "DISABLED" ? "DISABLED" : "ACTIVE";
+  const minSubtotalMinor = Number(
+    (campaign as { minSubtotalMinor?: number | null }).minSubtotalMinor ?? 0,
+  );
   return {
     id: campaign.id,
     name: campaign.name,
     kind: campaign.kind,
     kindLabel: campaignKindLabel(campaign.kind),
-    offerLabel: campaignOfferLabel(campaign.kind, campaign.valueInt),
+    offerLabel: campaignOfferLabel(campaign.kind, campaign.valueInt, minSubtotalMinor),
     valueInt: campaign.valueInt,
     status,
     phase: campaignPhase({ status, startsAt: campaign.startsAt, endsAt: campaign.endsAt }, now),
@@ -1146,6 +1184,7 @@ export type CampaignFormInitial = {
   name: string;
   kind: CampaignKindCode;
   value: string;
+  minSubtotal: string;
   countdown: boolean;
   startsAt: string;
   endsAt: string;
@@ -1156,19 +1195,21 @@ export type CampaignFormInitial = {
 };
 
 export async function loadAdminCampaignForm(id: string): Promise<CampaignFormInitial | null> {
+  await ensureCampaignMinSubtotalSchema().catch(() => undefined);
   const rows = await prisma.$queryRaw<
     Array<{
       id: string;
       name: string;
       kind: string;
       valueInt: number;
+      minSubtotalMinor: number | null;
       status: string;
       countdown: number | boolean;
       inStockOnly: number | boolean;
       startsAt: Date | null;
       endsAt: Date | null;
     }>
-  >`SELECT id, name, kind, valueInt, status, countdown, inStockOnly, startsAt, endsAt FROM campaigns WHERE id = ${id} LIMIT 1`;
+  >`SELECT id, name, kind, valueInt, minSubtotalMinor, status, countdown, inStockOnly, startsAt, endsAt FROM campaigns WHERE id = ${id} LIMIT 1`;
   const campaign = rows[0];
   if (!campaign || !isCampaignKind(campaign.kind) || campaign.status === "DISABLED") return null;
 
@@ -1216,6 +1257,7 @@ export async function loadAdminCampaignForm(id: string): Promise<CampaignFormIni
     name: campaign.name,
     kind: campaign.kind,
     value: campaignValueInput(campaign.kind, campaign.valueInt),
+    minSubtotal: campaignMinSubtotalInput(Number(campaign.minSubtotalMinor ?? 0)),
     countdown: Boolean(campaign.countdown),
     startsAt: toDatetimeLocalValue(campaign.startsAt),
     endsAt: toDatetimeLocalValue(campaign.endsAt),

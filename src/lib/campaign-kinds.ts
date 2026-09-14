@@ -81,14 +81,16 @@ export function campaignKindLabel(kind: CampaignKindCode) {
   }
 }
 
-export function campaignOfferLabel(kind: CampaignKindCode, valueInt: number) {
+export function campaignOfferLabel(kind: CampaignKindCode, valueInt: number, minSubtotalMinor = 0) {
   switch (kind) {
     case "PERCENT_OFF":
       return `%${valueInt} indirim`;
     case "FIXED_OFF":
       return `${formatMinorTl(valueInt)} indirim`;
     case "FREE_SHIPPING":
-      return "Kargo bedava";
+      return minSubtotalMinor > 0
+        ? `Kargo bedava (${formatMinorTl(minSubtotalMinor)} ve üzeri)`
+        : "Kargo bedava";
     case "CART_PERCENT":
       return `Sepette %${valueInt} indirim`;
     default: {
@@ -306,6 +308,38 @@ export function campaignValueInput(kind: CampaignKindCode, valueInt: number) {
   }
 }
 
+export function parseCampaignMinSubtotal(
+  kind: CampaignKindCode,
+  raw: string,
+): { ok: true; minSubtotalMinor: number } | { ok: false; error: string } {
+  if (kind !== "FREE_SHIPPING") return { ok: true, minSubtotalMinor: 0 };
+  const trimmed = String(raw ?? "").trim();
+  if (!trimmed || trimmed === "0") return { ok: true, minSubtotalMinor: 0 };
+  const normalized = trimmed.replace(/\s/g, "").replace(",", ".");
+  const major = Number(normalized);
+  if (!Number.isFinite(major) || major < 0) {
+    return { ok: false, error: "Minimum sepet tutarı geçersiz." };
+  }
+  return { ok: true, minSubtotalMinor: Math.round(major * 100) };
+}
+
+export function campaignMinSubtotalInput(minSubtotalMinor: number) {
+  if (minSubtotalMinor <= 0) return "";
+  return minSubtotalMinor % 100 === 0
+    ? String(minSubtotalMinor / 100)
+    : (minSubtotalMinor / 100).toFixed(2);
+}
+
+export function freeShippingApplies(
+  campaign: { kind: CampaignKindCode; minSubtotalMinor?: number | null } | null | undefined,
+  productsMinor: number,
+) {
+  if (!campaign || campaign.kind !== "FREE_SHIPPING") return false;
+  const min = Math.max(0, campaign.minSubtotalMinor ?? 0);
+  if (min <= 0) return true;
+  return productsMinor >= min;
+}
+
 export function parseCampaignWindow(input: {
   countdown: boolean;
   startsAt: string;
@@ -333,6 +367,7 @@ export function pickLiveCampaignBadge(
       name: string;
       kind: CampaignKindCode;
       valueInt: number;
+      minSubtotalMinor?: number | null;
       countdown: boolean;
       startsAt?: Date | string | null;
       endsAt?: Date | string | null;
@@ -348,7 +383,11 @@ export function pickLiveCampaignBadge(
       name: item.campaign.name,
       kind: item.campaign.kind,
       valueInt: item.campaign.valueInt,
-      label: campaignOfferLabel(item.campaign.kind, item.campaign.valueInt),
+      label: campaignOfferLabel(
+        item.campaign.kind,
+        item.campaign.valueInt,
+        Number(item.campaign.minSubtotalMinor ?? 0),
+      ),
       endsAt: item.campaign.countdown ? toDate(item.campaign.endsAt) : null,
       countdown: item.campaign.countdown,
     };

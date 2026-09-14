@@ -289,7 +289,11 @@ export async function loadCampaignStatsDetail(
     campaignId: campaign.id,
     name: campaign.name,
     offerLabel: isCampaignKind(campaign.kind)
-      ? campaignOfferLabel(campaign.kind, campaign.valueInt)
+      ? campaignOfferLabel(
+          campaign.kind,
+          campaign.valueInt,
+          Number((campaign as { minSubtotalMinor?: number | null }).minSubtotalMinor ?? 0),
+        )
       : campaign.name,
     startsAt: campaign.startsAt?.toISOString() ?? campaign.createdAt.toISOString(),
     endsAt: campaign.endsAt?.toISOString() ?? null,

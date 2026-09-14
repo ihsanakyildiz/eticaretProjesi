@@ -367,9 +367,15 @@ export async function loadAdminProductPage(
           loadDefaultVariantsForList(productIds),
           prisma
             .$queryRaw<
-              Array<{ productId: string; name: string; kind: string; valueInt: number }>
+              Array<{
+                productId: string;
+                name: string;
+                kind: string;
+                valueInt: number;
+                minSubtotalMinor: number | null;
+              }>
             >`
-              SELECT cp.productId, c.name, c.kind, c.valueInt
+              SELECT cp.productId, c.name, c.kind, c.valueInt, c.minSubtotalMinor
               FROM campaign_products cp
               INNER JOIN campaigns c ON c.id = cp.campaignId
               WHERE cp.productId IN (${Prisma.join(productIds)})
@@ -383,7 +389,11 @@ export async function loadAdminProductPage(
                 if (map.has(row.productId) || !isCampaignKind(row.kind)) continue;
                 map.set(row.productId, {
                   name: row.name,
-                  label: campaignOfferLabel(row.kind, row.valueInt),
+                  label: campaignOfferLabel(
+                    row.kind,
+                    row.valueInt,
+                    Number(row.minSubtotalMinor ?? 0),
+                  ),
                 });
               }
               return map;

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import {
   isCampaignKind,
+  parseCampaignMinSubtotal,
   parseCampaignValue,
   parseCampaignWindow,
 } from "@/lib/campaign-kinds";
@@ -66,6 +67,11 @@ function parseCampaignWrite(formData: FormData) {
 
   const value = parseCampaignValue(kindRaw, String(formData.get("value") ?? ""));
   if (!value.ok) return { error: value.error };
+  const minSubtotal = parseCampaignMinSubtotal(
+    kindRaw,
+    String(formData.get("minSubtotal") ?? ""),
+  );
+  if (!minSubtotal.ok) return { error: minSubtotal.error };
   const window = parseCampaignWindow({
     countdown: formData.get("countdown") === "on" || formData.get("countdown") === "true",
     startsAt: String(formData.get("startsAt") ?? ""),
@@ -77,6 +83,7 @@ function parseCampaignWrite(formData: FormData) {
     name: String(formData.get("name") ?? ""),
     kind: kindRaw,
     valueInt: value.valueInt,
+    minSubtotalMinor: minSubtotal.minSubtotalMinor,
     countdown: window.endsAt != null,
     startsAt: window.startsAt,
     endsAt: window.endsAt,

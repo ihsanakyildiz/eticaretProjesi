@@ -3,9 +3,9 @@ import "server-only";
 import { ProductEstimatedDelivery, Role } from "@prisma/client";
 import { unstable_cache } from "next/cache";
 import { auth } from "@/auth";
-import { applyCartPercentMinor } from "@/lib/campaign-kinds";
+import { applyCartPercentMinor, freeShippingApplies } from "@/lib/campaign-kinds";
 import { resolveCartCoupon } from "@/lib/cart-discount-coupon";
-import { loadLiveCampaignsByProductIds } from "@/lib/campaigns";
+import { loadLiveCampaignsByProductIds, type LiveProductCampaign } from "@/lib/campaigns";
 import { normalizeCartLines, type CartLine } from "@/lib/cart";
 import { pricedLine } from "@/lib/order-server";
 import { checkoutDataCacheSeconds, parsePerformance, withCdnUrl } from "@/lib/performance";
@@ -170,6 +170,13 @@ export async function hydrateCart(
   let productsMinor = 0;
   let taxMinor = 0;
   let extraShippingMinor = 0;
+  const lineDrafts: Array<{
+    line: Omit<HydratedCartLine, "extraShippingMinor">;
+    campaign: LiveProductCampaign | null;
+    productExtraShippingMinor: number;
+    available: boolean;
+    quantity: number;
+  }> = [];
 
   for (const line of lines) {
     const variant = byId.get(line.variantId) ?? null;
@@ -222,10 +229,6 @@ export async function hydrateCart(
       chargeExcl = applyCartPercentMinor(chargeExcl, campaign.valueInt);
       if (compareAtExcl == null || compareAtExcl <= chargeExcl) compareAtExcl = before;
     }
-    const lineExtraShipping =
-      available && campaign?.kind !== "FREE_SHIPPING"
-        ? (product?.extraShippingMinor ?? 0) * quantity
-        : 0;
     const priced =
       variant && chargeExcl > 0
         ? pricedLine({
@@ -252,7 +255,6 @@ export async function hydrateCart(
     if (available) {
       productsMinor += priced.totalMinor;
       taxMinor += priced.taxMinor;
-      extraShippingMinor += lineExtraShipping;
     }
     const compareAtMinor =
       compareAtExcl != null && compareAtExcl > 0
@@ -270,35 +272,50 @@ export async function hydrateCart(
         ? Math.max(0, variant.stockQuantity)
         : null;
 
-    hydrated.push({
-      lineKey: line.lineKey,
-      variantId: line.variantId,
-      productId: product?.id ?? "",
-      categoryId: product?.categoryId ?? null,
-      brandId: product?.brandId ?? null,
-      title: product?.title ?? "Ürün artık satışta değil",
-      brandName: product?.brand?.name ?? null,
-      variantTitle: variant && !variant.isDefault ? variant.title : null,
-      href: product ? publicProductHref(product.slug, urls, product.urlId) : "/sepet",
-      sku: variant?.sku ?? null,
-      image: withCdnUrl(variant?.image || product?.image || null, perf.cdnUrl),
-      quantity,
-      unitPriceMinor: priced.unitPriceMinor,
-      compareAtMinor,
-      savingsMinor,
-      taxRatePercent,
-      totalMinor: available ? priced.totalMinor : 0,
-      extraShippingMinor: lineExtraShipping,
-      maxQuantity,
-      minOrderQty: Math.max(1, product?.minOrderQty ?? 1),
-      quantityStep: Math.max(1, product?.quantityStep ?? 1),
-      estimatedDelivery: toCartDelivery(product?.estimatedDelivery ?? null),
+    lineDrafts.push({
+      campaign,
+      productExtraShippingMinor: product?.extraShippingMinor ?? 0,
       available,
-      issue,
-      priceChange,
-      qtyAdjustedFrom,
-      personalization: line.personalization,
+      quantity,
+      line: {
+        lineKey: line.lineKey,
+        variantId: line.variantId,
+        productId: product?.id ?? "",
+        categoryId: product?.categoryId ?? null,
+        brandId: product?.brandId ?? null,
+        title: product?.title ?? "Ürün artık satışta değil",
+        brandName: product?.brand?.name ?? null,
+        variantTitle: variant && !variant.isDefault ? variant.title : null,
+        href: product ? publicProductHref(product.slug, urls, product.urlId) : "/sepet",
+        sku: variant?.sku ?? null,
+        image: withCdnUrl(variant?.image || product?.image || null, perf.cdnUrl),
+        quantity,
+        unitPriceMinor: priced.unitPriceMinor,
+        compareAtMinor,
+        savingsMinor,
+        taxRatePercent,
+        totalMinor: available ? priced.totalMinor : 0,
+        maxQuantity,
+        minOrderQty: Math.max(1, product?.minOrderQty ?? 1),
+        quantityStep: Math.max(1, product?.quantityStep ?? 1),
+        estimatedDelivery: toCartDelivery(product?.estimatedDelivery ?? null),
+        available,
+        issue,
+        priceChange,
+        qtyAdjustedFrom,
+        personalization: line.personalization,
+      },
     });
+  }
+
+  for (const draft of lineDrafts) {
+    const waiveFreeShipping = freeShippingApplies(draft.campaign, productsMinor);
+    const lineExtraShipping =
+      draft.available && !waiveFreeShipping
+        ? draft.productExtraShippingMinor * draft.quantity
+        : 0;
+    if (draft.available) extraShippingMinor += lineExtraShipping;
+    hydrated.push({ ...draft.line, extraShippingMinor: lineExtraShipping });
   }
 
   const session = await auth().catch(() => null);
