@@ -95,7 +95,7 @@ export function OrderItemsEditor({
   totalMinor: number;
   catalog: CatalogProduct[];
   isPending: boolean;
-  onRun: (task: () => Promise<{ error?: string }>) => void;
+  onRun: (task: () => Promise<{ error?: string; success?: boolean; message?: string }>) => void;
   advancedInventory?: boolean;
   readOnly?: boolean;
 }) {
