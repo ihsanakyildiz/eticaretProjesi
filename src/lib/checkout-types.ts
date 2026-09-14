@@ -61,6 +61,8 @@ export type HydratedCartLine = {
   lineKey: string;
   variantId: string;
   productId: string;
+  categoryId: string | null;
+  brandId: string | null;
   title: string;
   brandName: string | null;
   variantTitle: string | null;
@@ -90,4 +92,14 @@ export type HydratedCart = {
   productsMinor: number;
   taxMinor: number;
   extraShippingMinor: number;
+  coupon: AppliedCartCouponView | null;
+  couponError: string | null;
+};
+
+export type AppliedCartCouponView = {
+  code: string;
+  name: string | null;
+  offerLabel: string;
+  discountMinor: number;
+  eligibleProductsMinor: number;
 };

@@ -3,12 +3,15 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { OrderAddressKind } from "@prisma/client";
 import { ShoppingBag } from "lucide-react";
+import { ensureOrderCouponSchema } from "@/lib/ensure-order-coupon-schema";
 import { ensureOrderDiscountSchema } from "@/lib/ensure-order-discount-schema";
 import { ensureOrderWarehouseReservationSchema } from "@/lib/ensure-order-warehouse-reservation-schema";
 import { ensureProductPersonalizationSchema } from "@/lib/ensure-product-personalization-schema";
 import { isAdvancedInventoryEnabled } from "@/lib/advanced-inventory";
 import {
   readStoredCompareAt,
+  readStoredCouponCode,
+  readStoredCouponDiscountMinor,
   readStoredDiscountMinor,
   saleListInclMinor,
   snapshotCompareAtMinor,
@@ -53,6 +56,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 export default async function OrderDetailPage({ params }: Props) {
   const { id } = await params;
   await ensureOrderDiscountSchema().catch(() => undefined);
+  await ensureOrderCouponSchema().catch(() => undefined);
   await ensureProductPersonalizationSchema().catch(() => undefined);
   await ensureOrderWarehouseReservationSchema().catch(() => undefined);
   const advancedInventory = await isAdvancedInventoryEnabled();
@@ -218,6 +222,8 @@ export default async function OrderDetailPage({ params }: Props) {
           shippingMinor: order.shippingMinor,
           taxMinor: order.taxMinor,
           discountMinor: readStoredDiscountMinor(order),
+          couponCode: readStoredCouponCode(order),
+          couponDiscountMinor: readStoredCouponDiscountMinor(order),
           totalMinor: order.totalMinor,
           carrierName: order.carrierName ?? "",
           trackingNumber: order.trackingNumber ?? "",

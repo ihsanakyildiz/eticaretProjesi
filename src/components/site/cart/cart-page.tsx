@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { ChevronDown, Trash2, Truck } from "lucide-react";
+import { resolveCartCouponAction } from "@/app/(site)/sepet/actions";
+import { CartCouponBox } from "@/components/site/cart/cart-coupon-box";
 import { CartNotices } from "@/components/site/cart/cart-notices";
 import { useCart } from "@/components/site/cart/cart-provider";
 import { DemoModeBanner } from "@/components/site/demo-mode-banner";
@@ -13,6 +15,7 @@ import { cartLineIssueLabel } from "@/lib/cart-sync";
 import type { CartDeliveryCode, HydratedCartLine } from "@/lib/checkout-types";
 import { formatMinorTl, formatMinorTry, taxExcludedMinor } from "@/lib/product-money";
 import { PersonalizationValuesDisplay } from "@/components/personalization-values-display";
+import type { CartLine } from "@/lib/cart";
 
 const CART_ORANGE = "text-[#f27a1a]";
 
@@ -62,12 +65,14 @@ export function CartPage({ demoNotice = null }: { demoNotice?: DemoNotice | null
     notices,
     dismissNotice,
     selectedIds,
+    couponCode,
     setQuantity,
     removeItem,
     toggleSelected,
     setAllSelected,
   } = useCart();
   const [openSavings, setOpenSavings] = useState<string | null>(null);
+  const [selectedCouponDiscount, setSelectedCouponDiscount] = useState(0);
   const selectAllRef = useRef<HTMLInputElement>(null);
 
   const visibleLines = hydrated?.lines ?? [];
@@ -83,6 +88,30 @@ export function CartPage({ demoNotice = null }: { demoNotice?: DemoNotice | null
     if (!selectAllRef.current) return;
     selectAllRef.current.indeterminate = selectedLines.length > 0 && !allSelected;
   }, [allSelected, selectedLines.length]);
+
+  useEffect(() => {
+    if (!couponCode || selectedLines.length === 0) {
+      setSelectedCouponDiscount(0);
+      return;
+    }
+    let cancelled = false;
+    const payload: CartLine[] = selectedLines.map((line) => ({
+      lineKey: line.lineKey,
+      variantId: line.variantId,
+      quantity: line.quantity,
+      unitPriceMinor: line.unitPriceMinor,
+      personalization: line.personalization,
+    }));
+    void resolveCartCouponAction(payload, couponCode).then((result) => {
+      if (cancelled) return;
+      setSelectedCouponDiscount(result.coupon?.discountMinor ?? 0);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // selectedLines identity changes every render; totals/ids are intentional deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [couponCode, selectedIds.join(","), selectedTotal]);
 
   if (!ready || (lines.length > 0 && !hydrated)) {
     return <CartPending rowCount={Math.max(lines.length, 2)} />;
@@ -152,18 +181,30 @@ export function CartPage({ demoNotice = null }: { demoNotice?: DemoNotice | null
 
       <aside className="h-fit rounded-xl border border-site-border bg-site-card p-5 lg:sticky lg:top-28">
         <h2 className="text-sm font-semibold text-site-fg">Sipariş özeti</h2>
+        <CartCouponBox
+          disabled={selectedLines.length === 0}
+          discountMinor={selectedCouponDiscount}
+        />
         <dl className="mt-4 space-y-2 text-sm">
           <div className="flex justify-between gap-4">
             <dt className="text-site-muted">Seçilen ürünler</dt>
             <dd className="font-medium text-site-fg">{formatMinorTry(selectedTotal)}</dd>
           </div>
+          {selectedCouponDiscount > 0 ? (
+            <div className="flex justify-between gap-4">
+              <dt className="text-site-muted">Hediye çeki</dt>
+              <dd className="font-medium text-emerald-700">
+                −{formatMinorTry(selectedCouponDiscount)}
+              </dd>
+            </div>
+          ) : null}
           <div className="flex justify-between gap-4">
             <dt className="text-site-muted">KDV</dt>
             <dd className="text-site-fg">{formatMinorTry(selectedTax)}</dd>
           </div>
         </dl>
         <p className={`mt-4 border-t border-site-border pt-4 text-lg font-bold ${CART_ORANGE}`}>
-          {formatMinorTl(selectedTotal)}
+          {formatMinorTl(Math.max(0, selectedTotal - selectedCouponDiscount))}
         </p>
         <p className="mt-1 text-xs text-site-muted">Kargo ücreti sonraki adımda hesaplanır.</p>
         {selectedLines.length === 0 ? (

@@ -51,6 +51,8 @@ export type OrderDetailModel = {
   shippingMinor: number;
   taxMinor: number;
   discountMinor?: number;
+  couponCode?: string | null;
+  couponDiscountMinor?: number;
   totalMinor: number;
   carrierName: string;
   trackingNumber: string;
@@ -223,9 +225,17 @@ export function OrderDetail({ order }: { order: OrderDetailModel }) {
               <Row label="Toplam" value={formatMinorTry(order.totalMinor)} />
               {discount.discountMinor > 0 ? (
                 <Row
-                  label="İndirim"
+                  label="Liste indirimi"
                   value={`−${formatMinorTry(discount.discountMinor)} (%${discount.percent})`}
                 />
+              ) : null}
+              {order.couponCode && (order.couponDiscountMinor ?? 0) > 0 ? (
+                <Row
+                  label="Hediye çeki"
+                  value={`${order.couponCode} (−${formatMinorTry(order.couponDiscountMinor ?? 0)})`}
+                />
+              ) : order.couponCode ? (
+                <Row label="Hediye çeki" value={order.couponCode} />
               ) : null}
               <Row label="Oluşturulma" value={formatOrderDateTime(order.createdAt)} />
               <Row

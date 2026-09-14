@@ -64,6 +64,7 @@ model User {
   productReviews          ProductReview[]
   orderFeedbacks          OrderFeedback[]
   supportChatCustomerConversations SupportChatConversation[] @relation("SupportChatCustomer")
+  discountCoupons         DiscountCoupon[]
 
   @@index([role, isActive])
   @@index([customerGroup])
@@ -204,6 +205,10 @@ model Order {
   taxMinor        Int                @default(0)
   /// Liste − ödenen (KDV dahil), sipariş anı
   discountMinor   Int                @default(0)
+  /// Hediye çeki kodu (normalize UPPER)
+  couponCode      String?            @db.VarChar(64)
+  /// Hediye çeki indirimi (KDV dahil), sipariş anı
+  couponDiscountMinor Int            @default(0)
   totalMinor      Int                @default(0)
   carrierName     String?            @db.VarChar(191)
   trackingNumber  String?            @db.VarChar(100)
@@ -1278,6 +1283,7 @@ model ProductCategory {
   listedInSections PageSectionProductCategory[]
   menuItems      MenuItem[]
   campaignLinks  CampaignCategory[]
+  discountCouponLinks DiscountCouponCategory[]
 
   @@index([parentId])
   @@index([isActive, sortOrder])
@@ -1395,6 +1401,7 @@ model Brand {
   products       Product[]
   pageSections   PageSection[]
   campaignLinks  CampaignBrand[]
+  discountCouponLinks DiscountCouponBrand[]
 
   @@index([isActive, sortOrder])
   @@index([name])
@@ -1672,6 +1679,7 @@ model Product {
   reviews             ProductReview[]
   sectionLinks        PageSectionProduct[]
   campaignItems       CampaignProduct[]
+  discountCouponLinks DiscountCouponProduct[]
   placements          ProductPlacement[]
   personalizationFields ProductPersonalizationField[]
 
@@ -2580,6 +2588,82 @@ model CampaignProduct {
   @@index([productId])
   @@index([restoredAt])
   @@map("campaign_products")
+}
+
+enum DiscountCouponKind {
+  PERCENT
+  FIXED
+}
+
+enum DiscountCouponUsage {
+  UNLIMITED
+  ONCE
+  CUSTOMER
+}
+
+enum DiscountCouponStatus {
+  ACTIVE
+  DISABLED
+}
+
+/// Hediye çeki / indirim kodu — sepete kod girilince uygulanır (kampanyadan ayrı)
+model DiscountCoupon {
+  id               String               @id @default(cuid())
+  code             String               @unique @db.VarChar(64)
+  name             String?              @db.VarChar(191)
+  kind             DiscountCouponKind
+  valueInt         Int
+  usageMode        DiscountCouponUsage
+  status           DiscountCouponStatus @default(ACTIVE)
+  startsAt         DateTime?
+  endsAt           DateTime?
+  minSubtotalMinor Int                  @default(0)
+  customerId       String?
+  customer         User?                @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  redemptionCount  Int                  @default(0)
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+  categories       DiscountCouponCategory[]
+  brands           DiscountCouponBrand[]
+  products         DiscountCouponProduct[]
+
+  @@index([status, startsAt, endsAt])
+  @@index([customerId])
+  @@index([createdAt])
+  @@map("discount_coupons")
+}
+
+model DiscountCouponCategory {
+  couponId   String
+  categoryId String
+  coupon     DiscountCoupon  @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  category   ProductCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@id([couponId, categoryId])
+  @@index([categoryId])
+  @@map("discount_coupon_categories")
+}
+
+model DiscountCouponBrand {
+  couponId String
+  brandId  String
+  coupon   DiscountCoupon @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  brand    Brand          @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@id([couponId, brandId])
+  @@index([brandId])
+  @@map("discount_coupon_brands")
+}
+
+model DiscountCouponProduct {
+  couponId  String
+  productId String
+  coupon    DiscountCoupon @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  product   Product        @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@id([couponId, productId])
+  @@index([productId])
+  @@map("discount_coupon_products")
 }
 
 /// Canlı sepet satırları — kampanya “sepette bekliyor” istatistiği için

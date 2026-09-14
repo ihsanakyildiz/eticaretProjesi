@@ -20,6 +20,7 @@ import {
   parseCheckoutPaymentChoice,
 } from "@/lib/checkout-payment-choice";
 import { isIyzicoConfigured, isPaytrConfigured } from "@/lib/checkout-payments";
+import { ensureOrderCouponSchema } from "@/lib/ensure-order-coupon-schema";
 import { ensureOrderDiscountSchema } from "@/lib/ensure-order-discount-schema";
 import { ensureProductPersonalizationSchema } from "@/lib/ensure-product-personalization-schema";
 import { orderDiscountSummary, snapshotCompareAtMinor } from "@/lib/order-discount";
@@ -105,9 +106,15 @@ export async function placeOrderAction(
     return { error: "Sepet okunamadı." };
   }
 
-  const cart = await hydrateCart(cartLines);
+  const cart = await hydrateCart(cartLines, {
+    couponCode: read(formData, "couponCode", 64) || null,
+  });
   const sellable = cart.lines.filter((line) => line.available);
   if (sellable.length === 0) return { error: "Sepetiniz boş veya ürünler satılamıyor." };
+  if (cart.couponError) return { error: cart.couponError };
+
+  const couponCode = cart.coupon?.code ?? null;
+  const couponDiscountMinor = cart.coupon?.discountMinor ?? 0;
 
   const shippingAddressId = read(formData, "shippingAddressId", 64);
   const billingAddressId = read(formData, "billingAddressId", 64) || shippingAddressId;
@@ -150,6 +157,7 @@ export async function placeOrderAction(
 
   try {
     await ensureOrderDiscountSchema().catch(() => undefined);
+    await ensureOrderCouponSchema().catch(() => undefined);
     await ensureProductPersonalizationSchema().catch(() => undefined);
     const created = await prisma.$transaction(async (tx) => {
       const items = sellable.map((line) => ({
@@ -179,6 +187,7 @@ export async function placeOrderAction(
       const productsTotal = cart.productsMinor;
       const taxTotal = cart.taxMinor;
       const { discountMinor } = orderDiscountSummary(items);
+      const payableProducts = Math.max(0, productsTotal - couponDiscountMinor);
 
       const order = await tx.order.create({
         data: {
@@ -197,7 +206,9 @@ export async function placeOrderAction(
           shippingMinor,
           taxMinor: taxTotal,
           discountMinor,
-          totalMinor: productsTotal + shippingMinor,
+          couponCode,
+          couponDiscountMinor,
+          totalMinor: payableProducts + shippingMinor,
           carrierName: carrier.name,
           items: { create: items },
           addresses: {
@@ -212,6 +223,24 @@ export async function placeOrderAction(
         },
         include: { items: { select: { id: true, variantId: true } } },
       });
+
+      if (couponCode) {
+        const updated = await tx.discountCoupon.updateMany({
+          where: {
+            code: couponCode,
+            status: "ACTIVE",
+            OR: [
+              { usageMode: "UNLIMITED" },
+              { usageMode: "CUSTOMER" },
+              { usageMode: "ONCE", redemptionCount: 0 },
+            ],
+          },
+          data: { redemptionCount: { increment: 1 } },
+        });
+        if (updated.count === 0) {
+          throw new Error("COUPON_REDEEM_FAILED");
+        }
+      }
 
       if (personalizationByVariant.size > 0) {
         const createdItems = await tx.orderItem.findMany({
@@ -293,6 +322,9 @@ export async function placeOrderAction(
   } catch (error) {
     if (error instanceof StockShortageError) {
       return { error: `"${error.productTitle}" için yeterli stok kalmadı. Sepeti güncelleyip tekrar deneyin.` };
+    }
+    if (error instanceof Error && error.message === "COUPON_REDEEM_FAILED") {
+      return { error: "İndirim kodu artık kullanılamıyor. Sepeti güncelleyip tekrar deneyin." };
     }
     console.error(error);
     return { error: "Sipariş kaydedilirken bir hata oluştu." };

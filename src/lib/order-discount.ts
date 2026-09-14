@@ -27,6 +27,18 @@ export function readStoredDiscountMinor(order: object) {
   return typeof value === "number" && Number.isFinite(value) ? Math.round(value) : 0;
 }
 
+export function readStoredCouponCode(order: object) {
+  if (!("couponCode" in order)) return null;
+  const value = order.couponCode;
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+export function readStoredCouponDiscountMinor(order: object) {
+  if (!("couponDiscountMinor" in order)) return 0;
+  const value = order.couponDiscountMinor;
+  return typeof value === "number" && Number.isFinite(value) ? Math.round(value) : 0;
+}
+
 export function snapshotCompareAtMinor(
   listInclMinor: number | null | undefined,
   unitInclMinor: number,

@@ -3,18 +3,19 @@ import "server-only";
 import { ProductEstimatedDelivery, Role } from "@prisma/client";
 import { unstable_cache } from "next/cache";
 import { auth } from "@/auth";
+import { applyCartPercentMinor } from "@/lib/campaign-kinds";
+import { resolveCartCoupon } from "@/lib/cart-discount-coupon";
+import { loadLiveCampaignsByProductIds } from "@/lib/campaigns";
+import { normalizeCartLines, type CartLine } from "@/lib/cart";
 import { pricedLine } from "@/lib/order-server";
 import { checkoutDataCacheSeconds, parsePerformance, withCdnUrl } from "@/lib/performance";
 import { taxIncludedMinor } from "@/lib/product-money";
-import { applyCartPercentMinor } from "@/lib/campaign-kinds";
-import { loadLiveCampaignsByProductIds } from "@/lib/campaigns";
-import { resolveSalePrice } from "@/lib/product-sale";
 import { prisma } from "@/lib/prisma";
+import { allowsOrderWhenOutOfStock, isVariantPurchasable } from "@/lib/product-stock";
+import { resolveSalePrice } from "@/lib/product-sale";
 import { publicProductHref } from "@/lib/public-urls";
 import { getSettingsMap } from "@/lib/settings";
 import { parseUrlStructure } from "@/lib/url-structure";
-import { normalizeCartLines, type CartLine } from "@/lib/cart";
-import { allowsOrderWhenOutOfStock, isVariantPurchasable } from "@/lib/product-stock";
 import type {
   CartDeliveryCode,
   CartLineIssueCode,
@@ -66,6 +67,8 @@ const cartVariantSelect = {
       minOrderQty: true,
       quantityStep: true,
       estimatedDelivery: true,
+      categoryId: true,
+      brandId: true,
       brand: { select: { name: true } },
     },
   },
@@ -137,10 +140,20 @@ function classifyCartLine(input: {
   return null;
 }
 
-export async function hydrateCart(raw: CartLine[]): Promise<HydratedCart> {
+export async function hydrateCart(
+  raw: CartLine[],
+  options: { couponCode?: string | null } = {},
+): Promise<HydratedCart> {
   const lines = normalizeCartLines(raw);
   if (lines.length === 0) {
-    return { lines: [], productsMinor: 0, taxMinor: 0, extraShippingMinor: 0 };
+    return {
+      lines: [],
+      productsMinor: 0,
+      taxMinor: 0,
+      extraShippingMinor: 0,
+      coupon: null,
+      couponError: null,
+    };
   }
 
   const settings = await getSettingsMap().catch(() => ({}) as Record<string, string>);
@@ -261,6 +274,8 @@ export async function hydrateCart(raw: CartLine[]): Promise<HydratedCart> {
       lineKey: line.lineKey,
       variantId: line.variantId,
       productId: product?.id ?? "",
+      categoryId: product?.categoryId ?? null,
+      brandId: product?.brandId ?? null,
       title: product?.title ?? "Ürün artık satışta değil",
       brandName: product?.brand?.name ?? null,
       variantTitle: variant && !variant.isDefault ? variant.title : null,
@@ -286,7 +301,35 @@ export async function hydrateCart(raw: CartLine[]): Promise<HydratedCart> {
     });
   }
 
-  return { lines: hydrated, productsMinor, taxMinor, extraShippingMinor };
+  const session = await auth().catch(() => null);
+  const userId =
+    session?.user?.id &&
+    (session.user.role === Role.MEMBER ||
+      session.user.role === Role.ADMIN ||
+      session.user.role === Role.STAFF)
+      ? session.user.id
+      : null;
+
+  const couponResult = await resolveCartCoupon({
+    code: options.couponCode,
+    lines: hydrated.map((line) => ({
+      productId: line.productId,
+      categoryId: line.categoryId,
+      brandId: line.brandId,
+      available: line.available,
+      totalMinor: line.totalMinor,
+    })),
+    userId,
+  });
+
+  return {
+    lines: hydrated,
+    productsMinor,
+    taxMinor,
+    extraShippingMinor,
+    coupon: couponResult.ok ? couponResult.coupon : null,
+    couponError: couponResult.ok ? null : couponResult.error,
+  };
 }
 
 export async function loadCheckoutAddresses(userId: string): Promise<CheckoutAddress[]> {

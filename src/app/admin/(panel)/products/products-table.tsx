@@ -665,7 +665,7 @@ export function ProductsTable({
   };
 
   const productGridClass =
-    "grid grid-cols-[minmax(0,2fr)_100px_120px_minmax(0,1fr)_130px_90px_48px_44px_52px_40px] gap-2";
+    "grid grid-cols-[minmax(0,2fr)_100px_120px_130px_90px_48px_44px_52px_40px] gap-2";
 
   return (
     <>
@@ -702,12 +702,11 @@ export function ProductsTable({
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <div className="min-w-[1040px]">
+            <div className="min-w-[960px]">
               <div className={`${productGridClass} border-b border-[#e9ebec] bg-[#f3f6f9] px-4 py-2.5 text-xs font-semibold tracking-wide text-slate-500 uppercase`}>
                 <span>Ürün</span>
                 <span>SKU</span>
                 <span>Barkod</span>
-                <span>Kategori</span>
                 <span>Fiyat</span>
                 <span>Stok</span>
                 <span title={FEED_SYNC_LOCK_TITLE}>Koru</span>
@@ -823,7 +822,6 @@ export function ProductsTable({
                       ) : null}
                     </div>
                   )}
-                  <span className="truncate pt-1.5 text-slate-500">{product.categoryName || "—"}</span>
                   {hasVariants ? (
                   <div className="flex items-start gap-1 pt-1.5 text-slate-700">
                     <span className="min-w-0 truncate font-medium">{formatMinorTry(priceMinor)}</span>

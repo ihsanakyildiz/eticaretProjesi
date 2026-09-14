@@ -3,46 +3,61 @@ import type { HydratedCart, HydratedCartLine } from "@/lib/checkout-types";
 
 let inflight: { key: string; promise: Promise<HydratedCart> } | null = null;
 
-export const CART_HYDRATE_CACHE_KEY = "eticaret.cart.hydrated.v2";
+export const CART_HYDRATE_CACHE_KEY = "eticaret.cart.hydrated.v3";
 
-export function cartLinesKey(lines: CartLine[]) {
-  return JSON.stringify(lines.map((line) => [line.variantId, line.quantity]));
+export function cartLinesKey(lines: CartLine[], couponCode = "") {
+  return JSON.stringify({
+    lines: lines.map((line) => [line.variantId, line.quantity, line.lineKey]),
+    coupon: couponCode,
+  });
 }
 
-export function readHydratedCartCache(lines: CartLine[]): HydratedCart | null {
+export function readHydratedCartCache(
+  lines: CartLine[],
+  couponCode = "",
+): HydratedCart | null {
   if (typeof window === "undefined" || lines.length === 0) return null;
   try {
     const raw = window.sessionStorage.getItem(CART_HYDRATE_CACHE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as { key?: unknown; cart?: HydratedCart };
     if (!parsed.cart || !Array.isArray(parsed.cart.lines)) return null;
-    if (parsed.key !== cartLinesKey(lines)) {
+    if (parsed.key !== cartLinesKey(lines, couponCode)) {
       return applyLineQuantities(parsed.cart, lines);
     }
     if (!cacheCoversLines(parsed.cart, lines)) return null;
-    return parsed.cart;
+    return {
+      ...parsed.cart,
+      coupon: parsed.cart.coupon ?? null,
+      couponError: parsed.cart.couponError ?? null,
+    };
   } catch {
     return null;
   }
 }
 
-export function writeHydratedCartCache(lines: CartLine[], cart: HydratedCart) {
+export function writeHydratedCartCache(
+  lines: CartLine[],
+  cart: HydratedCart,
+  couponCode = "",
+) {
   if (typeof window === "undefined") return;
   window.sessionStorage.setItem(
     CART_HYDRATE_CACHE_KEY,
-    JSON.stringify({ key: cartLinesKey(lines), cart }),
+    JSON.stringify({ key: cartLinesKey(lines, couponCode), cart }),
   );
 }
 
 export function loadHydratedCart(
   lines: CartLine[],
   fetchCart: (lines: CartLine[]) => Promise<HydratedCart>,
+  couponCode = "",
 ): Promise<HydratedCart> {
-  const key = cartLinesKey(lines);
+  const key = cartLinesKey(lines, couponCode);
   if (inflight?.key === key) return inflight.promise;
   const promise = fetchCart(lines)
     .then((cart) => {
-      writeHydratedCartCache(lines, cart);
+      writeHydratedCartCache(lines, cart, couponCode);
       return cart;
     })
     .finally(() => {
@@ -82,5 +97,7 @@ export function applyLineQuantities(cart: HydratedCart, lines: CartLine[]): Hydr
     ...cart,
     lines: nextLines,
     productsMinor: sellable.reduce((sum, line) => sum + line.totalMinor, 0),
+    coupon: cart.coupon ?? null,
+    couponError: cart.couponError ?? null,
   };
 }

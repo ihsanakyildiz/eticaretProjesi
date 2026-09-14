@@ -3,6 +3,8 @@
 import { useActionState, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { placeOrderAction, type PlaceOrderState } from "@/app/(site)/odeme/actions";
+import { resolveCartCouponAction } from "@/app/(site)/sepet/actions";
+import { CartCouponBox } from "@/components/site/cart/cart-coupon-box";
 import { CartNotices } from "@/components/site/cart/cart-notices";
 import { useCart } from "@/components/site/cart/cart-provider";
 import { DemoModeBanner } from "@/components/site/demo-mode-banner";
@@ -56,7 +58,7 @@ export function CheckoutFlow({
 }) {
   const router = useRouter();
   const perf = usePerformance();
-  const { ready, lines, selectedIds, hydrated, notices, dismissNotice } = useCart();
+  const { ready, lines, selectedIds, hydrated, notices, dismissNotice, couponCode } = useCart();
   const checkoutLines = useMemo(
     () =>
       lines.filter((line) => {
@@ -81,6 +83,8 @@ export function CheckoutFlow({
       extraShippingMinor: selected.reduce((sum, line) => sum + line.extraShippingMinor, 0),
     };
   }, [hydrated, selectedIds]);
+  const [checkoutCouponDiscount, setCheckoutCouponDiscount] = useState(0);
+  const [checkoutCouponLabel, setCheckoutCouponLabel] = useState<string | null>(null);
   const carriers = useMemo<CheckoutCarrier[]>(
     () =>
       initialCarriers.map((row) => ({
@@ -127,7 +131,28 @@ export function CheckoutFlow({
   );
   const carrier = carriers.find((row) => row.id === carrierId) ?? carriers[0] ?? null;
   const shippingMinor = carrier?.priceMinor ?? 0;
-  const totalMinor = (cart?.productsMinor ?? 0) + shippingMinor;
+  const couponDiscountMinor = checkoutCouponDiscount;
+  const totalMinor = Math.max(0, (cart?.productsMinor ?? 0) - couponDiscountMinor) + shippingMinor;
+
+  useEffect(() => {
+    if (!couponCode || checkoutLines.length === 0) {
+      setCheckoutCouponDiscount(0);
+      setCheckoutCouponLabel(null);
+      return;
+    }
+    let cancelled = false;
+    void resolveCartCouponAction(checkoutLines, couponCode).then((result) => {
+      if (cancelled) return;
+      setCheckoutCouponDiscount(result.coupon?.discountMinor ?? 0);
+      setCheckoutCouponLabel(
+        result.coupon ? `${result.coupon.code} · ${result.coupon.offerLabel}` : null,
+      );
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [couponCode, cart?.productsMinor, selectedIds.join(",")]);
 
   const deliveryAddresses = addresses.filter((row) => row.isDelivery) ;
   const invoiceAddresses = addresses.filter((row) => row.isInvoice);
@@ -405,6 +430,7 @@ export function CheckoutFlow({
 
             <form action={formAction} className="mt-6">
               <input type="hidden" name="cartJson" value={JSON.stringify(checkoutLines)} />
+              <input type="hidden" name="couponCode" value={couponCode} />
               <input type="hidden" name="shippingAddressId" value={shippingId} />
               <input type="hidden" name="billingAddressId" value={sameBilling ? shippingId : billingId} />
               <input type="hidden" name="carrierId" value={carrierId} />
@@ -464,11 +490,25 @@ export function CheckoutFlow({
             <dt className="text-site-muted">Ürünler</dt>
             <dd>{formatMinorTry(cart?.productsMinor ?? 0)}</dd>
           </div>
+          {couponDiscountMinor > 0 ? (
+            <div className="flex justify-between gap-3">
+              <dt className="min-w-0 text-site-muted">
+                Hediye çeki
+                {checkoutCouponLabel ? (
+                  <span className="mt-0.5 block truncate text-[11px]">{checkoutCouponLabel}</span>
+                ) : null}
+              </dt>
+              <dd className="shrink-0 text-emerald-700">−{formatMinorTry(couponDiscountMinor)}</dd>
+            </div>
+          ) : null}
           <div className="flex justify-between">
             <dt className="text-site-muted">Kargo</dt>
             <dd>{shippingMinor > 0 ? formatMinorTry(shippingMinor) : "Ücretsiz"}</dd>
           </div>
         </dl>
+        <div className="mt-3">
+          <CartCouponBox disabled={checkoutLines.length === 0} discountMinor={couponDiscountMinor} />
+        </div>
         <p className="mt-4 text-lg font-bold text-site-fg">{formatMinorTry(totalMinor)}</p>
         {shipping ? (
           <p className="mt-3 text-xs text-site-muted">Teslimat: {formatAddress(shipping)}</p>

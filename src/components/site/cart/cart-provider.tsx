@@ -21,7 +21,11 @@ import {
   setCartLineQuantity,
   type CartLine,
 } from "@/lib/cart";
-import { loadHydratedCart, readHydratedCartCache } from "@/lib/cart-hydrate-cache";
+import {
+  loadHydratedCart,
+  readHydratedCartCache,
+  writeHydratedCartCache,
+} from "@/lib/cart-hydrate-cache";
 import {
   cartLinesSignature,
   mergeCartNotices,
@@ -32,6 +36,7 @@ import type { CartNotice, HydratedCart } from "@/lib/checkout-types";
 import type { CartPersonalization } from "@/lib/product-personalization";
 
 const CART_SELECTED_KEY = "eticaret.cart.selected.v1";
+const CART_COUPON_KEY = "eticaret.cart.coupon.v1";
 
 type CartContextValue = {
   ready: boolean;
@@ -39,6 +44,8 @@ type CartContextValue = {
   hydrated: HydratedCart | null;
   notices: CartNotice[];
   selectedIds: string[];
+  couponCode: string;
+  couponPending: boolean;
   count: number;
   addItem: (
     variantId: string,
@@ -52,6 +59,8 @@ type CartContextValue = {
   setAllSelected: (selected: boolean) => void;
   clearSelected: () => void;
   clear: () => void;
+  applyCoupon: (code: string) => Promise<string | null>;
+  clearCoupon: () => void;
   dismissNotice: (id: string) => void;
   dismissNotices: () => void;
 };
@@ -65,6 +74,8 @@ const emptyHydrated: HydratedCart = {
   productsMinor: 0,
   taxMinor: 0,
   extraShippingMinor: 0,
+  coupon: null,
+  couponError: null,
 };
 
 function readStoredCart(): CartLine[] {
@@ -86,9 +97,20 @@ function readSelectedIds(): string[] {
   }
 }
 
+function readStoredCoupon(): string {
+  if (typeof window === "undefined") return "";
+  try {
+    return String(window.sessionStorage.getItem(CART_COUPON_KEY) ?? "").trim().toUpperCase();
+  } catch {
+    return "";
+  }
+}
+
 export function CartProvider({ children }: { children: ReactNode }) {
   const [lines, setLines] = useState<CartLine[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [couponCode, setCouponCode] = useState("");
+  const [couponPending, setCouponPending] = useState(false);
   const [hydrated, setHydrated] = useState<HydratedCart | null>(null);
   const [notices, setNotices] = useState<CartNotice[]>([]);
   const [ready, setReady] = useState(false);
@@ -97,18 +119,24 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const selectedIdsRef = useRef(selectedIds);
   linesRef.current = lines;
   selectedIdsRef.current = selectedIds;
-  const identityKey = cartLinesSignature(lines);
+  const identityKey = `${cartLinesSignature(lines)}|${couponCode}`;
 
   useBrowserLayoutEffect(() => {
     const storedLines = readStoredCart();
     const storedSelected = readSelectedIds().filter((id) =>
       storedLines.some((line) => line.lineKey === id),
     );
+    const storedCoupon = readStoredCoupon();
     setLines(storedLines);
     setSelectedIds(
       storedSelected.length > 0 ? storedSelected : storedLines.map((line) => line.lineKey),
     );
-    setHydrated(storedLines.length === 0 ? emptyHydrated : readHydratedCartCache(storedLines));
+    setCouponCode(storedCoupon);
+    setHydrated(
+      storedLines.length === 0
+        ? emptyHydrated
+        : readHydratedCartCache(storedLines, storedCoupon),
+    );
     setReady(true);
   }, []);
 
@@ -126,7 +154,12 @@ export function CartProvider({ children }: { children: ReactNode }) {
     }
 
     let cancelled = false;
-    void loadHydratedCart(lines, resolveCartAction).then((cart) => {
+    const activeCoupon = couponCode;
+    void loadHydratedCart(
+      lines,
+      (nextLines) => resolveCartAction(nextLines, activeCoupon || null),
+      activeCoupon,
+    ).then((cart) => {
       if (cancelled) return;
 
       const incoming = noticesFromHydratedCart(cart);
@@ -147,6 +180,11 @@ export function CartProvider({ children }: { children: ReactNode }) {
         ...cart,
         lines: visible,
       });
+
+      if (cart.couponError && activeCoupon) {
+        setCouponCode("");
+        window.sessionStorage.removeItem(CART_COUPON_KEY);
+      }
 
       const availableIds = new Set(visible.filter((line) => line.available).map((line) => line.lineKey));
       setSelectedIds((current) => current.filter((id) => availableIds.has(id)));
@@ -173,6 +211,15 @@ export function CartProvider({ children }: { children: ReactNode }) {
     if (!ready) return;
     window.sessionStorage.setItem(CART_SELECTED_KEY, JSON.stringify(selectedIds));
   }, [ready, selectedIds]);
+
+  useEffect(() => {
+    if (!ready) return;
+    if (couponCode) {
+      window.sessionStorage.setItem(CART_COUPON_KEY, couponCode);
+    } else {
+      window.sessionStorage.removeItem(CART_COUPON_KEY);
+    }
+  }, [couponCode, ready]);
 
   const addItem = useCallback(
     (
@@ -233,7 +280,52 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const clear = useCallback(() => {
     setLines([]);
     setSelectedIds([]);
+    setCouponCode("");
     setHydrated(emptyHydrated);
+  }, []);
+
+  const applyCoupon = useCallback(async (rawCode: string) => {
+    const code = String(rawCode ?? "")
+      .trim()
+      .toUpperCase();
+    if (!code) return "İndirim kodunu girin.";
+    setCouponPending(true);
+    try {
+      const selected = selectedIdsRef.current;
+      const targetLines =
+        selected.length > 0
+          ? linesRef.current.filter((line) => selected.includes(line.lineKey))
+          : linesRef.current;
+      const cart = await resolveCartAction(
+        targetLines.length > 0 ? targetLines : linesRef.current,
+        code,
+      );
+      if (cart.couponError) return cart.couponError;
+      if (!cart.coupon) return "İndirim kodu uygulanamadı.";
+      // Rehydrate full cart with the accepted code so line state stays complete.
+      const fullCart = await resolveCartAction(linesRef.current, code);
+      setCouponCode(code);
+      setHydrated(fullCart.couponError ? { ...fullCart, coupon: cart.coupon, couponError: null } : fullCart);
+      writeHydratedCartCache(linesRef.current, fullCart.coupon ? fullCart : { ...fullCart, coupon: cart.coupon }, code);
+      return null;
+    } catch {
+      return "İndirim kodu doğrulanamadı.";
+    } finally {
+      setCouponPending(false);
+    }
+  }, []);
+
+  const clearCoupon = useCallback(() => {
+    setCouponCode("");
+    setHydrated((current) =>
+      current
+        ? {
+            ...current,
+            coupon: null,
+            couponError: null,
+          }
+        : current,
+    );
   }, []);
 
   const dismissNotice = useCallback((id: string) => {
@@ -251,6 +343,8 @@ export function CartProvider({ children }: { children: ReactNode }) {
       hydrated,
       notices,
       selectedIds,
+      couponCode,
+      couponPending,
       count: cartItemCount(lines),
       addItem,
       setQuantity,
@@ -259,13 +353,19 @@ export function CartProvider({ children }: { children: ReactNode }) {
       setAllSelected,
       clearSelected,
       clear,
+      applyCoupon,
+      clearCoupon,
       dismissNotice,
       dismissNotices,
     }),
     [
       addItem,
+      applyCoupon,
       clear,
+      clearCoupon,
       clearSelected,
+      couponCode,
+      couponPending,
       dismissNotice,
       dismissNotices,
       hydrated,

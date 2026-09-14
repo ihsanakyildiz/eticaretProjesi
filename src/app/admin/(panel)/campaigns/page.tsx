@@ -6,6 +6,7 @@ import { campaignPhaseLabel } from "@/lib/campaign-kinds";
 import { loadCampaignStatsSummaries } from "@/lib/campaign-stats";
 import { loadAdminCampaignPage } from "@/lib/campaigns";
 import { CampaignStatsButton } from "./campaign-stats-modal";
+import { CampaignsTabs } from "./campaigns-tabs";
 
 export const dynamic = "force-dynamic";
 
@@ -79,6 +80,9 @@ export default async function CampaignsPage({
               Yeni kampanya oluştur
             </Link>
           </Can>
+        </div>
+        <div className="mt-5">
+          <CampaignsTabs active="campaigns" />
         </div>
       </div>
 
