@@ -48,7 +48,7 @@ export default async function OdemePage({ searchParams }: PageProps) {
         <div className="mt-8">
           <CheckoutFlow
             initialAddresses={addresses}
-            initialCarriers={carriers.map(({ id, name, logo }) => ({ id, name, logo }))}
+            initialCarriers={carriers}
             cardOptions={getCheckoutCardOptions(settings)}
             canceled={firstSearchValue(search.iptal) === "1"}
             step={parseCheckoutStep(firstSearchValue(search.adim))}

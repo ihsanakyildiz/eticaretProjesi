@@ -2072,24 +2072,38 @@ enum ShippingCarrierProvider {
   SENDEO
 }
 
+enum ShippingPricingMode {
+  FLAT
+  DESI
+}
+
 /// Mağazada seçilebilecek kargo firması (API alanları sonraki entegrasyon için)
 model ShippingCarrier {
-  id                  String                   @id @default(cuid())
-  name                String                   @db.VarChar(191)
-  slug                String                   @unique @db.VarChar(191)
-  provider            ShippingCarrierProvider  @default(CUSTOM)
-  trackingUrlTemplate String?                  @db.VarChar(500)
-  website             String?                  @db.VarChar(500)
-  phone               String?                  @db.VarChar(50)
-  email               String?                  @db.VarChar(191)
-  logo                String?                  @db.VarChar(500)
-  notes               String?                  @db.Text
+  id                             String                   @id @default(cuid())
+  name                           String                   @db.VarChar(191)
+  slug                           String                   @unique @db.VarChar(191)
+  provider                       ShippingCarrierProvider  @default(CUSTOM)
+  trackingUrlTemplate            String?                  @db.VarChar(500)
+  website                        String?                  @db.VarChar(500)
+  phone                          String?                  @db.VarChar(50)
+  email                          String?                  @db.VarChar(191)
+  logo                           String?                  @db.VarChar(500)
+  notes                          String?                  @db.Text
   /// İleride API kimlik bilgileri / entegrasyon ayarları (JSON)
-  apiSettings         String?                  @db.Text
-  isActive            Boolean                  @default(true)
-  sortOrder           Int                      @default(0)
-  createdAt           DateTime                 @default(now())
-  updatedAt           DateTime                 @updatedAt
+  apiSettings                    String?                  @db.Text
+  pricingMode                    ShippingPricingMode      @default(FLAT)
+  /// Sabit ücret (kuruş); pricingMode=FLAT
+  flatPriceMinor                 Int                      @default(0)
+  /// Bedava kargo sunulsun mu
+  freeShippingEnabled            Boolean                  @default(false)
+  /// Bedava için min sepet (kuruş); 0 = her zaman bedava (switch açıksa)
+  freeShippingMinSubtotalMinor   Int                      @default(0)
+  /// Desi dilimleri + şehir farkları JSON
+  rateSettings                   String?                  @db.LongText
+  isActive                       Boolean                  @default(true)
+  sortOrder                      Int                      @default(0)
+  createdAt                      DateTime                 @default(now())
+  updatedAt                      DateTime                 @updatedAt
 
   @@index([isActive, sortOrder])
   @@index([provider])

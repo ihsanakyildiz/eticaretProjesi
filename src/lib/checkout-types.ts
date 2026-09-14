@@ -76,6 +76,10 @@ export type HydratedCartLine = {
   taxRatePercent: number;
   totalMinor: number;
   extraShippingMinor: number;
+  weightKg: number | null;
+  widthCm: number | null;
+  heightCm: number | null;
+  depthCm: number | null;
   maxQuantity: number | null;
   minOrderQty: number;
   quantityStep: number;
@@ -92,6 +96,7 @@ export type HydratedCart = {
   productsMinor: number;
   taxMinor: number;
   extraShippingMinor: number;
+  chargeableDesi: number;
   coupon: AppliedCartCouponView | null;
   couponError: string | null;
 };

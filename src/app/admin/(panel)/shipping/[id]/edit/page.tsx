@@ -3,6 +3,12 @@ import { notFound } from "next/navigation";
 import type { ShippingCarrierProviderId } from "@/config/shipping-carriers";
 import { prisma } from "@/lib/prisma";
 import { arasApiPublicView } from "@/lib/aras-kargo";
+import { ensureShippingCarrierPricingSchema } from "@/lib/ensure-shipping-carrier-pricing-schema";
+import {
+  isShippingPricingMode,
+  parseShippingRateSettings,
+  rateSettingsToFormValues,
+} from "@/lib/shipping-carrier-pricing";
 import { yurticiApiPublicView } from "@/lib/yurtici-kargo";
 import { ShippingCarrierForm } from "../../shipping-form";
 
@@ -27,6 +33,7 @@ export default async function EditShippingCarrierPage({
   params,
 }: EditShippingCarrierPageProps) {
   const { id } = await params;
+  await ensureShippingCarrierPricingSchema().catch(() => undefined);
   const carrier = await prisma.shippingCarrier.findUnique({ where: { id } });
   if (!carrier) notFound();
   const yurticiApi = yurticiApiPublicView(carrier.apiSettings);
@@ -47,6 +54,20 @@ export default async function EditShippingCarrierPage({
           customerCode: "",
           hasPassword: yurticiApi.hasPassword,
         };
+
+  const pricingMode = isShippingPricingMode(carrier.pricingMode)
+    ? carrier.pricingMode
+    : "FLAT";
+  const flatMajor =
+    carrier.flatPriceMinor % 100 === 0
+      ? String(carrier.flatPriceMinor / 100)
+      : (carrier.flatPriceMinor / 100).toFixed(2);
+  const freeMin =
+    carrier.freeShippingMinSubtotalMinor > 0
+      ? carrier.freeShippingMinSubtotalMinor % 100 === 0
+        ? String(carrier.freeShippingMinSubtotalMinor / 100)
+        : (carrier.freeShippingMinSubtotalMinor / 100).toFixed(2)
+      : "";
 
   return (
     <div className="space-y-6">
@@ -78,6 +99,13 @@ export default async function EditShippingCarrierPage({
           apiLanguage: api.language,
           apiCustomerCode: api.customerCode,
           apiHasPassword: api.hasPassword,
+          pricing: {
+            pricingMode,
+            flatPriceMajor: flatMajor,
+            freeShippingEnabled: carrier.freeShippingEnabled,
+            freeShippingMinSubtotalMajor: freeMin,
+            rateForm: rateSettingsToFormValues(parseShippingRateSettings(carrier.rateSettings)),
+          },
         }}
       />
     </div>

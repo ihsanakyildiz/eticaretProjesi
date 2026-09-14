@@ -1,9 +1,10 @@
 import type { CartLine } from "@/lib/cart";
 import type { HydratedCart, HydratedCartLine } from "@/lib/checkout-types";
+import { chargeableDesiFromLines } from "@/lib/shipping-carrier-pricing";
 
 let inflight: { key: string; promise: Promise<HydratedCart> } | null = null;
 
-export const CART_HYDRATE_CACHE_KEY = "eticaret.cart.hydrated.v3";
+export const CART_HYDRATE_CACHE_KEY = "eticaret.cart.hydrated.v4";
 
 export function cartLinesKey(lines: CartLine[], couponCode = "") {
   return JSON.stringify({
@@ -90,6 +91,10 @@ export function applyLineQuantities(cart: HydratedCart, lines: CartLine[]): Hydr
       totalMinor: line.available ? line.unitPriceMinor * quantity : 0,
       savingsMinor:
         line.quantity > 0 ? Math.round((line.savingsMinor / line.quantity) * quantity) : 0,
+      extraShippingMinor:
+        line.quantity > 0
+          ? Math.round((line.extraShippingMinor / line.quantity) * quantity)
+          : 0,
     });
   }
   const sellable = nextLines.filter((line) => line.available);
@@ -97,6 +102,16 @@ export function applyLineQuantities(cart: HydratedCart, lines: CartLine[]): Hydr
     ...cart,
     lines: nextLines,
     productsMinor: sellable.reduce((sum, line) => sum + line.totalMinor, 0),
+    extraShippingMinor: sellable.reduce((sum, line) => sum + line.extraShippingMinor, 0),
+    chargeableDesi: chargeableDesiFromLines(
+      sellable.map((line) => ({
+        quantity: line.quantity,
+        weightKg: line.weightKg,
+        widthCm: line.widthCm,
+        heightCm: line.heightCm,
+        depthCm: line.depthCm,
+      })),
+    ),
     coupon: cart.coupon ?? null,
     couponError: cart.couponError ?? null,
   };

@@ -31,6 +31,7 @@ export type ShippingCarrierRow = {
   isActive: boolean;
   sortOrder: number;
   apiConfigured?: boolean;
+  pricingSummary?: string;
 };
 
 function normalizeSearch(value: string) {
@@ -235,10 +236,11 @@ export function ShippingCarriersTable({ carriers }: { carriers: ShippingCarrierR
         ) : (
           <div className="overflow-x-auto">
             <div className="min-w-[860px]">
-              <div className="grid grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,0.9fr)_70px_90px_150px] gap-2 border-b border-[#e9ebec] bg-[#f3f6f9] px-4 py-2.5 text-xs font-semibold tracking-wide text-slate-500 uppercase">
+              <div className="grid grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,0.9fr)_minmax(0,0.8fr)_70px_90px_150px] gap-2 border-b border-[#e9ebec] bg-[#f3f6f9] px-4 py-2.5 text-xs font-semibold tracking-wide text-slate-500 uppercase">
                 <span>Firma</span>
                 <span>Sağlayıcı</span>
                 <span>Telefon</span>
+                <span>Ücret</span>
                 <span>Sıra</span>
                 <span>Durum</span>
                 <span className="text-right">İşlem</span>
@@ -247,7 +249,7 @@ export function ShippingCarriersTable({ carriers }: { carriers: ShippingCarrierR
               {filtered.map((carrier) => (
                 <div
                   key={carrier.id}
-                  className="grid grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,0.9fr)_70px_90px_150px] items-center gap-2 border-b border-[#e9ebec] px-4 py-3 text-sm last:border-0"
+                  className="grid grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,0.9fr)_minmax(0,0.8fr)_70px_90px_150px] items-center gap-2 border-b border-[#e9ebec] px-4 py-3 text-sm last:border-0"
                 >
                   <div className="flex min-w-0 items-center gap-3">
                     <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-md bg-[#f3f6f9]">
@@ -274,6 +276,7 @@ export function ShippingCarriersTable({ carriers }: { carriers: ShippingCarrierR
                     ) : null}
                   </div>
                   <span className="truncate text-slate-500">{carrier.phone || "—"}</span>
+                  <span className="truncate text-slate-500">{carrier.pricingSummary || "—"}</span>
                   <span className="text-slate-500">{carrier.sortOrder}</span>
                   <span>
                     {carrier.isActive ? (

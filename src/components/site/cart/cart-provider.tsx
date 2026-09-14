@@ -74,6 +74,7 @@ const emptyHydrated: HydratedCart = {
   productsMinor: 0,
   taxMinor: 0,
   extraShippingMinor: 0,
+  chargeableDesi: 0,
   coupon: null,
   couponError: null,
 };

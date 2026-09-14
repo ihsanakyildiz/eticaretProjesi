@@ -2,7 +2,7 @@
 
 import { useActionState, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { placeOrderAction, type PlaceOrderState } from "@/app/(site)/odeme/actions";
+import { placeOrderAction, quoteShippingCarriersAction, type PlaceOrderState } from "@/app/(site)/odeme/actions";
 import { resolveCartCouponAction } from "@/app/(site)/sepet/actions";
 import { CartCouponBox } from "@/components/site/cart/cart-coupon-box";
 import { CartNotices } from "@/components/site/cart/cart-notices";
@@ -25,6 +25,7 @@ import {
   type CheckoutStep,
 } from "@/lib/checkout-steps";
 import { formatMinorTry, taxExcludedMinor } from "@/lib/product-money";
+import { chargeableDesiFromLines } from "@/lib/shipping-carrier-pricing";
 import { PersonalizationValuesDisplay } from "@/components/personalization-values-display";
 
 const initialOrderState: PlaceOrderState = {};
@@ -49,7 +50,7 @@ export function CheckoutFlow({
   demoNotice = null,
 }: {
   initialAddresses: CheckoutAddress[];
-  initialCarriers: Array<{ id: string; name: string; logo: string | null }>;
+  initialCarriers: CheckoutCarrier[];
   cardOptions: CheckoutCardOption[];
   canceled?: boolean;
   step: CheckoutStep;
@@ -81,18 +82,20 @@ export function CheckoutFlow({
         return sum + (line.totalMinor - taxExcludedMinor(line.totalMinor, line.taxRatePercent));
       }, 0),
       extraShippingMinor: selected.reduce((sum, line) => sum + line.extraShippingMinor, 0),
+      chargeableDesi: chargeableDesiFromLines(
+        selected.map((line) => ({
+          quantity: line.quantity,
+          weightKg: line.weightKg,
+          widthCm: line.widthCm,
+          heightCm: line.heightCm,
+          depthCm: line.depthCm,
+        })),
+      ),
     };
   }, [hydrated, selectedIds]);
   const [checkoutCouponDiscount, setCheckoutCouponDiscount] = useState(0);
   const [checkoutCouponLabel, setCheckoutCouponLabel] = useState<string | null>(null);
-  const carriers = useMemo<CheckoutCarrier[]>(
-    () =>
-      initialCarriers.map((row) => ({
-        ...row,
-        priceMinor: cart?.extraShippingMinor ?? 0,
-      })),
-    [cart?.extraShippingMinor, initialCarriers],
-  );
+  const [carriers, setCarriers] = useState<CheckoutCarrier[]>(initialCarriers);
   const [addresses, setAddresses] = useState(initialAddresses);
   const [shippingId, setShippingId] = useState(
     initialAddresses.find((row) => row.isDefaultDelivery)?.id ?? initialAddresses[0]?.id ?? "",
@@ -133,6 +136,43 @@ export function CheckoutFlow({
   const shippingMinor = carrier?.priceMinor ?? 0;
   const couponDiscountMinor = checkoutCouponDiscount;
   const totalMinor = Math.max(0, (cart?.productsMinor ?? 0) - couponDiscountMinor) + shippingMinor;
+
+  useEffect(() => {
+    if (!cart) {
+      setCarriers(initialCarriers);
+      return;
+    }
+    let cancelled = false;
+    void quoteShippingCarriersAction({
+      extraShippingMinor: cart.extraShippingMinor,
+      productsMinor: cart.productsMinor,
+      city: shipping?.city ?? null,
+      lines: cart.lines.map((line) => ({
+        quantity: line.quantity,
+        weightKg: line.weightKg,
+        widthCm: line.widthCm,
+        heightCm: line.heightCm,
+        depthCm: line.depthCm,
+      })),
+    }).then((result) => {
+      if (cancelled || !result.carriers?.length) return;
+      setCarriers(result.carriers);
+      setCarrierId((current) =>
+        result.carriers.some((row) => row.id === current)
+          ? current
+          : (result.carriers[0]?.id ?? current),
+      );
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    cart?.extraShippingMinor,
+    cart?.productsMinor,
+    cart?.lines,
+    shipping?.city,
+    initialCarriers,
+  ]);
 
   useEffect(() => {
     if (!couponCode || checkoutLines.length === 0) {

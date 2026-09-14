@@ -7,6 +7,7 @@ import { applyCartPercentMinor, freeShippingApplies } from "@/lib/campaign-kinds
 import { resolveCartCoupon } from "@/lib/cart-discount-coupon";
 import { loadLiveCampaignsByProductIds, type LiveProductCampaign } from "@/lib/campaigns";
 import { normalizeCartLines, type CartLine } from "@/lib/cart";
+import { ensureShippingCarrierPricingSchema } from "@/lib/ensure-shipping-carrier-pricing-schema";
 import { pricedLine } from "@/lib/order-server";
 import { checkoutDataCacheSeconds, parsePerformance, withCdnUrl } from "@/lib/performance";
 import { taxIncludedMinor } from "@/lib/product-money";
@@ -15,6 +16,13 @@ import { allowsOrderWhenOutOfStock, isVariantPurchasable } from "@/lib/product-s
 import { resolveSalePrice } from "@/lib/product-sale";
 import { publicProductHref } from "@/lib/public-urls";
 import { getSettingsMap } from "@/lib/settings";
+import {
+  chargeableDesiFromLines,
+  isShippingPricingMode,
+  parseShippingRateSettings,
+  quoteShippingCarrierPrice,
+  type ShippingDesiLineInput,
+} from "@/lib/shipping-carrier-pricing";
 import { parseUrlStructure } from "@/lib/url-structure";
 import type {
   CartDeliveryCode,
@@ -70,6 +78,10 @@ const cartVariantSelect = {
       categoryId: true,
       brandId: true,
       brand: { select: { name: true } },
+      weightKg: true,
+      widthCm: true,
+      heightCm: true,
+      depthCm: true,
     },
   },
 } as const;
@@ -83,11 +95,48 @@ async function loadCartVariants(ids: string[]) {
 }
 
 async function loadActiveCarriers() {
+  await ensureShippingCarrierPricingSchema().catch(() => undefined);
   return prisma.shippingCarrier.findMany({
     where: { isActive: true },
     orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
-    select: { id: true, name: true, logo: true },
+    select: {
+      id: true,
+      name: true,
+      logo: true,
+      pricingMode: true,
+      flatPriceMinor: true,
+      freeShippingEnabled: true,
+      freeShippingMinSubtotalMinor: true,
+      rateSettings: true,
+    },
   });
+}
+
+function toNumberOrNull(value: unknown): number | null {
+  if (value == null) return null;
+  const n = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+export function shippingDesiLinesFromCart(
+  lines: Array<{
+    available?: boolean;
+    quantity: number;
+    weightKg?: number | null;
+    widthCm?: number | null;
+    heightCm?: number | null;
+    depthCm?: number | null;
+  }>,
+): ShippingDesiLineInput[] {
+  return lines
+    .filter((line) => line.available !== false)
+    .map((line) => ({
+      quantity: line.quantity,
+      weightKg: line.weightKg ?? null,
+      widthCm: line.widthCm ?? null,
+      heightCm: line.heightCm ?? null,
+      depthCm: line.depthCm ?? null,
+    }));
 }
 
 export async function requireCheckoutUser() {
@@ -151,6 +200,7 @@ export async function hydrateCart(
       productsMinor: 0,
       taxMinor: 0,
       extraShippingMinor: 0,
+      chargeableDesi: 0,
       coupon: null,
       couponError: null,
     };
@@ -295,6 +345,10 @@ export async function hydrateCart(
         savingsMinor,
         taxRatePercent,
         totalMinor: available ? priced.totalMinor : 0,
+        weightKg: toNumberOrNull(product?.weightKg),
+        widthCm: toNumberOrNull(product?.widthCm),
+        heightCm: toNumberOrNull(product?.heightCm),
+        depthCm: toNumberOrNull(product?.depthCm),
         maxQuantity,
         minOrderQty: Math.max(1, product?.minOrderQty ?? 1),
         quantityStep: Math.max(1, product?.quantityStep ?? 1),
@@ -317,6 +371,8 @@ export async function hydrateCart(
     if (draft.available) extraShippingMinor += lineExtraShipping;
     hydrated.push({ ...draft.line, extraShippingMinor: lineExtraShipping });
   }
+
+  const chargeableDesi = chargeableDesiFromLines(shippingDesiLinesFromCart(hydrated));
 
   const session = await auth().catch(() => null);
   const userId =
@@ -344,6 +400,7 @@ export async function hydrateCart(
     productsMinor,
     taxMinor,
     extraShippingMinor,
+    chargeableDesi,
     coupon: couponResult.ok ? couponResult.coupon : null,
     couponError: couponResult.ok ? null : couponResult.error,
   };
@@ -378,7 +435,22 @@ export async function loadCheckoutAddresses(userId: string): Promise<CheckoutAdd
   });
 }
 
-export async function loadCheckoutCarriers(extraShippingMinor: number): Promise<CheckoutCarrier[]> {
+export type QuoteShippingCarriersInput = {
+  extraShippingMinor: number;
+  productsMinor: number;
+  city?: string | null;
+  lines?: ShippingDesiLineInput[];
+  chargeableDesi?: number;
+};
+
+export async function loadCheckoutCarriers(
+  input: QuoteShippingCarriersInput | number = 0,
+): Promise<CheckoutCarrier[]> {
+  const quote: QuoteShippingCarriersInput =
+    typeof input === "number"
+      ? { extraShippingMinor: input, productsMinor: 0 }
+      : input;
+
   const settings = await getSettingsMap().catch(() => ({}) as Record<string, string>);
   const perf = parsePerformance(settings);
   const ttl = checkoutDataCacheSeconds(perf);
@@ -387,16 +459,40 @@ export async function loadCheckoutCarriers(extraShippingMinor: number): Promise<
       ? await loadActiveCarriers()
       : await unstable_cache(
           () => loadActiveCarriers(),
-          ["checkout-carriers-v1"],
+          ["checkout-carriers-v2"],
           { tags: [CHECKOUT_CACHE_TAG], revalidate: ttl },
         )();
   if (rows.length === 0) {
-    return [{ id: "standard", name: "Standart kargo", logo: null, priceMinor: extraShippingMinor }];
+    return [
+      {
+        id: "standard",
+        name: "Standart kargo",
+        logo: null,
+        priceMinor: Math.max(0, quote.extraShippingMinor),
+      },
+    ];
   }
-  return rows.map((row) => ({
-    id: row.id,
-    name: row.name,
-    logo: withCdnUrl(row.logo, perf.cdnUrl),
-    priceMinor: extraShippingMinor,
-  }));
+  return rows.map((row) => {
+    const pricingMode = isShippingPricingMode(row.pricingMode) ? row.pricingMode : "FLAT";
+    const priceMinor = quoteShippingCarrierPrice({
+      carrier: {
+        pricingMode,
+        flatPriceMinor: row.flatPriceMinor,
+        freeShippingEnabled: row.freeShippingEnabled,
+        freeShippingMinSubtotalMinor: row.freeShippingMinSubtotalMinor,
+        rateSettings: parseShippingRateSettings(row.rateSettings),
+      },
+      lines: quote.lines,
+      chargeableDesi: quote.chargeableDesi,
+      city: quote.city,
+      productsMinor: quote.productsMinor,
+      extraShippingMinor: quote.extraShippingMinor,
+    });
+    return {
+      id: row.id,
+      name: row.name,
+      logo: withCdnUrl(row.logo, perf.cdnUrl),
+      priceMinor,
+    };
+  });
 }

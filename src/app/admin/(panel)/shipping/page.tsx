@@ -4,6 +4,8 @@ import { Plus, Truck } from "lucide-react";
 import { Can } from "@/components/admin/admin-permissions";
 import { prisma } from "@/lib/prisma";
 import { parseArasApiSettings, arasCredentialsReady } from "@/lib/aras-kargo";
+import { ensureShippingCarrierPricingSchema } from "@/lib/ensure-shipping-carrier-pricing-schema";
+import { shippingCarrierPricingSummary } from "@/lib/shipping-carrier-pricing";
 import { parseYurticiApiSettings, yurticiCredentialsReady } from "@/lib/yurtici-kargo";
 import { ShippingCarriersTable } from "./shipping-table";
 
@@ -14,6 +16,7 @@ export const metadata: Metadata = {
 
 async function loadCarriers() {
   try {
+    await ensureShippingCarrierPricingSchema().catch(() => undefined);
     return {
       carriers: await prisma.shippingCarrier.findMany({
         orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
@@ -28,6 +31,8 @@ async function loadCarriers() {
           isActive: true,
           sortOrder: true,
           apiSettings: true,
+          pricingMode: true,
+          freeShippingEnabled: true,
         },
       }),
     };
@@ -95,6 +100,10 @@ export default async function ShippingCarriersPage() {
               yurticiCredentialsReady(parseYurticiApiSettings(carrier.apiSettings))) ||
             (carrier.provider === "ARAS" &&
               arasCredentialsReady(parseArasApiSettings(carrier.apiSettings))),
+          pricingSummary: shippingCarrierPricingSummary({
+            pricingMode: carrier.pricingMode,
+            freeShippingEnabled: carrier.freeShippingEnabled,
+          }),
         }))}
       />
     </div>

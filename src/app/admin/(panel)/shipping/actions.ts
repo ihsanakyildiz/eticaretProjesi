@@ -1,10 +1,18 @@
 "use server";
 
-import { ShippingCarrierProvider } from "@prisma/client";
+import { ShippingCarrierProvider, ShippingPricingMode } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { isShippingCarrierProviderId } from "@/config/shipping-carriers";
+import { ensureShippingCarrierPricingSchema } from "@/lib/ensure-shipping-carrier-pricing-schema";
 import { normalizeProjectUrl } from "@/lib/project-portfolio";
+import { parseMajorToMinor } from "@/lib/product-money";
 import { prisma } from "@/lib/prisma";
+import {
+  isShippingPricingMode,
+  parseShippingRateSettingsFromForm,
+  serializeShippingRateSettings,
+  type ShippingPricingModeCode,
+} from "@/lib/shipping-carrier-pricing";
 import { slugify } from "@/lib/slug";
 import { requirePermission } from "@/lib/staff-permissions";
 import { deletePublicAsset, saveOptimizedImage, uploadLimits } from "@/lib/uploads";
@@ -40,6 +48,7 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 function revalidateShippingAdmin(id?: string) {
   revalidatePath("/admin/shipping");
   if (id) revalidatePath(`/admin/shipping/${id}/edit`);
+  revalidatePath("/odeme");
 }
 
 function emptyToNull(value: string, max = 191) {
@@ -81,6 +90,19 @@ function parseProvider(raw: string): ShippingCarrierProvider {
       return ShippingCarrierProvider.SENDEO;
     default: {
       const _exhaustive: never = value;
+      return _exhaustive;
+    }
+  }
+}
+
+function toPrismaPricingMode(mode: ShippingPricingModeCode): ShippingPricingMode {
+  switch (mode) {
+    case "FLAT":
+      return ShippingPricingMode.FLAT;
+    case "DESI":
+      return ShippingPricingMode.DESI;
+    default: {
+      const _exhaustive: never = mode;
       return _exhaustive;
     }
   }
@@ -130,6 +152,19 @@ function parseCarrierPayload(formData: FormData) {
   const apiEnvironment = parseYurticiEnvironment(String(formData.get("apiEnvironment") ?? "test"));
   const apiLanguage = parseYurticiLanguage(String(formData.get("apiLanguage") ?? "TR"));
 
+  const pricingModeRaw = String(formData.get("pricingMode") ?? "FLAT").trim();
+  const pricingMode: ShippingPricingModeCode = isShippingPricingMode(pricingModeRaw)
+    ? pricingModeRaw
+    : "FLAT";
+  const flatPriceMinor = parseMajorToMinor(String(formData.get("flatPriceMajor") ?? "0")) ?? 0;
+  const freeShippingEnabled =
+    formData.get("freeShippingEnabled") === "on" ||
+    formData.get("freeShippingEnabled") === "true";
+  const freeMinRaw = String(formData.get("freeShippingMinSubtotalMajor") ?? "").trim();
+  const freeShippingMinSubtotalMinor =
+    !freeMinRaw || freeMinRaw === "0" ? 0 : (parseMajorToMinor(freeMinRaw) ?? -1);
+  const rateParsed = parseShippingRateSettingsFromForm(formData);
+
   return {
     name,
     slugInput,
@@ -149,6 +184,11 @@ function parseCarrierPayload(formData: FormData) {
     apiCustomerCode,
     apiEnvironment,
     apiLanguage,
+    pricingMode,
+    flatPriceMinor,
+    freeShippingEnabled,
+    freeShippingMinSubtotalMinor,
+    rateParsed,
   };
 }
 
@@ -189,6 +229,13 @@ function validatePayload(payload: ReturnType<typeof parseCarrierPayload>) {
   if (payload.email && !EMAIL_RE.test(payload.email)) {
     fieldErrors.email = "Geçerli bir e-posta girin";
   }
+  if (payload.flatPriceMinor < 0) fieldErrors.flatPriceMajor = "Geçersiz tutar";
+  if (payload.freeShippingMinSubtotalMinor < 0) {
+    fieldErrors.freeShippingMinSubtotalMajor = "Geçersiz tutar";
+  }
+  if (!payload.rateParsed.ok) {
+    fieldErrors.rateSettings = payload.rateParsed.error;
+  }
   return fieldErrors;
 }
 
@@ -211,6 +258,17 @@ async function saveLogo(
   return logo;
 }
 
+function pricingWriteData(payload: ReturnType<typeof parseCarrierPayload>) {
+  const settings = payload.rateParsed.ok ? payload.rateParsed.settings : null;
+  return {
+    pricingMode: toPrismaPricingMode(payload.pricingMode),
+    flatPriceMinor: Math.max(0, payload.flatPriceMinor),
+    freeShippingEnabled: payload.freeShippingEnabled,
+    freeShippingMinSubtotalMinor: Math.max(0, payload.freeShippingMinSubtotalMinor),
+    rateSettings: settings ? serializeShippingRateSettings(settings) : null,
+  };
+}
+
 export async function createShippingCarrierAction(
   _prev: ShippingCarrierFormState,
   formData: FormData,
@@ -218,6 +276,7 @@ export async function createShippingCarrierAction(
   const gate = await requirePermission("shipping", "create");
   if (!gate.ok) return { error: gate.error };
 
+  await ensureShippingCarrierPricingSchema().catch(() => undefined);
   const payload = parseCarrierPayload(formData);
   const fieldErrors = validatePayload(payload);
   if (Object.keys(fieldErrors).length > 0) {
@@ -251,6 +310,7 @@ export async function createShippingCarrierAction(
         apiSettings: nextApiSettings(payload, null),
         sortOrder,
         isActive: payload.isActive,
+        ...pricingWriteData(payload),
       },
     });
 
@@ -272,6 +332,7 @@ export async function updateShippingCarrierAction(
   const id = String(formData.get("id") ?? "").trim();
   if (!id) return { error: "Kargo firması bulunamadı." };
 
+  await ensureShippingCarrierPricingSchema().catch(() => undefined);
   const existing = await prisma.shippingCarrier.findUnique({ where: { id } });
   if (!existing) return { error: "Kargo firması bulunamadı." };
 
@@ -311,6 +372,7 @@ export async function updateShippingCarrierAction(
         apiSettings: nextApiSettings(payload, existing.apiSettings),
         sortOrder,
         isActive: payload.isActive,
+        ...pricingWriteData(payload),
       },
     });
 

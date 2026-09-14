@@ -20,6 +20,10 @@ import {
   updateShippingCarrierAction,
   type ShippingCarrierFormState,
 } from "./actions";
+import {
+  ShippingPricingFields,
+  type ShippingPricingFormInitial,
+} from "./shipping-pricing-fields";
 
 const initialState: ShippingCarrierFormState = {};
 
@@ -41,6 +45,7 @@ export type ShippingCarrierFormValues = {
   apiLanguage?: "TR" | "EN";
   apiCustomerCode?: string;
   apiHasPassword?: boolean;
+  pricing?: ShippingPricingFormInitial;
 };
 
 function applyProviderDefaults(
@@ -237,6 +242,8 @@ export function ShippingCarrierForm({
           </div>
         </div>
       </section>
+
+      <ShippingPricingFields initial={initial?.pricing} fieldErrors={state.fieldErrors} />
 
       <section className="rounded-lg border border-[#e9ebec] bg-white shadow-sm">
         <div className="border-b border-[#e9ebec] px-5 py-4">

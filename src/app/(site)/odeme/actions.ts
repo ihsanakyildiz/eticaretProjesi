@@ -13,8 +13,10 @@ import {
   loadCheckoutAddresses,
   loadCheckoutCarriers,
   requireCheckoutUser,
+  shippingDesiLinesFromCart,
   type CheckoutAddress,
 } from "@/lib/checkout";
+import type { CheckoutCarrier } from "@/lib/checkout-types";
 import {
   checkoutChoiceToOrderPayment,
   parseCheckoutPaymentChoice,
@@ -144,7 +146,12 @@ export async function placeOrderAction(
     shipping;
   if (!shipping || !billing) return { error: "Teslimat ve fatura adresi seçin." };
 
-  const carriers = await loadCheckoutCarriers(cart.extraShippingMinor);
+  const carriers = await loadCheckoutCarriers({
+    extraShippingMinor: cart.extraShippingMinor,
+    productsMinor: cart.productsMinor,
+    city: shipping.city,
+    lines: shippingDesiLinesFromCart(sellable),
+  });
   const carrier = carriers.find((row) => row.id === carrierId) ?? carriers[0];
   if (!carrier) return { error: "Kargo seçin." };
 
@@ -330,3 +337,35 @@ export async function placeOrderAction(
     return { error: "Sipariş kaydedilirken bir hata oluştu." };
   }
 }
+
+export async function quoteShippingCarriersAction(input: {
+  extraShippingMinor: number;
+  productsMinor: number;
+  city?: string | null;
+  lines: Array<{
+    quantity: number;
+    weightKg?: number | null;
+    widthCm?: number | null;
+    heightCm?: number | null;
+    depthCm?: number | null;
+  }>;
+}) {
+  const session = await requireCheckoutUser();
+  if (!session?.user?.id) return { error: "Oturum gerekli.", carriers: [] as CheckoutCarrier[] };
+
+  const carriers = await loadCheckoutCarriers({
+    extraShippingMinor: Math.max(0, Number(input.extraShippingMinor) || 0),
+    productsMinor: Math.max(0, Number(input.productsMinor) || 0),
+    city: input.city ?? null,
+    lines: (input.lines ?? []).map((line) => ({
+      quantity: Math.max(1, Math.floor(Number(line.quantity) || 1)),
+      weightKg: line.weightKg ?? null,
+      widthCm: line.widthCm ?? null,
+      heightCm: line.heightCm ?? null,
+      depthCm: line.depthCm ?? null,
+    })),
+  });
+
+  return { carriers };
+}
+
