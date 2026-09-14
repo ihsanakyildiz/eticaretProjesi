@@ -245,7 +245,7 @@ export function OrderItemsEditor({
                               itemId: item.id,
                               reserved: next,
                             });
-                            if (result.error) {
+                            if ("error" in result && result.error) {
                               setReservationByItem((prev) => ({
                                 ...prev,
                                 [item.id]: !next,
@@ -354,7 +354,7 @@ export function OrderItemsEditor({
                                   quantity: Number(editDraft.quantity),
                                   unitPriceIncl: editDraft.unitIncl,
                                 });
-                                if (!result.error) setEditDraft(null);
+                                if (!("error" in result && result.error)) setEditDraft(null);
                                 return result;
                               })
                             }
@@ -490,7 +490,7 @@ export function OrderItemsEditor({
                       quantity: Number(addDraft.quantity),
                       unitPriceIncl: addDraft.priceIncl,
                     });
-                    if (!result.error) resetAdd();
+                    if (!("error" in result && result.error)) resetAdd();
                     return result;
                   })
                 }
