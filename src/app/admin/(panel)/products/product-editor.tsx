@@ -186,10 +186,11 @@ function initialTaxRatePercent(rates: ProductEditorTaxRate[], initial?: number) 
   return preferred ? String(preferred.percent) : "";
 }
 
-function emptyDefaultVariant(priceMinor: number, sku: string): ProductVariantDraft {
+function emptyDefaultVariant(priceMinor: number, sku: string, barcode = ""): ProductVariantDraft {
   return {
     clientKey: "default",
     sku: sku || "SKU",
+    barcode,
     title: "Varsayılan",
     priceMinor,
     stockQuantity: 0,
@@ -328,6 +329,7 @@ export function ProductEditor({
   const defaultVariant = variants.find(
     (item) => item.combinationKey === DEFAULT_VARIANT_COMBINATION_KEY,
   );
+  const barcode = defaultVariant?.barcode ?? "";
   const totalStock = variants.reduce((sum, item) => sum + (item.stockQuantity || 0), 0);
   const taxPercent = Number.parseInt(taxRatePercent, 10) || 0;
   const typedPriceMinor = parseMajorToMinor(salePriceMajor) ?? 0;
@@ -381,6 +383,7 @@ export function ProductEditor({
             ? {
                 ...item,
                 sku: sku.trim() || item.sku,
+                barcode: barcode.trim(),
                 priceMinor: basePriceMinor,
                 compareAtMinor: compareAtMinor,
                 isDefault: true,
@@ -800,13 +803,43 @@ export function ProductEditor({
                 <label className="mb-1.5 block text-sm font-medium text-slate-700">Referans / SKU</label>
                 <input name="sku" value={sku} onChange={(e) => setSku(e.target.value)} className={inputClass} />
               </div>
+              {!hasCombinations ? (
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium text-slate-700">Barkod</label>
+                  <input
+                    value={barcode}
+                    onChange={(e) => {
+                      const next = e.target.value;
+                      setVariants((prev) =>
+                        prev.map((item) =>
+                          item.combinationKey === DEFAULT_VARIANT_COMBINATION_KEY
+                            ? { ...item, barcode: next }
+                            : item,
+                        ),
+                      );
+                    }}
+                    className={inputClass}
+                    placeholder="Depo / kargo barkodu"
+                  />
+                  <p className="mt-1 text-xs text-slate-500">
+                    Depo paketleme ve stok eşlemesi için kullanılır.
+                  </p>
+                </div>
+              ) : (
+                <div className="rounded-md border border-[#e9ebec] bg-[#f8f9fa] px-3 py-2 text-xs text-slate-500 md:col-span-2">
+                  Bu üründe barkodlar yalnızca her varyant satırında (Varyantlar sekmesi) düzenlenir.
+                </div>
+              )}
               <div>
                 <label className="mb-1.5 block text-sm font-medium text-slate-700">MPN</label>
                 <input name="mpn" defaultValue={initial?.mpn ?? ""} className={inputClass} />
               </div>
               <div>
-                <label className="mb-1.5 block text-sm font-medium text-slate-700">UPC barkodu</label>
+                <label className="mb-1.5 block text-sm font-medium text-slate-700">UPC (katalog)</label>
                 <input name="upc" defaultValue={initial?.upc ?? ""} className={inputClass} />
+                <p className="mt-1 text-xs text-slate-500">
+                  Katalog alanı; depo barkodu değildir.
+                </p>
               </div>
               <div>
                 <label className="mb-1.5 block text-sm font-medium text-slate-700">GTIN / EAN</label>

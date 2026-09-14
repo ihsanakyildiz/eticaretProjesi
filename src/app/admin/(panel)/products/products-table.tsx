@@ -499,6 +499,7 @@ export function ProductsTable({
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set());
   const [stockOverrides, setStockOverrides] = useState<Record<string, number>>({});
   const [priceOverrides, setPriceOverrides] = useState<Record<string, number>>({});
+  const [barcodeOverrides, setBarcodeOverrides] = useState<Record<string, string | null>>({});
   const [salePatches, setSalePatches] = useState<
     Record<
       string,
@@ -588,7 +589,7 @@ export function ProductsTable({
 
   const saveSimpleVariant = (
     product: ProductRow,
-    patch: { priceMinor?: number; stockQuantity?: number },
+    patch: { priceMinor?: number; stockQuantity?: number; barcode?: string },
   ) => {
     if (!product.defaultVariantId) {
       return Promise.resolve({ error: "Bu ürünün stok kaydı yok." });
@@ -617,6 +618,13 @@ export function ProductsTable({
           setStockOverrides((prev) => ({ ...prev, [product.id]: result.variant!.stockQuantity }));
           return { savedValue: String(result.variant.stockQuantity) };
         }
+        if (patch.barcode !== undefined) {
+          setBarcodeOverrides((prev) => ({
+            ...prev,
+            [product.id]: result.variant!.barcode ?? null,
+          }));
+          return { savedValue: result.variant.barcode ?? "" };
+        }
         return {};
       })
       .catch(() => ({ error: "Kayıt güncellenemedi." }));
@@ -637,7 +645,7 @@ export function ProductsTable({
   };
 
   const productGridClass =
-    "grid grid-cols-[minmax(0,2fr)_110px_minmax(0,1fr)_130px_100px_48px_44px_176px_40px] gap-2";
+    "grid grid-cols-[minmax(0,2fr)_100px_120px_minmax(0,1fr)_130px_90px_48px_44px_176px_40px] gap-2";
 
   return (
     <>
@@ -674,10 +682,11 @@ export function ProductsTable({
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <div className="min-w-[1030px]">
+            <div className="min-w-[1150px]">
               <div className={`${productGridClass} border-b border-[#e9ebec] bg-[#f3f6f9] px-4 py-2.5 text-xs font-semibold tracking-wide text-slate-500 uppercase`}>
                 <span>Ürün</span>
                 <span>SKU</span>
+                <span>Barkod</span>
                 <span>Kategori</span>
                 <span>Fiyat</span>
                 <span>Stok</span>
@@ -691,6 +700,10 @@ export function ProductsTable({
                 const hasVariants = product.variantCount > 1;
                 const expanded = expandedIds.has(product.id);
                 const stockQuantity = stockOverrides[product.id] ?? product.stockQuantity;
+                const barcodeValue =
+                  barcodeOverrides[product.id] !== undefined
+                    ? barcodeOverrides[product.id]
+                    : product.barcode;
                 const salePatch = salePatches[product.id];
                 const priceMinor = salePatch?.priceMinor ?? priceOverrides[product.id] ?? product.basePriceMinor;
                 const compareAtMinor = salePatch?.compareAtMinor ?? product.compareAtMinor;
@@ -758,6 +771,24 @@ export function ProductsTable({
                   <span className="truncate pt-1.5 font-mono text-xs text-slate-500">
                     {product.sku || "—"}
                   </span>
+                  {hasVariants ? (
+                    <span className="truncate pt-1.5 text-xs text-slate-400" title="Barkodlar varyant satırlarında">
+                      —
+                    </span>
+                  ) : (
+                    <QuickEditCell
+                      savedValue={barcodeValue ?? ""}
+                      ariaLabel={`${product.title} barkod`}
+                      placeholder="Barkod"
+                      disabled={!canQuickEdit}
+                      formatGhost={(value) => value.trim() || "—"}
+                      normalize={(raw) => ({
+                        ok: true,
+                        value: raw.replace(/\s+/g, "").trim().toUpperCase(),
+                      })}
+                      onCommit={(value) => saveSimpleVariant(product, { barcode: value })}
+                    />
+                  )}
                   <span className="truncate pt-1.5 text-slate-500">{product.categoryName || "—"}</span>
                   {hasVariants ? (
                   <div className="flex items-start gap-1 pt-1.5 text-slate-700">

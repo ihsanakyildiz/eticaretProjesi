@@ -4,6 +4,8 @@ export type ProductRow = {
   slug: string;
   urlId: number;
   sku: string | null;
+  /** Varsayılan varyant barkodu; çoklu kombinasyonda listede gösterilmez */
+  barcode: string | null;
   image: string | null;
   isActive: boolean;
   availableForOrder: boolean;

@@ -222,6 +222,7 @@ export function VariantCombinationsPanel({
           {
             clientKey: "default",
             sku: sku || "SKU",
+            barcode: "",
             title: "Varsayılan",
             priceMinor: basePriceMinor,
             stockQuantity: 0,
@@ -307,6 +308,24 @@ export function VariantCombinationsPanel({
               ? "Bu ürün tek SKU. Stok adedi gelişmiş stok sisteminden yönetilir."
               : "Bu ürün tek SKU. Beden/renk için kombinasyon üretin veya stok adedini aşağıdan girin."}
           </p>
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-slate-700">Barkod</label>
+            <input
+              value={
+                variants.find((item) => item.selections.length === 0)?.barcode ?? ""
+              }
+              onChange={(e) => {
+                const barcode = e.target.value;
+                onVariantsChange((prev) =>
+                  prev.map((item) =>
+                    item.selections.length === 0 ? { ...item, barcode, sku: sku || item.sku } : item,
+                  ),
+                );
+              }}
+              className={inputClass}
+              placeholder="Depo / kargo barkodu"
+            />
+          </div>
           <div>
             <label className="mb-1.5 block text-sm font-medium text-slate-700">
               {lockStock ? "Depo stoğu" : "Stok adedi"}

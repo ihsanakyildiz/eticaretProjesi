@@ -398,16 +398,19 @@ export async function loadAdminProductPage(
   );
   const defaultVariantByProduct = new Map<string, string>();
   const defaultFeedLockByProduct = new Map<string, boolean>();
+  const defaultBarcodeByProduct = new Map<string, string | null>();
   for (const row of defaultVariants) {
     if (row.isDefault) {
       defaultVariantByProduct.set(row.productId, row.id);
       defaultFeedLockByProduct.set(row.productId, row.feedSyncLocked);
+      defaultBarcodeByProduct.set(row.productId, row.barcode ?? null);
     }
   }
   for (const row of defaultVariants) {
     if (!defaultVariantByProduct.has(row.productId)) {
       defaultVariantByProduct.set(row.productId, row.id);
       defaultFeedLockByProduct.set(row.productId, row.feedSyncLocked);
+      defaultBarcodeByProduct.set(row.productId, row.barcode ?? null);
     }
   }
 
@@ -426,6 +429,7 @@ export async function loadAdminProductPage(
         slug: product.slug,
         urlId: product.urlId,
         sku: product.sku,
+        barcode: defaultBarcodeByProduct.get(product.id) ?? null,
         image: product.image,
         isActive: product.isActive,
         availableForOrder: product.availableForOrder,
@@ -478,13 +482,13 @@ async function loadDefaultVariantsForList(productIds: string[]) {
   try {
     return await prisma.productVariant.findMany({
       where,
-      select: { id: true, productId: true, isDefault: true, feedSyncLocked: true },
+      select: { id: true, productId: true, isDefault: true, feedSyncLocked: true, barcode: true },
     });
   } catch (error) {
     console.error(error);
     const rows = await prisma.productVariant.findMany({
       where,
-      select: { id: true, productId: true, isDefault: true },
+      select: { id: true, productId: true, isDefault: true, barcode: true },
     });
     return rows.map((row) => ({ ...row, feedSyncLocked: false }));
   }
