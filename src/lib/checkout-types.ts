@@ -80,6 +80,8 @@ export type HydratedCartLine = {
   widthCm: number | null;
   heightCm: number | null;
   depthCm: number | null;
+  /** FREE_SHIPPING kampanyası varsa min sepet (kuruş); yoksa null */
+  freeShippingMinMinor: number | null;
   maxQuantity: number | null;
   minOrderQty: number;
   quantityStep: number;
@@ -97,6 +99,8 @@ export type HydratedCart = {
   taxMinor: number;
   extraShippingMinor: number;
   chargeableDesi: number;
+  /** FREE_SHIPPING kampanyası sepete uygulanıyorsa kargo firması ücreti de 0 olmalı */
+  campaignFreeShipping: boolean;
   coupon: AppliedCartCouponView | null;
   couponError: string | null;
 };

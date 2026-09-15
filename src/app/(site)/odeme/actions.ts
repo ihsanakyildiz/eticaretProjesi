@@ -151,6 +151,7 @@ export async function placeOrderAction(
     productsMinor: cart.productsMinor,
     city: shipping.city,
     lines: shippingDesiLinesFromCart(sellable),
+    forceFreeShipping: cart.campaignFreeShipping,
   });
   const carrier = carriers.find((row) => row.id === carrierId) ?? carriers[0];
   if (!carrier) return { error: "Kargo seçin." };
@@ -342,6 +343,7 @@ export async function quoteShippingCarriersAction(input: {
   extraShippingMinor: number;
   productsMinor: number;
   city?: string | null;
+  forceFreeShipping?: boolean;
   lines: Array<{
     quantity: number;
     weightKg?: number | null;
@@ -357,6 +359,7 @@ export async function quoteShippingCarriersAction(input: {
     extraShippingMinor: Math.max(0, Number(input.extraShippingMinor) || 0),
     productsMinor: Math.max(0, Number(input.productsMinor) || 0),
     city: input.city ?? null,
+    forceFreeShipping: Boolean(input.forceFreeShipping),
     lines: (input.lines ?? []).map((line) => ({
       quantity: Math.max(1, Math.floor(Number(line.quantity) || 1)),
       weightKg: line.weightKg ?? null,

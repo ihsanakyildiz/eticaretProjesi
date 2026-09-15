@@ -7,6 +7,7 @@ import { applyCartPercentMinor, freeShippingApplies } from "@/lib/campaign-kinds
 import { resolveCartCoupon } from "@/lib/cart-discount-coupon";
 import { loadLiveCampaignsByProductIds, type LiveProductCampaign } from "@/lib/campaigns";
 import { normalizeCartLines, type CartLine } from "@/lib/cart";
+import { cartHasCampaignFreeShipping } from "@/lib/cart-hydrate-cache";
 import { ensureShippingCarrierPricingSchema } from "@/lib/ensure-shipping-carrier-pricing-schema";
 import { pricedLine } from "@/lib/order-server";
 import { checkoutDataCacheSeconds, parsePerformance, withCdnUrl } from "@/lib/performance";
@@ -201,6 +202,7 @@ export async function hydrateCart(
       taxMinor: 0,
       extraShippingMinor: 0,
       chargeableDesi: 0,
+      campaignFreeShipping: false,
       coupon: null,
       couponError: null,
     };
@@ -349,6 +351,10 @@ export async function hydrateCart(
         widthCm: toNumberOrNull(product?.widthCm),
         heightCm: toNumberOrNull(product?.heightCm),
         depthCm: toNumberOrNull(product?.depthCm),
+        freeShippingMinMinor:
+          campaign?.kind === "FREE_SHIPPING"
+            ? Math.max(0, campaign.minSubtotalMinor ?? 0)
+            : null,
         maxQuantity,
         minOrderQty: Math.max(1, product?.minOrderQty ?? 1),
         quantityStep: Math.max(1, product?.quantityStep ?? 1),
@@ -362,6 +368,7 @@ export async function hydrateCart(
     });
   }
 
+  let campaignFreeShipping = false;
   for (const draft of lineDrafts) {
     const waiveFreeShipping = freeShippingApplies(draft.campaign, productsMinor);
     const lineExtraShipping =
@@ -371,6 +378,7 @@ export async function hydrateCart(
     if (draft.available) extraShippingMinor += lineExtraShipping;
     hydrated.push({ ...draft.line, extraShippingMinor: lineExtraShipping });
   }
+  campaignFreeShipping = cartHasCampaignFreeShipping(hydrated, productsMinor);
 
   const chargeableDesi = chargeableDesiFromLines(shippingDesiLinesFromCart(hydrated));
 
@@ -401,6 +409,7 @@ export async function hydrateCart(
     taxMinor,
     extraShippingMinor,
     chargeableDesi,
+    campaignFreeShipping,
     coupon: couponResult.ok ? couponResult.coupon : null,
     couponError: couponResult.ok ? null : couponResult.error,
   };
@@ -441,6 +450,7 @@ export type QuoteShippingCarriersInput = {
   city?: string | null;
   lines?: ShippingDesiLineInput[];
   chargeableDesi?: number;
+  forceFreeShipping?: boolean;
 };
 
 export async function loadCheckoutCarriers(
@@ -468,7 +478,9 @@ export async function loadCheckoutCarriers(
         id: "standard",
         name: "Standart kargo",
         logo: null,
-        priceMinor: Math.max(0, quote.extraShippingMinor),
+        priceMinor: quote.forceFreeShipping
+          ? 0
+          : Math.max(0, quote.extraShippingMinor),
       },
     ];
   }
@@ -487,6 +499,7 @@ export async function loadCheckoutCarriers(
       city: quote.city,
       productsMinor: quote.productsMinor,
       extraShippingMinor: quote.extraShippingMinor,
+      forceFreeShipping: quote.forceFreeShipping,
     });
     return {
       id: row.id,

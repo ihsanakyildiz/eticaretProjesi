@@ -217,8 +217,12 @@ export function quoteShippingCarrierPrice(input: {
   city?: string | null;
   productsMinor: number;
   extraShippingMinor: number;
+  /** Kampanya (FREE_SHIPPING) veya benzeri dış kaynak bedava kargo */
+  forceFreeShipping?: boolean;
 }): number {
   const { carrier, city, productsMinor, extraShippingMinor } = input;
+
+  if (input.forceFreeShipping) return 0;
 
   if (carrier.freeShippingEnabled) {
     const min = Math.max(0, carrier.freeShippingMinSubtotalMinor);

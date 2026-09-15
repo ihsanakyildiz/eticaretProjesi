@@ -4,13 +4,25 @@ import { chargeableDesiFromLines } from "@/lib/shipping-carrier-pricing";
 
 let inflight: { key: string; promise: Promise<HydratedCart> } | null = null;
 
-export const CART_HYDRATE_CACHE_KEY = "eticaret.cart.hydrated.v4";
+export const CART_HYDRATE_CACHE_KEY = "eticaret.cart.hydrated.v5";
 
 export function cartLinesKey(lines: CartLine[], couponCode = "") {
   return JSON.stringify({
     lines: lines.map((line) => [line.variantId, line.quantity, line.lineKey]),
     coupon: couponCode,
   });
+}
+
+export function cartHasCampaignFreeShipping(
+  lines: Array<{ available?: boolean; freeShippingMinMinor?: number | null }>,
+  productsMinor: number,
+) {
+  return lines.some(
+    (line) =>
+      line.available !== false &&
+      line.freeShippingMinMinor != null &&
+      productsMinor >= Math.max(0, line.freeShippingMinMinor),
+  );
 }
 
 export function readHydratedCartCache(
@@ -98,10 +110,11 @@ export function applyLineQuantities(cart: HydratedCart, lines: CartLine[]): Hydr
     });
   }
   const sellable = nextLines.filter((line) => line.available);
+  const productsMinor = sellable.reduce((sum, line) => sum + line.totalMinor, 0);
   return {
     ...cart,
     lines: nextLines,
-    productsMinor: sellable.reduce((sum, line) => sum + line.totalMinor, 0),
+    productsMinor,
     extraShippingMinor: sellable.reduce((sum, line) => sum + line.extraShippingMinor, 0),
     chargeableDesi: chargeableDesiFromLines(
       sellable.map((line) => ({
@@ -112,6 +125,7 @@ export function applyLineQuantities(cart: HydratedCart, lines: CartLine[]): Hydr
         depthCm: line.depthCm,
       })),
     ),
+    campaignFreeShipping: cartHasCampaignFreeShipping(sellable, productsMinor),
     coupon: cart.coupon ?? null,
     couponError: cart.couponError ?? null,
   };

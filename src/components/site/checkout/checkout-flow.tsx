@@ -25,6 +25,7 @@ import {
   type CheckoutStep,
 } from "@/lib/checkout-steps";
 import { formatMinorTry, taxExcludedMinor } from "@/lib/product-money";
+import { cartHasCampaignFreeShipping } from "@/lib/cart-hydrate-cache";
 import { chargeableDesiFromLines } from "@/lib/shipping-carrier-pricing";
 import { PersonalizationValuesDisplay } from "@/components/personalization-values-display";
 
@@ -74,10 +75,11 @@ export function CheckoutFlow({
     const selected = hydrated.lines.filter(
       (line) => line.available && selectedIds.includes(line.lineKey),
     );
+    const productsMinor = selected.reduce((sum, line) => sum + line.totalMinor, 0);
     return {
       ...hydrated,
       lines: selected,
-      productsMinor: selected.reduce((sum, line) => sum + line.totalMinor, 0),
+      productsMinor,
       taxMinor: selected.reduce((sum, line) => {
         return sum + (line.totalMinor - taxExcludedMinor(line.totalMinor, line.taxRatePercent));
       }, 0),
@@ -91,6 +93,7 @@ export function CheckoutFlow({
           depthCm: line.depthCm,
         })),
       ),
+      campaignFreeShipping: cartHasCampaignFreeShipping(selected, productsMinor),
     };
   }, [hydrated, selectedIds]);
   const [checkoutCouponDiscount, setCheckoutCouponDiscount] = useState(0);
@@ -147,6 +150,7 @@ export function CheckoutFlow({
       extraShippingMinor: cart.extraShippingMinor,
       productsMinor: cart.productsMinor,
       city: shipping?.city ?? null,
+      forceFreeShipping: cart.campaignFreeShipping,
       lines: cart.lines.map((line) => ({
         quantity: line.quantity,
         weightKg: line.weightKg,
@@ -169,6 +173,7 @@ export function CheckoutFlow({
   }, [
     cart?.extraShippingMinor,
     cart?.productsMinor,
+    cart?.campaignFreeShipping,
     cart?.lines,
     shipping?.city,
     initialCarriers,
